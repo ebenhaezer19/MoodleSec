@@ -6,7 +6,7 @@ Configuration constants for the Moodle proxy service.
 MOODLE_URL: str = "http://localhost:8080"
 
 # Port for the proxy service to listen on
-LISTEN_PORT: int = 8000
+LISTEN_PORT: int = 8999
 
 # Directory for storing log files
 LOG_DIR: str = "logs"
