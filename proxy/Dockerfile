@@ -16,8 +16,8 @@ COPY . .
 # Create logs directory
 RUN mkdir -p logs
 
-# Expose the port defined in config (default 8000)
-EXPOSE 8000
+# Expose the port defined in config (default 8999)
+EXPOSE 8999
 
 # Run the application
-CMD ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8999"]
