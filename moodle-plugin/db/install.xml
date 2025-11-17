@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="local/security_dashboard/db" VERSION="20241117" COMMENT="XMLDB file for Moodle local/security_dashboard"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
+>
+  <TABLES>
+    <!-- Scan Results Table -->
+    <TABLE NAME="local_security_scans" COMMENT="Stores security scan results">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="scan_id" TYPE="char" LENGTH="100" NOTNULL="true" SEQUENCE="false" COMMENT="Unique scan identifier"/>
+        <FIELD NAME="target_url" TYPE="text" NOTNULL="true" SEQUENCE="false" COMMENT="Target URL scanned"/>
+        <FIELD NAME="scan_path" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false" COMMENT="Path scanned"/>
+        <FIELD NAME="scan_method" TYPE="char" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="HTTP method used"/>
+        <FIELD NAME="scan_type" TYPE="char" LENGTH="50" NOTNULL="false" SEQUENCE="false" COMMENT="Type of scan"/>
+        <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="pending" SEQUENCE="false" COMMENT="Scan status"/>
+        <FIELD NAME="total_findings" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="critical_count" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="high_count" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="medium_count" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="low_count" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="info_count" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="scan_duration" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Duration in seconds"/>
+        <FIELD NAME="triggered_by" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="User ID who triggered"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="triggered_by" TYPE="foreign" FIELDS="triggered_by" REFTABLE="user" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="scan_id" UNIQUE="true" FIELDS="scan_id"/>
+        <INDEX NAME="status" UNIQUE="false" FIELDS="status"/>
+        <INDEX NAME="timecreated" UNIQUE="false" FIELDS="timecreated"/>
+      </INDEXES>
+    </TABLE>
+
+    <!-- Findings Table -->
+    <TABLE NAME="local_security_findings" COMMENT="Stores individual vulnerability findings">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="scan_id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Foreign key to scans table"/>
+        <FIELD NAME="severity" TYPE="char" LENGTH="20" NOTNULL="true" SEQUENCE="false" COMMENT="Critical, High, Medium, Low, Info"/>
+        <FIELD NAME="category" TYPE="char" LENGTH="100" NOTNULL="true" SEQUENCE="false" COMMENT="Vulnerability category"/>
+        <FIELD NAME="title" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false" COMMENT="Finding title"/>
+        <FIELD NAME="description" TYPE="text" NOTNULL="true" SEQUENCE="false" COMMENT="Detailed description"/>
+        <FIELD NAME="evidence" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Evidence/proof"/>
+        <FIELD NAME="cvss_score" TYPE="number" LENGTH="3" NOTNULL="false" DECIMALS="1" SEQUENCE="false" COMMENT="CVSS base score"/>
+        <FIELD NAME="cvss_vector" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="CVSS vector string"/>
+        <FIELD NAME="cwe_id" TYPE="char" LENGTH="20" NOTNULL="false" SEQUENCE="false" COMMENT="CWE identifier"/>
+        <FIELD NAME="remediation" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Remediation advice"/>
+        <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="open" SEQUENCE="false" COMMENT="open, fixed, false_positive, accepted"/>
+        <FIELD NAME="false_positive" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="scan_id" TYPE="foreign" FIELDS="scan_id" REFTABLE="local_security_scans" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="severity" UNIQUE="false" FIELDS="severity"/>
+        <INDEX NAME="category" UNIQUE="false" FIELDS="category"/>
+        <INDEX NAME="status" UNIQUE="false" FIELDS="status"/>
+      </INDEXES>
+    </TABLE>
+
+    <!-- Scan History/Logs Table -->
+    <TABLE NAME="local_security_logs" COMMENT="Stores detailed scan logs and activities">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="scan_id" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Related scan ID"/>
+        <FIELD NAME="log_type" TYPE="char" LENGTH="50" NOTNULL="true" SEQUENCE="false" COMMENT="Type of log entry"/>
+        <FIELD NAME="log_level" TYPE="char" LENGTH="20" NOTNULL="true" SEQUENCE="false" COMMENT="info, warning, error"/>
+        <FIELD NAME="message" TYPE="text" NOTNULL="true" SEQUENCE="false" COMMENT="Log message"/>
+        <FIELD NAME="data" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Additional data (JSON)"/>
+        <FIELD NAME="user_id" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="scan_id" TYPE="foreign" FIELDS="scan_id" REFTABLE="local_security_scans" REFFIELDS="id"/>
+        <KEY NAME="user_id" TYPE="foreign" FIELDS="user_id" REFTABLE="user" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="log_type" UNIQUE="false" FIELDS="log_type"/>
+        <INDEX NAME="log_level" UNIQUE="false" FIELDS="log_level"/>
+        <INDEX NAME="timecreated" UNIQUE="false" FIELDS="timecreated"/>
+      </INDEXES>
+    </TABLE>
+
+    <!-- Configuration/Settings Table -->
+    <TABLE NAME="local_security_config" COMMENT="Stores plugin configuration and scan profiles">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="name" TYPE="char" LENGTH="100" NOTNULL="true" SEQUENCE="false" COMMENT="Config name"/>
+        <FIELD NAME="value" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Config value"/>
+        <FIELD NAME="description" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="config_type" TYPE="char" LENGTH="50" NOTNULL="true" SEQUENCE="false" COMMENT="scan_profile, threshold, etc"/>
+        <FIELD NAME="is_active" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="name" UNIQUE="true" FIELDS="name"/>
+        <INDEX NAME="config_type" UNIQUE="false" FIELDS="config_type"/>
+      </INDEXES>
+    </TABLE>
+
+    <!-- Scheduled Scans Table -->
+    <TABLE NAME="local_security_schedules" COMMENT="Stores scheduled scan configurations">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="name" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false" COMMENT="Schedule name"/>
+        <FIELD NAME="scan_path" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="scan_method" TYPE="char" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="scan_type" TYPE="char" LENGTH="50" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="frequency" TYPE="char" LENGTH="20" NOTNULL="true" SEQUENCE="false" COMMENT="daily, weekly, monthly"/>
+        <FIELD NAME="schedule_time" TYPE="char" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="HH:MM format"/>
+        <FIELD NAME="is_enabled" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+        <FIELD NAME="last_run" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="next_run" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="created_by" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="created_by" TYPE="foreign" FIELDS="created_by" REFTABLE="user" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="is_enabled" UNIQUE="false" FIELDS="is_enabled"/>
+        <INDEX NAME="next_run" UNIQUE="false" FIELDS="next_run"/>
+      </INDEXES>
+    </TABLE>
+  </TABLES>
+</XMLDB>
