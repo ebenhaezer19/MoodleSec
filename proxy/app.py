@@ -352,14 +352,21 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
         # Send Slack notification if enabled
         if slack_notifier:
             try:
-                await slack_notifier.send_scan_complete(result)
+                print(f"[Slack] Sending scan complete notification...")
+                success = await slack_notifier.send_scan_complete(result)
+                print(f"[Slack] Scan complete notification: {'✅ SUCCESS' if success else '❌ FAILED'}")
                 
                 # Send critical alerts for critical findings
                 critical_findings = [f for f in all_findings if f.get('severity', '').lower() == 'critical']
-                for finding in critical_findings[:3]:  # Alert for top 3 critical
-                    await slack_notifier.send_critical_alert(finding, scan_id)
+                if critical_findings:
+                    print(f"[Slack] Sending {len(critical_findings[:3])} critical alerts...")
+                    for finding in critical_findings[:3]:  # Alert for top 3 critical
+                        alert_success = await slack_notifier.send_critical_alert(finding, scan_id)
+                        print(f"[Slack] Critical alert: {'✅ SUCCESS' if alert_success else '❌ FAILED'}")
             except Exception as e:
+                import traceback
                 print(f"[Slack] Notification failed: {str(e)}")
+                print(f"[Slack] Traceback: {traceback.format_exc()}")
         
         return result
     

@@ -211,6 +211,10 @@ class SlackNotifier:
         try:
             message = {"text": text}
             response = await self.client.post(self.webhook_url, json=message)
+            
+            if response.status_code != 200:
+                print(f"[Slack] Status code: {response.status_code}, Response: {response.text}")
+            
             return response.status_code == 200
         
         except Exception as e:
