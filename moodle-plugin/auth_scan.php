@@ -245,6 +245,7 @@ echo $OUTPUT->header();
             echo '<th>Timestamp</th>';
             echo '<th>Findings</th>';
             echo '<th>Status</th>';
+            echo '<th>Actions</th>';
             echo '</tr>';
             echo '</thead>';
             echo '<tbody>';
@@ -276,12 +277,19 @@ echo $OUTPUT->header();
                 
                 $type_icon = $scan_type === 'authentication' ? '🔑' : '🌐';
                 
+                // Generate report URL
+                $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+                $report_url = rtrim($proxy_url, '/') . '/reports/auth-api-summary?scan_id=' . urlencode($scan_id);
+                
                 echo '<tr>';
                 echo '<td><code>' . $scan_id . '</code></td>';
                 echo '<td>' . $type_icon . ' ' . ucfirst($scan_type) . '</td>';
                 echo '<td>' . $timestamp . '</td>';
                 echo '<td><strong>' . $total . '</strong> findings</td>';
                 echo '<td>' . $status_badge . '</td>';
+                echo '<td>';
+                echo '<a href="' . $report_url . '" target="_blank" class="btn btn-sm btn-primary" style="background: #3b82f6; color: white; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 13px;">📄 Download Report</a>';
+                echo '</td>';
                 echo '</tr>';
             }
             

@@ -571,6 +571,50 @@ async def generate_compliance_report(scan_id: str, framework: str = "OWASP") -> 
         raise HTTPException(status_code=500, detail=f"Failed to generate compliance report: {str(e)}")
 
 
+@app.get("/reports/auth-api-summary")
+async def generate_auth_api_report(scan_id: str) -> Response:
+    """
+    Generate Auth & API Security Scan PDF report.
+    
+    Args:
+        scan_id: Scan ID to generate report for
+        
+    Returns:
+        PDF file with scan results
+    """
+    try:
+        # Get complete scan data with findings from database
+        scan_data = scan_history_db.get_scan_with_findings(scan_id)
+        
+        if not scan_data:
+            raise HTTPException(status_code=404, detail=f"Scan not found: {scan_id}")
+        
+        # Check if it's an auth or API scan
+        if scan_data['scan_type'] not in ['authentication', 'api']:
+            raise HTTPException(status_code=400, detail="This endpoint is only for authentication and API scans")
+        
+        # Generate PDF using existing generator
+        pdf_bytes = pdf_generator.generate_executive_summary(scan_data)
+        
+        scan_type = scan_data['scan_type']
+        filename = f"{scan_type}_security_report_{scan_id}.pdf"
+        
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_detail = f"Failed to generate report: {str(e)}\n{traceback.format_exc()}"
+        print(error_detail)  # Log to console
+        raise HTTPException(status_code=500, detail=error_detail)
+
+
 @app.post("/integrations/webhook")
 async def send_webhook_notification(
     webhook_type: str,
