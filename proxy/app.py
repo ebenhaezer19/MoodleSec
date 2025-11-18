@@ -543,21 +543,21 @@ async def create_ticket(
         raise HTTPException(status_code=500, detail=f"Ticket creation failed: {str(e)}")
 
 
-@app.post("/schedule/create")
-async def create_schedule(
-    target_url: str,
-    cron_expression: str,
-    scan_type: str = "full",
+class ScheduleRequest(BaseModel):
+    """Request model for creating a schedule."""
+    target_url: str
+    cron_expression: str
+    scan_type: str = "full"
     priority: str = "normal"
-) -> Dict[str, Any]:
+
+
+@app.post("/schedule/create")
+async def create_schedule(schedule_req: ScheduleRequest) -> Dict[str, Any]:
     """
     Create a scheduled scan.
     
     Args:
-        target_url: URL to scan
-        cron_expression: Cron expression (hourly, daily, weekly, monthly)
-        scan_type: Type of scan
-        priority: Scan priority
+        schedule_req: Schedule request data
         
     Returns:
         Schedule details
@@ -574,17 +574,17 @@ async def create_schedule(
             'critical': ScanPriority.CRITICAL
         }
         
-        priority_enum = priority_map.get(priority.lower(), ScanPriority.NORMAL)
+        priority_enum = priority_map.get(schedule_req.priority.lower(), ScanPriority.NORMAL)
         
         # Calculate next run time
         now = datetime.utcnow()
-        if cron_expression == "hourly":
+        if schedule_req.cron_expression == "hourly":
             next_run = now + timedelta(hours=1)
-        elif cron_expression == "daily":
+        elif schedule_req.cron_expression == "daily":
             next_run = now + timedelta(days=1)
-        elif cron_expression == "weekly":
+        elif schedule_req.cron_expression == "weekly":
             next_run = now + timedelta(weeks=1)
-        elif cron_expression == "monthly":
+        elif schedule_req.cron_expression == "monthly":
             next_run = now + timedelta(days=30)
         else:
             next_run = now + timedelta(days=1)
@@ -597,10 +597,10 @@ async def create_schedule(
         # In production, this would be saved to database
         schedule_info = {
             'schedule_id': schedule_id,
-            'target_url': target_url,
-            'cron_expression': cron_expression,
-            'scan_type': scan_type,
-            'priority': priority,
+            'target_url': schedule_req.target_url,
+            'cron_expression': schedule_req.cron_expression,
+            'scan_type': schedule_req.scan_type,
+            'priority': schedule_req.priority,
             'enabled': True,
             'next_run': next_run.isoformat() + 'Z',
             'created_at': now.isoformat() + 'Z'
