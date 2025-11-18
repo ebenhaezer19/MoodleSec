@@ -543,6 +543,92 @@ async def create_ticket(
         raise HTTPException(status_code=500, detail=f"Ticket creation failed: {str(e)}")
 
 
+@app.post("/schedule/create")
+async def create_schedule(
+    target_url: str,
+    cron_expression: str,
+    scan_type: str = "full",
+    priority: str = "normal"
+) -> Dict[str, Any]:
+    """
+    Create a scheduled scan.
+    
+    Args:
+        target_url: URL to scan
+        cron_expression: Cron expression (hourly, daily, weekly, monthly)
+        scan_type: Type of scan
+        priority: Scan priority
+        
+    Returns:
+        Schedule details
+    """
+    try:
+        from scheduler.scan_scheduler import ScanScheduler, ScanPriority
+        from datetime import datetime, timedelta
+        
+        # Map priority string to enum
+        priority_map = {
+            'low': ScanPriority.LOW,
+            'normal': ScanPriority.NORMAL,
+            'high': ScanPriority.HIGH,
+            'critical': ScanPriority.CRITICAL
+        }
+        
+        priority_enum = priority_map.get(priority.lower(), ScanPriority.NORMAL)
+        
+        # Calculate next run time
+        now = datetime.utcnow()
+        if cron_expression == "hourly":
+            next_run = now + timedelta(hours=1)
+        elif cron_expression == "daily":
+            next_run = now + timedelta(days=1)
+        elif cron_expression == "weekly":
+            next_run = now + timedelta(weeks=1)
+        elif cron_expression == "monthly":
+            next_run = now + timedelta(days=30)
+        else:
+            next_run = now + timedelta(days=1)
+        
+        # Create schedule ID
+        import uuid
+        schedule_id = str(uuid.uuid4())
+        
+        # For now, just return the schedule info
+        # In production, this would be saved to database
+        schedule_info = {
+            'schedule_id': schedule_id,
+            'target_url': target_url,
+            'cron_expression': cron_expression,
+            'scan_type': scan_type,
+            'priority': priority,
+            'enabled': True,
+            'next_run': next_run.isoformat() + 'Z',
+            'created_at': now.isoformat() + 'Z'
+        }
+        
+        return schedule_info
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create schedule: {str(e)}")
+
+
+@app.get("/schedule/list")
+async def list_schedules() -> List[Dict[str, Any]]:
+    """
+    Get all scheduled scans.
+    
+    Returns:
+        List of schedules
+    """
+    try:
+        # For now, return empty list
+        # In production, this would fetch from database
+        return []
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list schedules: {str(e)}")
+
+
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 async def proxy_request(request: Request, path: str) -> Response:
     """

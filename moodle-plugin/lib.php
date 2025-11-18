@@ -3,7 +3,7 @@
  * Library functions for Security Dashboard
  *
  * @package    local_security_dashboard
- * @copyright  2024 Krisopras & Nathanael
+ * @copyright  2025 Krisopras & Nathanael
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -187,6 +187,85 @@ function local_security_dashboard_trigger_full_scan($max_depth = 2, $max_pages =
             'CURLOPT_HTTPHEADER' => ['Content-Type: application/json'],
             'CURLOPT_TIMEOUT' => 300  // 5 minutes timeout for full scan
         ]);
+        
+        if ($curl->get_errno()) {
+            return ['error' => 'Connection error: ' . $curl->error];
+        }
+        
+        $result = json_decode($response, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return ['error' => 'Invalid response from proxy service'];
+        }
+        
+        return $result;
+    } catch (Exception $e) {
+        return ['error' => $e->getMessage()];
+    }
+}
+
+/**
+ * Create a scheduled scan
+ *
+ * @param string $target_url Target URL to scan
+ * @param string $frequency Scan frequency (hourly, daily, weekly, monthly)
+ * @param string $scan_type Type of scan (full, quick, targeted)
+ * @return array Schedule result
+ */
+function local_security_dashboard_create_schedule($target_url, $frequency, $scan_type = 'full') {
+    $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    
+    if (empty($proxy_url)) {
+        return ['error' => 'Proxy URL not configured'];
+    }
+    
+    $url = rtrim($proxy_url, '/') . '/schedule/create';
+    
+    try {
+        $curl = new curl();
+        $response = $curl->post($url, json_encode([
+            'target_url' => $target_url,
+            'cron_expression' => $frequency,
+            'scan_type' => $scan_type,
+            'priority' => 'normal'
+        ]), [
+            'CURLOPT_HTTPHEADER' => ['Content-Type: application/json'],
+            'CURLOPT_TIMEOUT' => 30
+        ]);
+        
+        if ($curl->get_errno()) {
+            return ['error' => 'Connection error: ' . $curl->error];
+        }
+        
+        $result = json_decode($response, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return ['error' => 'Invalid response from proxy service'];
+        }
+        
+        return $result;
+    } catch (Exception $e) {
+        return ['error' => $e->getMessage()];
+    }
+}
+
+/**
+ * Get all scheduled scans
+ *
+ * @return array List of schedules
+ */
+function local_security_dashboard_get_schedules() {
+    $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    
+    if (empty($proxy_url)) {
+        return ['error' => 'Proxy URL not configured'];
+    }
+    
+    $url = rtrim($proxy_url, '/') . '/schedule/list';
+    
+    try {
+        $curl = new curl();
+        $response = $curl->get($url);
         
         if ($curl->get_errno()) {
             return ['error' => 'Connection error: ' . $curl->error];

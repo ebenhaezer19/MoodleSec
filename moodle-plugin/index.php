@@ -1,9 +1,9 @@
-DD<?php
+<?php
 /**
  * Security Dashboard main page
  *
  * @package    local_security_dashboard
- * @copyright  2024 Krisopras & Nathanael
+ * @copyright  2025 Krisopras & Nathanael
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -50,7 +50,17 @@ if (isset($logs_data['error'])) {
     echo html_writer::link(
         new moodle_url('/local/security_dashboard/fullscan.php'),
         '<i class="fa fa-globe"></i> Full Site Scan',
-        ['class' => 'btn btn-success']
+        ['class' => 'btn btn-success mr-2']
+    );
+    echo html_writer::link(
+        new moodle_url('/local/security_dashboard/scheduler.php'),
+        '<i class="fa fa-clock-o"></i> Scheduler',
+        ['class' => 'btn btn-info mr-2']
+    );
+    echo html_writer::link(
+        new moodle_url('/local/security_dashboard/reports.php'),
+        '<i class="fa fa-file-pdf-o"></i> Reports',
+        ['class' => 'btn btn-warning']
     );
     echo html_writer::end_div();
     
