@@ -334,6 +334,14 @@ function local_security_dashboard_start_auth_scan() {
     
     try {
         $curl = new curl();
+        
+        // Set options to prevent following redirects and increase timeout
+        $curl->setopt(array(
+            'CURLOPT_FOLLOWLOCATION' => false,
+            'CURLOPT_TIMEOUT' => 120,  // 2 minutes for scan to complete
+            'CURLOPT_CONNECTTIMEOUT' => 10
+        ));
+        
         $response = $curl->post($url, '');
         
         if ($curl->get_errno()) {
@@ -343,7 +351,7 @@ function local_security_dashboard_start_auth_scan() {
         $result = json_decode($response, true);
         
         if (json_last_error() !== JSON_ERROR_NONE) {
-            return ['error' => 'Invalid response from proxy service'];
+            return ['error' => 'Invalid response from proxy service. Response: ' . substr($response, 0, 200)];
         }
         
         return $result;
@@ -368,6 +376,14 @@ function local_security_dashboard_start_api_scan() {
     
     try {
         $curl = new curl();
+        
+        // Set options to prevent following redirects and increase timeout
+        $curl->setopt(array(
+            'CURLOPT_FOLLOWLOCATION' => false,
+            'CURLOPT_TIMEOUT' => 120,  // 2 minutes for scan to complete
+            'CURLOPT_CONNECTTIMEOUT' => 10
+        ));
+        
         $response = $curl->post($url, '');
         
         if ($curl->get_errno()) {
@@ -377,7 +393,7 @@ function local_security_dashboard_start_api_scan() {
         $result = json_decode($response, true);
         
         if (json_last_error() !== JSON_ERROR_NONE) {
-            return ['error' => 'Invalid response from proxy service'];
+            return ['error' => 'Invalid response from proxy service. Response: ' . substr($response, 0, 200)];
         }
         
         return $result;
