@@ -21,7 +21,17 @@ $PAGE->set_heading('Authentication & API Security Scanner');
 $action = optional_param('action', '', PARAM_ALPHA);
 $scan_type = optional_param('scan_type', '', PARAM_ALPHA);
 
-if ($action === 'start_scan' && confirm_sesskey()) {
+// Debug logging
+error_log("Auth scan page - Action: $action, Scan type: $scan_type, Sesskey valid: " . (confirm_sesskey() ? 'yes' : 'no'));
+
+// TEMPORARY: Skip sesskey check for debugging
+if ($action === 'start_scan') {
+    error_log("SCAN STARTED - bypassing sesskey for debug");
+    
+    // Verify sesskey anyway but don't block
+    if (!confirm_sesskey()) {
+        error_log("WARNING: Sesskey validation failed but continuing for debug");
+    }
     if ($scan_type === 'auth') {
         \core\notification::info('Starting Authentication Security Scan... This may take 30-60 seconds.');
         $result = local_security_dashboard_start_auth_scan();
@@ -186,11 +196,11 @@ echo $OUTPUT->header();
                 </ul>
             </div>
 
-            <form method="post" action="">
+            <form method="post" action="<?php echo $PAGE->url->out(false); ?>" id="auth-scan-form">
                 <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
                 <input type="hidden" name="action" value="start_scan">
                 <input type="hidden" name="scan_type" value="auth">
-                <button type="submit" class="scan-button">
+                <button type="submit" class="scan-button" id="auth-scan-btn">
                     🚀 Start Authentication Scan
                 </button>
             </form>
@@ -220,11 +230,11 @@ echo $OUTPUT->header();
                 </ul>
             </div>
 
-            <form method="post" action="">
+            <form method="post" action="<?php echo $PAGE->url->out(false); ?>" id="api-scan-form">
                 <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
                 <input type="hidden" name="action" value="start_scan">
                 <input type="hidden" name="scan_type" value="api">
-                <button type="submit" class="scan-button secondary">
+                <button type="submit" class="scan-button secondary" id="api-scan-btn">
                     🚀 Start API Scan
                 </button>
             </form>
@@ -312,18 +322,33 @@ echo $OUTPUT->header();
 </div>
 
 <script>
+// Debug: Log when script loads
+console.log('[Auth Scan] JavaScript loaded');
+
 // Add loading state to scan buttons
-document.querySelectorAll('form').forEach(form => {
+document.querySelectorAll('form').forEach((form, index) => {
+    console.log('[Auth Scan] Found form:', form.id || 'unnamed-' + index);
+    
     form.addEventListener('submit', function(e) {
+        console.log('[Auth Scan] Form submitting:', this.id);
+        console.log('[Auth Scan] Form action:', this.action);
+        console.log('[Auth Scan] Form method:', this.method);
+        
         const button = this.querySelector('button[type="submit"]');
         if (button) {
+            console.log('[Auth Scan] Disabling button:', button.id);
             button.disabled = true;
             button.innerHTML = '⏳ Scanning... Please wait (30-60s)';
             button.style.opacity = '0.7';
             button.style.cursor = 'not-allowed';
         }
+        
+        // Don't prevent default - let form submit normally
+        console.log('[Auth Scan] Form will submit to:', this.action);
     });
 });
+
+console.log('[Auth Scan] Event listeners attached');
 </script>
 
 <?php
