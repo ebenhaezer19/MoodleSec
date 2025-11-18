@@ -727,6 +727,27 @@ async def get_schedule_history(schedule_id: str, limit: int = 50) -> List[Dict[s
         raise HTTPException(status_code=500, detail=f"Failed to get history: {str(e)}")
 
 
+@app.get("/scan-history")
+async def get_scan_history(limit: int = 10) -> Dict[str, Any]:
+    """
+    Get scan history from database.
+    
+    Args:
+        limit: Maximum number of scans to return
+        
+    Returns:
+        Dictionary containing scans array
+    """
+    try:
+        scans = scan_history_db.get_all_scans(limit)
+        return {
+            'scans': scans,
+            'total': len(scans)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get scan history: {str(e)}")
+
+
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 async def proxy_request(request: Request, path: str) -> Response:
     """
