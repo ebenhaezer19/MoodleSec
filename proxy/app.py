@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from config import MOODLE_URL, LISTEN_PORT, LOG_DIR, MAX_LOG_ENTRIES, SLACK_WEBHOOK_URL, SLACK_ENABLED
@@ -26,6 +27,15 @@ app = FastAPI(
     title="Moodle Proxy Service",
     description="Reverse proxy for Moodle with request/response logging and DAST scanning",
     version="2.0.0"
+)
+
+# Add CORS middleware to allow requests from Moodle UI
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8998", "http://127.0.0.1:8998"],  # Moodle URL
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allow all headers
 )
 
 # Initialize log directory on startup
