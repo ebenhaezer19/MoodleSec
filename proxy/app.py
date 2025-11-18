@@ -728,7 +728,7 @@ async def get_schedule_history(schedule_id: str, limit: int = 50) -> List[Dict[s
 
 
 @app.get("/scan-history")
-async def get_scan_history(limit: int = 10) -> Dict[str, Any]:
+async def get_scan_history_endpoint(limit: int = 10) -> Dict[str, Any]:
     """
     Get scan history from database.
     
@@ -739,7 +739,7 @@ async def get_scan_history(limit: int = 10) -> Dict[str, Any]:
         Dictionary containing scans array
     """
     try:
-        scans = scan_history_db.get_all_scans(limit)
+        scans = scan_history_db.get_scan_history(limit)
         return {
             'scans': scans,
             'total': len(scans)
