@@ -265,12 +265,49 @@ class SessionTester:
                     result['status'] = 'fail'
                     unprotected = result['forms_checked'] - result['forms_protected']
                     
+                    # Create PoC data
+                    poc_data = {
+                        'request': {
+                            'method': 'GET',
+                            'url': f'{self.base_url}/login/index.php',
+                            'headers': {
+                                'User-Agent': 'MoodleSec Scanner',
+                                'Accept': 'text/html'
+                            }
+                        },
+                        'response': {
+                            'status_code': response.status_code,
+                            'headers': {
+                                'Content-Type': response.headers.get('Content-Type', 'N/A'),
+                                'Set-Cookie': response.headers.get('Set-Cookie', 'N/A')
+                            },
+                            'body': html[:500] if html else 'N/A'
+                        },
+                        'steps': [
+                            'Navigate to the login page',
+                            'Inspect the HTML source code',
+                            'Look for <form> elements',
+                            'Check if forms contain CSRF token fields (sesskey, csrf_token, _token)',
+                            f'Found {unprotected} form(s) without CSRF protection'
+                        ],
+                        'fix_code': '''// Add CSRF token to your forms
+// In Moodle, use sesskey:
+<input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>" />
+
+// Or in PHP:
+$form->addElement('hidden', 'sesskey', sesskey());
+
+// Verify on submission:
+require_sesskey();'''
+                    }
+                    
                     self._add_finding(
                         severity='High',
                         category='Session Management',
                         description=f'{unprotected} form(s) missing CSRF protection',
                         evidence=f'Forms checked: {result["forms_checked"]}, Protected: {result["forms_protected"]}',
-                        recommendation='Add CSRF tokens to all state-changing forms'
+                        recommendation='Add CSRF tokens to all state-changing forms',
+                        poc=poc_data
                     )
         
         except Exception as e:
@@ -315,16 +352,22 @@ class SessionTester:
         return result
     
     def _add_finding(self, severity: str, category: str, description: str, 
-                    evidence: str, recommendation: str):
-        """Add a security finding."""
-        self.findings.append({
+                    evidence: str, recommendation: str, poc: Dict[str, Any] = None):
+        """Add a security finding with optional PoC."""
+        finding = {
             'severity': severity,
             'category': category,
             'description': description,
             'evidence': evidence,
             'recommendation': recommendation,
             'timestamp': datetime.utcnow().isoformat() + 'Z'
-        })
+        }
+        
+        # Add PoC if provided
+        if poc:
+            finding['poc'] = poc
+        
+        self.findings.append(finding)
     
     def _generate_summary(self) -> Dict[str, int]:
         """Generate summary of findings by severity."""

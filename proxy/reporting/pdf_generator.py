@@ -256,7 +256,8 @@ class PDFReportGenerator:
                 ['Risk Score:', str(finding.get('risk_score', 0))],
                 ['Priority:', str(finding.get('priority', 'N/A'))],
                 ['Description:', finding.get('description', 'N/A')],
-                ['Evidence:', finding.get('evidence', 'N/A')[:100] + '...'],
+                ['Evidence:', finding.get('evidence', 'N/A')[:200] + '...'],
+                ['Recommendation:', finding.get('recommendation', 'N/A')],
             ]
             
             detail_table = Table(finding_details, colWidths=[1.5*inch, 4.5*inch])
@@ -269,6 +270,74 @@ class PDFReportGenerator:
             ]))
             
             elements.append(detail_table)
+            elements.append(Spacer(1, 0.15*inch))
+            
+            # Add Proof of Concept (PoC) section
+            poc_data = finding.get('poc', {})
+            if poc_data:
+                elements.append(Paragraph("<b>Proof of Concept (PoC)</b>", styles['Heading4']))
+                elements.append(Spacer(1, 0.1*inch))
+                
+                # Request details
+                if poc_data.get('request'):
+                    req = poc_data['request']
+                    elements.append(Paragraph("<b>Request:</b>", styles['Normal']))
+                    request_info = [
+                        ['Method:', req.get('method', 'N/A')],
+                        ['URL:', req.get('url', 'N/A')],
+                        ['Headers:', self._format_dict(req.get('headers', {}))],
+                    ]
+                    if req.get('body'):
+                        request_info.append(['Body:', str(req.get('body', ''))[:200] + '...'])
+                    
+                    req_table = Table(request_info, colWidths=[1*inch, 5*inch])
+                    req_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (0, -1), colors.Color(0.95, 0.95, 0.95)),
+                        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0, 0), (-1, -1), 8),
+                        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                        ('FONTNAME', (1, 0), (1, -1), 'Courier')
+                    ]))
+                    elements.append(req_table)
+                    elements.append(Spacer(1, 0.1*inch))
+                
+                # Response details
+                if poc_data.get('response'):
+                    resp = poc_data['response']
+                    elements.append(Paragraph("<b>Response:</b>", styles['Normal']))
+                    response_info = [
+                        ['Status Code:', str(resp.get('status_code', 'N/A'))],
+                        ['Headers:', self._format_dict(resp.get('headers', {}))],
+                    ]
+                    if resp.get('body'):
+                        response_info.append(['Body Snippet:', str(resp.get('body', ''))[:300] + '...'])
+                    
+                    resp_table = Table(response_info, colWidths=[1*inch, 5*inch])
+                    resp_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (0, -1), colors.Color(0.95, 0.95, 0.95)),
+                        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0, 0), (-1, -1), 8),
+                        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                        ('FONTNAME', (1, 0), (1, -1), 'Courier')
+                    ]))
+                    elements.append(resp_table)
+                    elements.append(Spacer(1, 0.1*inch))
+                
+                # Reproduction steps
+                if poc_data.get('steps'):
+                    elements.append(Paragraph("<b>Reproduction Steps:</b>", styles['Normal']))
+                    for step_num, step in enumerate(poc_data['steps'], 1):
+                        elements.append(Paragraph(f"{step_num}. {step}", styles['Normal']))
+                    elements.append(Spacer(1, 0.1*inch))
+                
+                # Fix code snippet
+                if poc_data.get('fix_code'):
+                    elements.append(Paragraph("<b>Recommended Fix:</b>", styles['Normal']))
+                    fix_code = Paragraph(f"<font name='Courier' size='8'>{poc_data['fix_code']}</font>", styles['Code'])
+                    elements.append(fix_code)
+            
             elements.append(Spacer(1, 0.2*inch))
             
             if i % 5 == 0:  # Page break every 5 findings
@@ -304,6 +373,18 @@ class PDFReportGenerator:
         if total == 0:
             return "0%"
         return f"{(count / total * 100):.1f}%"
+    
+    def _format_dict(self, data: Dict[str, Any]) -> str:
+        """Format dictionary for display in PDF."""
+        if not data:
+            return "N/A"
+        # Format as key: value pairs, limit to important headers
+        formatted = []
+        for key, value in list(data.items())[:5]:  # Limit to 5 items
+            formatted.append(f"{key}: {value}")
+        if len(data) > 5:
+            formatted.append(f"... and {len(data) - 5} more")
+        return "\n".join(formatted)
     
     def _generate_recommendations(self, scan_data: Dict[str, Any]) -> List[str]:
         """Generate recommendations based on findings."""
