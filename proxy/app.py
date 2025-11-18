@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from config import MOODLE_URL, LISTEN_PORT, LOG_DIR, MAX_LOG_ENTRIES
 from utils.logger import append_log, read_logs, ensure_log_directory
+from scanners.scanner_engine import ScannerEngine
 
 
 app = FastAPI(
@@ -22,6 +23,9 @@ app = FastAPI(
 
 # Initialize log directory on startup
 ensure_log_directory(LOG_DIR)
+
+# Initialize scanner engine
+scanner_engine = ScannerEngine()
 
 
 class ScanRequest(BaseModel):
@@ -59,6 +63,17 @@ async def health_check() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/scanners/status")
+async def get_scanners_status() -> Dict[str, Any]:
+    """
+    Get status of all available scanners.
+    
+    Returns:
+        Dictionary with scanner status information
+    """
+    return scanner_engine.get_scanner_status()
+
+
 @app.get("/logs")
 async def get_logs(limit: int = MAX_LOG_ENTRIES) -> Dict[str, Any]:
     """
@@ -83,7 +98,7 @@ async def get_logs(limit: int = MAX_LOG_ENTRIES) -> Dict[str, Any]:
 @app.post("/scan-trigger", response_model=ScanResult)
 async def trigger_scan(scan_request: ScanRequest) -> ScanResult:
     """
-    Trigger a simulated DAST scan of a specified path.
+    Trigger a comprehensive DAST scan of a specified path.
     
     Args:
         scan_request: Scan configuration including path and parameters
@@ -91,82 +106,68 @@ async def trigger_scan(scan_request: ScanRequest) -> ScanResult:
     Returns:
         Scan results with findings
     """
-    scan_id = f"scan_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
     target_url = f"{MOODLE_URL}{scan_request.path}"
-    timestamp = datetime.utcnow().isoformat() + "Z"
     
-    # Simulate DAST scan findings
-    findings: List[ScanFinding] = []
+    # Fetch the target page to analyze
+    response_body = ""
+    response_headers = {}
+    status_code = 200
     
-    # Simulated security checks
-    if "login" in scan_request.path.lower():
-        findings.append(ScanFinding(
-            severity="Medium",
-            category="Authentication",
-            description="Login page detected - verify CSRF protection is enabled",
-            evidence=f"Path contains 'login': {scan_request.path}"
-        ))
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.request(
+                method=scan_request.method,
+                url=target_url,
+                params=scan_request.parameters if scan_request.method == "GET" else None,
+                data=scan_request.parameters if scan_request.method == "POST" else None
+            )
+            response_body = response.text
+            response_headers = dict(response.headers)
+            status_code = response.status_code
+    except Exception as e:
+        # If request fails, still run scanners on URL/params
+        pass
     
-    if scan_request.method == "POST" and not scan_request.parameters:
-        findings.append(ScanFinding(
-            severity="Low",
-            category="Input Validation",
-            description="POST request without parameters - potential for injection attacks",
-            evidence=f"Method: {scan_request.method}, Parameters: None"
-        ))
+    # Run comprehensive scan using scanner engine
+    scan_results = scanner_engine.scan(
+        url=target_url,
+        method=scan_request.method,
+        params=scan_request.parameters,
+        response_body=response_body,
+        response_headers=response_headers,
+        status_code=status_code
+    )
     
-    if "admin" in scan_request.path.lower():
-        findings.append(ScanFinding(
-            severity="High",
-            category="Access Control",
-            description="Administrative path detected - ensure proper authentication is required",
-            evidence=f"Path contains 'admin': {scan_request.path}"
-        ))
-    
-    if not scan_request.path.startswith("/"):
-        findings.append(ScanFinding(
-            severity="Low",
-            category="Configuration",
-            description="Path should start with forward slash",
-            evidence=f"Invalid path format: {scan_request.path}"
-        ))
-    
-    # Add a generic finding if no specific issues detected
-    if not findings:
-        findings.append(ScanFinding(
-            severity="Info",
-            category="General",
-            description="No obvious security issues detected in basic scan",
-            evidence=None
-        ))
-    
-    # Calculate summary
-    summary = {
-        "high": sum(1 for f in findings if f.severity == "High"),
-        "medium": sum(1 for f in findings if f.severity == "Medium"),
-        "low": sum(1 for f in findings if f.severity == "Low"),
-        "info": sum(1 for f in findings if f.severity == "Info")
-    }
+    # Convert findings to ScanFinding objects
+    findings = [
+        ScanFinding(
+            severity=f.get('severity', 'Info'),
+            category=f.get('category', 'General'),
+            description=f.get('description', ''),
+            evidence=f.get('evidence')
+        )
+        for f in scan_results['findings']
+    ]
     
     # Log the scan
     scan_log = {
         "type": "dast_scan",
-        "scan_id": scan_id,
+        "scan_id": scan_results['scan_id'],
         "target_url": target_url,
         "method": scan_request.method,
         "parameters": scan_request.parameters,
         "findings_count": len(findings),
-        "summary": summary,
-        "timestamp": timestamp
+        "summary": scan_results['summary'],
+        "timestamp": scan_results['timestamp']
     }
     append_log(LOG_DIR, scan_log)
     
     return ScanResult(
-        scan_id=scan_id,
+        scan_id=scan_results['scan_id'],
         target_url=target_url,
-        timestamp=timestamp,
+        timestamp=scan_results['timestamp'],
         findings=findings,
-        summary=summary
+        summary=scan_results['summary']
     )
 
 
