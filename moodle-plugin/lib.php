@@ -385,3 +385,39 @@ function local_security_dashboard_start_api_scan() {
         return ['error' => $e->getMessage()];
     }
 }
+
+/**
+ * Get scan history from proxy service
+ *
+ * @param int $limit Number of scans to retrieve
+ * @return array Scan history
+ */
+function local_security_dashboard_get_scan_history($limit = 10) {
+    $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    
+    if (empty($proxy_url)) {
+        return ['error' => 'Proxy URL not configured'];
+    }
+    
+    $url = rtrim($proxy_url, '/') . '/scan-history?limit=' . intval($limit);
+    
+    try {
+        $curl = new curl();
+        $response = $curl->get($url);
+        
+        if ($curl->get_errno()) {
+            return ['error' => 'Connection error: ' . $curl->error];
+        }
+        
+        $result = json_decode($response, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return ['error' => 'Invalid response from proxy service'];
+        }
+        
+        // Return the scans array if it exists, otherwise return empty array
+        return isset($result['scans']) ? $result['scans'] : [];
+    } catch (Exception $e) {
+        return ['error' => $e->getMessage()];
+    }
+}
