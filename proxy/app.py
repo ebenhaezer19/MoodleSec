@@ -442,9 +442,8 @@ async def generate_executive_summary(scan_id: str) -> Response:
         PDF file
     """
     try:
-        # Get scan data from history
-        scans = scan_history_db.get_scan_history(limit=100)
-        scan_data = next((s for s in scans if s['scan_id'] == scan_id), None)
+        # Get complete scan data with findings from database
+        scan_data = scan_history_db.get_scan_with_findings(scan_id)
         
         if not scan_data:
             raise HTTPException(status_code=404, detail="Scan not found")
@@ -476,8 +475,8 @@ async def generate_compliance_report(scan_id: str, framework: str = "OWASP") -> 
         PDF file
     """
     try:
-        scans = scan_history_db.get_scan_history(limit=100)
-        scan_data = next((s for s in scans if s['scan_id'] == scan_id), None)
+        # Get complete scan data with findings from database
+        scan_data = scan_history_db.get_scan_with_findings(scan_id)
         
         if not scan_data:
             raise HTTPException(status_code=404, detail="Scan not found")

@@ -350,6 +350,57 @@ class ScanHistoryDB:
         
         return [dict(row) for row in cursor.fetchall()]
     
+    def get_scan_with_findings(self, scan_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get complete scan data with all findings.
+        
+        Args:
+            scan_id: Scan ID to retrieve
+            
+        Returns:
+            Complete scan data with findings array
+        """
+        cursor = self.conn.cursor()
+        
+        # Get scan metadata
+        cursor.execute("SELECT * FROM scans WHERE scan_id = ?", (scan_id,))
+        scan_row = cursor.fetchone()
+        
+        if not scan_row:
+            return None
+        
+        scan_data = dict(scan_row)
+        
+        # Get all findings for this scan
+        cursor.execute("""
+            SELECT * FROM findings 
+            WHERE scan_id = ?
+            ORDER BY priority ASC, risk_score DESC
+        """, (scan_id,))
+        
+        findings = [dict(row) for row in cursor.fetchall()]
+        
+        # Add findings to scan data
+        scan_data['findings'] = findings
+        
+        # Build summary from findings
+        scan_data['summary'] = {
+            'critical': scan_data.get('critical_count', 0),
+            'high': scan_data.get('high_count', 0),
+            'medium': scan_data.get('medium_count', 0),
+            'low': scan_data.get('low_count', 0),
+            'info': scan_data.get('info_count', 0)
+        }
+        
+        # Add top risks (top 10 by risk score)
+        scan_data['top_risks'] = sorted(
+            findings, 
+            key=lambda x: x.get('risk_score', 0), 
+            reverse=True
+        )[:10]
+        
+        return scan_data
+    
     def mark_finding_fixed(self, finding_hash: str):
         """Mark a finding as fixed."""
         cursor = self.conn.cursor()
