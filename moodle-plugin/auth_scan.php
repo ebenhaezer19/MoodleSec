@@ -23,15 +23,21 @@ $scan_type = optional_param('scan_type', '', PARAM_ALPHA);
 
 if ($action === 'start_scan' && confirm_sesskey()) {
     if ($scan_type === 'auth') {
+        \core\notification::info('Starting Authentication Security Scan... This may take 30-60 seconds.');
         $result = local_security_dashboard_start_auth_scan();
     } else if ($scan_type === 'api') {
+        \core\notification::info('Starting API Security Scan... This may take 30-60 seconds.');
         $result = local_security_dashboard_start_api_scan();
     }
     
     if (isset($result['error'])) {
-        \core\notification::error($result['error']);
+        \core\notification::error('Scan failed: ' . $result['error']);
+    } else if (isset($result['scan_id'])) {
+        \core\notification::success('✅ Scan completed! Scan ID: ' . $result['scan_id'] . ' - Found ' . ($result['total_findings'] ?? 0) . ' findings.');
+        // Redirect to refresh and show results
+        redirect($PAGE->url);
     } else {
-        \core\notification::success('Scan started successfully! Scan ID: ' . $result['scan_id']);
+        \core\notification::warning('Scan may have started but response was unexpected.');
     }
 }
 
@@ -295,6 +301,21 @@ echo $OUTPUT->header();
         </p>
     </div>
 </div>
+
+<script>
+// Add loading state to scan buttons
+document.querySelectorAll('form').forEach(form => {
+    form.addEventListener('submit', function(e) {
+        const button = this.querySelector('button[type="submit"]');
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '⏳ Scanning... Please wait (30-60s)';
+            button.style.opacity = '0.7';
+            button.style.cursor = 'not-allowed';
+        }
+    });
+});
+</script>
 
 <?php
 echo $OUTPUT->footer();
