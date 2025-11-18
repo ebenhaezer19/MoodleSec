@@ -229,11 +229,15 @@ async def proxy_request(request: Request, path: str) -> Response:
         }
         append_log(LOG_DIR, {**request_log, **response_log, "type": "proxy_transaction"})
         
-        # Return response
+        # Return response (remove Content-Length to avoid conflicts)
+        response_headers = dict(response.headers)
+        response_headers.pop("content-length", None)
+        response_headers.pop("transfer-encoding", None)
+        
         return Response(
             content=response.content,
             status_code=response.status_code,
-            headers=dict(response.headers),
+            headers=response_headers,
             media_type=response.headers.get("content-type")
         )
         
