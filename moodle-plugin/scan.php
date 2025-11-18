@@ -20,6 +20,9 @@ $PAGE->set_title(get_string('trigger_scan', 'local_security_dashboard'));
 $PAGE->set_heading(get_string('trigger_scan', 'local_security_dashboard'));
 $PAGE->set_pagelayout('admin');
 
+// Add custom CSS for severity badges
+$PAGE->requires->css('/local/security_dashboard/styles.css');
+
 // Handle form submission
 $scan_triggered = false;
 $scan_result = null;
@@ -109,10 +112,21 @@ if ($scan_triggered) {
             foreach ($scan_result['findings'] as $finding) {
                 $row = [];
                 
-                // Severity with color
+                // Severity with color badge
                 $severity = $finding['severity'] ?? 'N/A';
-                $severity_class = strtolower($severity);
-                $row[] = html_writer::span($severity, 'badge badge-' . $severity_class);
+                $severity_lower = strtolower($severity);
+                
+                // Map severity to Bootstrap badge classes
+                $badge_map = [
+                    'critical' => 'danger',
+                    'high' => 'warning',
+                    'medium' => 'info',
+                    'low' => 'secondary',
+                    'info' => 'light'
+                ];
+                
+                $badge_class = $badge_map[$severity_lower] ?? 'secondary';
+                $row[] = html_writer::span(ucfirst($severity), 'badge badge-' . $badge_class . ' severity-badge');
                 
                 $row[] = $finding['category'] ?? 'N/A';
                 $row[] = $finding['description'] ?? 'N/A';
