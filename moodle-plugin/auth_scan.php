@@ -190,14 +190,9 @@ echo $OUTPUT->header();
                 </ul>
             </div>
 
-            <form method="post" action="<?php echo $PAGE->url->out(false); ?>" id="auth-scan-form">
-                <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
-                <input type="hidden" name="action" value="start_scan">
-                <input type="hidden" name="scan_type" value="auth">
-                <button type="submit" class="scan-button" id="auth-scan-btn">
-                    🚀 Start Authentication Scan
-                </button>
-            </form>
+            <button type="button" class="scan-button" id="auth-scan-btn" onclick="startAuthScan()">
+                🚀 Start Authentication Scan
+            </button>
         </div>
 
         <!-- API Scan Card -->
@@ -224,14 +219,9 @@ echo $OUTPUT->header();
                 </ul>
             </div>
 
-            <form method="post" action="<?php echo $PAGE->url->out(false); ?>" id="api-scan-form">
-                <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
-                <input type="hidden" name="action" value="start_scan">
-                <input type="hidden" name="scan_type" value="api">
-                <button type="submit" class="scan-button secondary" id="api-scan-btn">
-                    🚀 Start API Scan
-                </button>
-            </form>
+            <button type="button" class="scan-button secondary" id="api-scan-btn" onclick="startApiScan()">
+                🚀 Start API Scan
+            </button>
         </div>
     </div>
 
@@ -316,33 +306,90 @@ echo $OUTPUT->header();
 </div>
 
 <script>
-// Debug: Log when script loads
 console.log('[Auth Scan] JavaScript loaded');
 
-// Add loading state to scan buttons
-document.querySelectorAll('form').forEach((form, index) => {
-    console.log('[Auth Scan] Found form:', form.id || 'unnamed-' + index);
+// Direct API call functions
+async function startAuthScan() {
+    console.log('[Auth Scan] Starting authentication scan...');
+    const button = document.getElementById('auth-scan-btn');
     
-    form.addEventListener('submit', function(e) {
-        console.log('[Auth Scan] Form submitting:', this.id);
-        console.log('[Auth Scan] Form action:', this.action);
-        console.log('[Auth Scan] Form method:', this.method);
+    // Disable button and show loading
+    button.disabled = true;
+    button.innerHTML = '⏳ Scanning... Please wait (30-60s)';
+    button.style.opacity = '0.7';
+    
+    try {
+        // Call proxy directly
+        const response = await fetch('<?php echo get_config("local_security_dashboard", "proxy_url"); ?>/scan-auth', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
         
-        const button = this.querySelector('button[type="submit"]');
-        if (button) {
-            console.log('[Auth Scan] Disabling button:', button.id);
-            button.disabled = true;
-            button.innerHTML = '⏳ Scanning... Please wait (30-60s)';
-            button.style.opacity = '0.7';
-            button.style.cursor = 'not-allowed';
+        if (response.ok) {
+            const result = await response.json();
+            console.log('[Auth Scan] Success:', result);
+            alert('✅ Scan completed! Found ' + result.total_findings + ' findings. Scan ID: ' + result.scan_id);
+            // Reload page to show results
+            window.location.reload();
+        } else {
+            console.error('[Auth Scan] Error:', response.status);
+            alert('❌ Scan failed: ' + response.statusText);
+            button.disabled = false;
+            button.innerHTML = '🚀 Start Authentication Scan';
+            button.style.opacity = '1';
         }
-        
-        // Don't prevent default - let form submit normally
-        console.log('[Auth Scan] Form will submit to:', this.action);
-    });
-});
+    } catch (error) {
+        console.error('[Auth Scan] Exception:', error);
+        alert('❌ Scan failed: ' + error.message);
+        button.disabled = false;
+        button.innerHTML = '🚀 Start Authentication Scan';
+        button.style.opacity = '1';
+    }
+}
 
-console.log('[Auth Scan] Event listeners attached');
+async function startApiScan() {
+    console.log('[API Scan] Starting API scan...');
+    const button = document.getElementById('api-scan-btn');
+    
+    // Disable button and show loading
+    button.disabled = true;
+    button.innerHTML = '⏳ Scanning... Please wait (30-60s)';
+    button.style.opacity = '0.7';
+    
+    try {
+        // Call proxy directly
+        const response = await fetch('<?php echo get_config("local_security_dashboard", "proxy_url"); ?>/scan-api', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            console.log('[API Scan] Success:', result);
+            alert('✅ Scan completed! Found ' + result.total_findings + ' findings. Scan ID: ' + result.scan_id);
+            // Reload page to show results
+            window.location.reload();
+        } else {
+            console.error('[API Scan] Error:', response.status);
+            alert('❌ Scan failed: ' + response.statusText);
+            button.disabled = false;
+            button.innerHTML = '🚀 Start API Scan';
+            button.style.opacity = '1';
+        }
+    } catch (error) {
+        console.error('[API Scan] Exception:', error);
+        alert('❌ Scan failed: ' + error.message);
+        button.disabled = false;
+        button.innerHTML = '🚀 Start API Scan';
+        button.style.opacity = '1';
+    }
+}
+
+console.log('[Auth Scan] Functions ready');
 </script>
 
 <?php
