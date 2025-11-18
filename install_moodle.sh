@@ -104,7 +104,7 @@ echo -e "${GREEN}✅ Permissions set${NC}\n"
 # Step 9: Configure Apache
 echo -e "${YELLOW}Step 9: Configuring Apache...${NC}"
 sudo tee /etc/apache2/sites-available/moodle.conf > /dev/null <<EOF
-<VirtualHost *:80>
+<VirtualHost *:8998>
     ServerAdmin admin@localhost
     DocumentRoot $MOODLE_DIR
     ServerName localhost
