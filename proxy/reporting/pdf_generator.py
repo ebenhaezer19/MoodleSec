@@ -138,6 +138,86 @@ class PDFReportGenerator:
             
             elements.append(risk_table)
         
+        # Detailed Findings with PoC
+        elements.append(Spacer(1, 0.3*inch))
+        elements.append(Paragraph("Detailed Findings", styles['Heading2']))
+        elements.append(Spacer(1, 0.2*inch))
+        
+        findings = scan_data.get('findings', [])
+        for i, finding in enumerate(findings[:10], 1):  # Limit to top 10 for executive summary
+            elements.append(Paragraph(f"Finding #{i}: {finding.get('category', 'Unknown')}", styles['Heading3']))
+            elements.append(Spacer(1, 0.1*inch))
+            
+            # Basic finding info
+            finding_details = [
+                ['Severity:', finding.get('severity', 'N/A')],
+                ['Description:', finding.get('description', 'N/A')],
+                ['Evidence:', str(finding.get('evidence', 'N/A'))[:200] + '...'],
+            ]
+            if 'recommendation' in finding:
+                finding_details.append(['Recommendation:', finding.get('recommendation', 'N/A')])
+            
+            detail_table = Table(finding_details, colWidths=[1.5*inch, 4.5*inch])
+            detail_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP')
+            ]))
+            elements.append(detail_table)
+            elements.append(Spacer(1, 0.15*inch))
+            
+            # Add PoC if available
+            if 'poc' in finding:
+                poc_data = finding['poc']
+                elements.append(Paragraph("<b>Proof of Concept (PoC)</b>", styles['Heading4']))
+                elements.append(Spacer(1, 0.1*inch))
+                
+                # Request
+                if poc_data.get('request'):
+                    req = poc_data['request']
+                    elements.append(Paragraph("<b>Request:</b>", styles['Normal']))
+                    req_info = [
+                        ['Method:', req.get('method', 'N/A')],
+                        ['URL:', req.get('url', 'N/A')],
+                    ]
+                    req_table = Table(req_info, colWidths=[1*inch, 5*inch])
+                    req_table.setStyle(TableStyle([
+                        ('FONTSIZE', (0, 0), (-1, -1), 8),
+                        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                        ('FONTNAME', (1, 0), (1, -1), 'Courier')
+                    ]))
+                    elements.append(req_table)
+                    elements.append(Spacer(1, 0.1*inch))
+                
+                # Response
+                if poc_data.get('response'):
+                    resp = poc_data['response']
+                    elements.append(Paragraph("<b>Response:</b>", styles['Normal']))
+                    resp_info = [['Status:', str(resp.get('status_code', 'N/A'))]]
+                    resp_table = Table(resp_info, colWidths=[1*inch, 5*inch])
+                    resp_table.setStyle(TableStyle([
+                        ('FONTSIZE', (0, 0), (-1, -1), 8),
+                        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+                    ]))
+                    elements.append(resp_table)
+                    elements.append(Spacer(1, 0.1*inch))
+                
+                # Steps
+                if poc_data.get('steps'):
+                    elements.append(Paragraph("<b>Reproduction Steps:</b>", styles['Normal']))
+                    for step_num, step in enumerate(poc_data['steps'], 1):
+                        elements.append(Paragraph(f"{step_num}. {step}", styles['Normal']))
+                    elements.append(Spacer(1, 0.1*inch))
+                
+                # Fix code
+                if poc_data.get('fix_code'):
+                    elements.append(Paragraph("<b>Fix:</b>", styles['Normal']))
+                    elements.append(Paragraph(f"<font name='Courier' size='7'>{poc_data['fix_code'][:300]}</font>", styles['Normal']))
+            
+            elements.append(Spacer(1, 0.2*inch))
+        
         # Recommendations
         elements.append(Spacer(1, 0.3*inch))
         elements.append(Paragraph("Recommendations", styles['Heading2']))
