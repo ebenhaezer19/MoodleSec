@@ -136,6 +136,12 @@ class ScanHistoryDB:
         """Save individual finding to database."""
         cursor = self.conn.cursor()
         
+        # Debug: Check if PoC exists in finding
+        if 'poc' in finding:
+            print(f"[DB] Saving finding WITH PoC: {finding.get('category')}")
+        else:
+            print(f"[DB] Saving finding WITHOUT PoC: {finding.get('category')}")
+        
         # Generate finding hash for deduplication
         finding_hash = self._generate_finding_hash(finding)
         
@@ -159,8 +165,12 @@ class ScanHistoryDB:
             metadata = finding.get('metadata', {})
             if 'poc' in finding:
                 metadata['poc'] = finding['poc']
+                print(f"[DB] Added PoC to metadata for {finding.get('category')}")
             if 'recommendation' in finding:
                 metadata['recommendation'] = finding['recommendation']
+            
+            print(f"[DB] Final metadata keys: {list(metadata.keys())}")
+            print(f"[DB] Metadata JSON length: {len(json.dumps(metadata))}")
             
             cursor.execute("""
                 INSERT INTO findings (
