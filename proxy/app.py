@@ -872,6 +872,13 @@ async def scan_authentication() -> Dict[str, Any]:
         results['all_findings'] = all_findings
         results['summary'] = _generate_finding_summary(all_findings)
         
+        # Debug: Check if PoC exists in findings
+        for finding in all_findings:
+            if 'poc' in finding:
+                print(f"[Auth Scan] Finding has PoC: {finding.get('category')} - PoC keys: {list(finding['poc'].keys())}")
+            else:
+                print(f"[Auth Scan] Finding WITHOUT PoC: {finding.get('category')}")
+        
         # Save to database
         scan_data = {
             'scan_id': scan_id,
@@ -882,7 +889,9 @@ async def scan_authentication() -> Dict[str, Any]:
             'summary': results['summary'],
             'findings': all_findings
         }
+        print(f"[Auth Scan] Saving {len(all_findings)} findings to database...")
         scan_history_db.save_scan(scan_data)
+        print(f"[Auth Scan] Database save complete")
         
         print(f"[Auth Scan] Complete! Found {len(all_findings)} issues")
         
