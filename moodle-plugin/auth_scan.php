@@ -25,19 +25,28 @@ if ($action === 'start_scan' && confirm_sesskey()) {
     if ($scan_type === 'auth') {
         \core\notification::info('Starting Authentication Security Scan... This may take 30-60 seconds.');
         $result = local_security_dashboard_start_auth_scan();
+        
+        // Debug: Log the result
+        error_log('Auth scan result: ' . print_r($result, true));
+        
     } else if ($scan_type === 'api') {
         \core\notification::info('Starting API Security Scan... This may take 30-60 seconds.');
         $result = local_security_dashboard_start_api_scan();
+        
+        // Debug: Log the result
+        error_log('API scan result: ' . print_r($result, true));
     }
     
     if (isset($result['error'])) {
         \core\notification::error('Scan failed: ' . $result['error']);
+        error_log('Scan error: ' . $result['error']);
     } else if (isset($result['scan_id'])) {
         \core\notification::success('✅ Scan completed! Scan ID: ' . $result['scan_id'] . ' - Found ' . ($result['total_findings'] ?? 0) . ' findings.');
         // Redirect to refresh and show results
         redirect($PAGE->url);
     } else {
-        \core\notification::warning('Scan may have started but response was unexpected.');
+        \core\notification::warning('Scan may have started but response was unexpected. Result: ' . json_encode($result));
+        error_log('Unexpected scan result: ' . print_r($result, true));
     }
 }
 
