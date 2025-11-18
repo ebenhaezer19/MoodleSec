@@ -15,12 +15,15 @@ from utils.logger import append_log, read_logs, ensure_log_directory
 from scanners.scanner_engine import ScannerEngine
 from crawler.web_crawler import WebCrawler
 from risk.risk_scorer import RiskScorer
+from database.scan_history import ScanHistoryDB
+from reporting.pdf_generator import PDFReportGenerator
+from integrations.integration_manager import IntegrationManager
 
 
 app = FastAPI(
     title="Moodle Proxy Service",
     description="Reverse proxy for Moodle with request/response logging and DAST scanning",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 # Initialize log directory on startup
@@ -31,6 +34,15 @@ scanner_engine = ScannerEngine()
 
 # Initialize risk scorer
 risk_scorer = RiskScorer()
+
+# Initialize scan history database
+scan_history_db = ScanHistoryDB()
+
+# Initialize PDF generator
+pdf_generator = PDFReportGenerator()
+
+# Initialize integration manager
+integration_manager = IntegrationManager()
 
 
 class ScanRequest(BaseModel):
@@ -299,6 +311,20 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
         }
         append_log(LOG_DIR, scan_log)
         
+        # Save to database for historical tracking
+        scan_data_for_db = {
+            'scan_id': scan_id,
+            'scan_type': 'full',
+            'target_url': MOODLE_URL,
+            'timestamp': timestamp,
+            'endpoints_discovered': len(targets),
+            'endpoints_scanned': scanned_count,
+            'total_findings': len(all_findings),
+            'summary': summary,
+            'findings': all_findings
+        }
+        scan_history_db.save_scan(scan_data_for_db)
+        
         return {
             'scan_id': scan_id,
             'timestamp': timestamp,
@@ -341,6 +367,180 @@ async def calculate_risk(
     
     risk_info = risk_scorer.calculate_risk_score(finding)
     return risk_info
+
+
+@app.get("/trends")
+async def get_trends(days: int = 30) -> Dict[str, Any]:
+    """
+    Get vulnerability trend data.
+    
+    Args:
+        days: Number of days to analyze
+        
+    Returns:
+        Trend data
+    """
+    try:
+        trends = scan_history_db.get_trend_data(days)
+        return trends
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get trends: {str(e)}")
+
+
+@app.get("/regressions")
+async def detect_regressions(lookback_scans: int = 5) -> Dict[str, Any]:
+    """
+    Detect new vulnerabilities (regressions).
+    
+    Args:
+        lookback_scans: Number of recent scans to compare
+        
+    Returns:
+        List of new findings
+    """
+    try:
+        regressions = scan_history_db.detect_regressions(lookback_scans)
+        return {
+            'regressions_count': len(regressions),
+            'regressions': regressions
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to detect regressions: {str(e)}")
+
+
+@app.get("/fix-rate")
+async def get_fix_rate(days: int = 30) -> Dict[str, Any]:
+    """
+    Get vulnerability fix rate statistics.
+    
+    Args:
+        days: Period to analyze
+        
+    Returns:
+        Fix rate statistics
+    """
+    try:
+        fix_rate = scan_history_db.get_fix_rate(days)
+        return fix_rate
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get fix rate: {str(e)}")
+
+
+@app.get("/reports/executive-summary")
+async def generate_executive_summary(scan_id: str) -> Response:
+    """
+    Generate executive summary PDF report.
+    
+    Args:
+        scan_id: Scan ID to generate report for
+        
+    Returns:
+        PDF file
+    """
+    try:
+        # Get scan data from history
+        scans = scan_history_db.get_scan_history(limit=100)
+        scan_data = next((s for s in scans if s['scan_id'] == scan_id), None)
+        
+        if not scan_data:
+            raise HTTPException(status_code=404, detail="Scan not found")
+        
+        # Generate PDF
+        pdf_bytes = pdf_generator.generate_executive_summary(scan_data)
+        
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=executive_summary_{scan_id}.pdf"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
+
+
+@app.get("/reports/compliance")
+async def generate_compliance_report(scan_id: str, framework: str = "OWASP") -> Response:
+    """
+    Generate compliance report PDF.
+    
+    Args:
+        scan_id: Scan ID
+        framework: Compliance framework (OWASP, PCI-DSS)
+        
+    Returns:
+        PDF file
+    """
+    try:
+        scans = scan_history_db.get_scan_history(limit=100)
+        scan_data = next((s for s in scans if s['scan_id'] == scan_id), None)
+        
+        if not scan_data:
+            raise HTTPException(status_code=404, detail="Scan not found")
+        
+        pdf_bytes = pdf_generator.generate_compliance_report(scan_data, framework)
+        
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=compliance_{framework}_{scan_id}.pdf"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate compliance report: {str(e)}")
+
+
+@app.post("/integrations/webhook")
+async def send_webhook_notification(
+    webhook_type: str,
+    message: Dict[str, Any],
+    config: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Send webhook notification.
+    
+    Args:
+        webhook_type: Type of webhook (slack, teams, discord, custom)
+        message: Message data
+        config: Webhook configuration
+        
+    Returns:
+        Success status
+    """
+    try:
+        success = await integration_manager.send_webhook(webhook_type, message, config)
+        return {'success': success}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Webhook failed: {str(e)}")
+
+
+@app.post("/integrations/ticket")
+async def create_ticket(
+    ticketing_type: str,
+    ticket_data: Dict[str, Any],
+    config: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Create ticket in ticketing system.
+    
+    Args:
+        ticketing_type: Type of ticketing system (jira, servicenow, github)
+        ticket_data: Ticket information
+        config: Ticketing system configuration
+        
+    Returns:
+        Ticket ID
+    """
+    try:
+        ticket_id = await integration_manager.create_ticket(ticketing_type, ticket_data, config)
+        
+        if ticket_id:
+            return {'success': True, 'ticket_id': ticket_id}
+        else:
+            return {'success': False, 'error': 'Failed to create ticket'}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ticket creation failed: {str(e)}")
 
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
