@@ -155,6 +155,13 @@ class ScanHistoryDB:
             """, (datetime.utcnow().isoformat(), scan_id, finding_hash))
         else:
             # Insert new finding
+            # Prepare metadata - include PoC if present
+            metadata = finding.get('metadata', {})
+            if 'poc' in finding:
+                metadata['poc'] = finding['poc']
+            if 'recommendation' in finding:
+                metadata['recommendation'] = finding['recommendation']
+            
             cursor.execute("""
                 INSERT INTO findings (
                     scan_id, finding_hash, severity, category, description,
@@ -174,7 +181,7 @@ class ScanHistoryDB:
                 finding.get('priority', 5),
                 datetime.utcnow().isoformat(),
                 datetime.utcnow().isoformat(),
-                json.dumps(finding.get('metadata', {}))
+                json.dumps(metadata)
             ))
     
     def _generate_finding_hash(self, finding: Dict[str, Any]) -> str:
@@ -379,6 +386,18 @@ class ScanHistoryDB:
         """, (scan_id,))
         
         findings = [dict(row) for row in cursor.fetchall()]
+        
+        # Parse metadata for each finding to extract PoC and recommendation
+        for finding in findings:
+            if finding.get('metadata'):
+                try:
+                    metadata = json.loads(finding['metadata'])
+                    if 'poc' in metadata:
+                        finding['poc'] = metadata['poc']
+                    if 'recommendation' in metadata:
+                        finding['recommendation'] = metadata['recommendation']
+                except json.JSONDecodeError:
+                    pass  # Keep original metadata if not valid JSON
         
         # Add findings to scan data
         scan_data['findings'] = findings
