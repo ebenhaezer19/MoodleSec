@@ -228,6 +228,44 @@ async def crawl_site(max_depth: int = 3, max_pages: int = 50) -> Dict[str, Any]:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Crawl failed: {str(e)}")
 
+@app.post("/scan-complete")
+async def complete_security_scan(target_url: str) -> Dict[str, Any]:
+    """
+    Complete security scan: DAST + Auth + API
+    """
+    # Existing DAST scan
+    dast_results = await full_site_scan()
+    
+    # P3: Authentication & API scan
+    from auth.session_tester import SessionTester
+    from auth.rbac_tester import RBACTester
+    from auth.oauth_tester import OAuthTester
+    from api.rest_scanner import RESTScanner
+    
+    session = SessionTester(target_url)
+    rbac = RBACTester(target_url)
+    oauth = OAuthTester(target_url)
+    api_scanner = RESTScanner(target_url)
+    
+    auth_results = {
+        'session': await session.test_all(),
+        'rbac': await rbac.test_all(),
+        'oauth': await oauth.test_all(),
+        'api': await api_scanner.scan_all()
+    }
+    
+    await session.close()
+    await rbac.close()
+    await oauth.close()
+    await api_scanner.close()
+    
+    return {
+        'dast': dast_results,
+        'authentication': auth_results,
+        'total_findings': dast_results['total_findings'] + sum(
+            r['total_findings'] for r in auth_results.values()
+        )
+    }
 
 @app.post("/scan-full")
 async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, Any]:
