@@ -3,11 +3,13 @@
  * Library functions for Security Dashboard
  *
  * @package    local_security_dashboard
- * @copyright  2024 Your Name
+ * @copyright  2024 Krisopras & Nathanael
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 defined('MOODLE_INTERNAL') || die();
+
+require_once($CFG->libdir . '/filelib.php');
 
 /**
  * Add navigation nodes
