@@ -3,12 +3,13 @@
  * Trigger security scan page
  *
  * @package    local_security_dashboard
- * @copyright  2024 Your Name
+ * @copyright  2024 Krisopras & Nathanael
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 require_once(__DIR__ . '/../../config.php');
 require_once($CFG->libdir . '/adminlib.php');
+require_once(__DIR__ . '/lib.php');
 
 require_login();
 require_capability('local/security_dashboard:scan', context_system::instance());
