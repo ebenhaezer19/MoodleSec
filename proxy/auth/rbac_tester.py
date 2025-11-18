@@ -81,7 +81,7 @@ class RBACTester:
         
         # Test 4: Function-Level Access Control
         print("[RBAC Tester] Testing function-level access control...")
-        results['tests']['function_access'] = await self.test_function_level_access()
+        results['tests']['function_access'] = await self.test_function_level_access_control()
         
         # Test 5: Role Enumeration
         print("[RBAC Tester] Testing role enumeration...")

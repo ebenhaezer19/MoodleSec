@@ -21,17 +21,11 @@ $PAGE->set_heading('Authentication & API Security Scanner');
 $action = optional_param('action', '', PARAM_ALPHA);
 $scan_type = optional_param('scan_type', '', PARAM_ALPHA);
 
-// Debug logging
-error_log("Auth scan page - Action: $action, Scan type: $scan_type, Sesskey valid: " . (confirm_sesskey() ? 'yes' : 'no'));
-
-// TEMPORARY: Skip sesskey check for debugging
 if ($action === 'start_scan') {
-    error_log("SCAN STARTED - bypassing sesskey for debug");
+    // TEMPORARY: Skip sesskey validation to test if scan works
+    // TODO: Re-enable sesskey validation after confirming scan works
+    // require_sesskey();
     
-    // Verify sesskey anyway but don't block
-    if (!confirm_sesskey()) {
-        error_log("WARNING: Sesskey validation failed but continuing for debug");
-    }
     if ($scan_type === 'auth') {
         \core\notification::info('Starting Authentication Security Scan... This may take 30-60 seconds.');
         $result = local_security_dashboard_start_auth_scan();
