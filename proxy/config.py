@@ -13,3 +13,7 @@ LOG_DIR: str = "logs"
 
 # Maximum number of log entries to return
 MAX_LOG_ENTRIES: int = 100
+
+# Slack Integration (Optional - for notifications)
+SLACK_WEBHOOK_URL: str = ""  # Add your Slack webhook URL here
+SLACK_ENABLED: bool = False  # Set to True to enable Slack notifications

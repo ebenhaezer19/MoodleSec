@@ -10,8 +10,9 @@ import httpx
 from fastapi import FastAPI, Request, Response, HTTPException
 from pydantic import BaseModel, Field
 
-from config import MOODLE_URL, LISTEN_PORT, LOG_DIR, MAX_LOG_ENTRIES
+from config import MOODLE_URL, LISTEN_PORT, LOG_DIR, MAX_LOG_ENTRIES, SLACK_WEBHOOK_URL, SLACK_ENABLED
 from utils.logger import append_log, read_logs, ensure_log_directory
+from utils.slack_notifier import SlackNotifier
 from scanners.scanner_engine import ScannerEngine
 from crawler.web_crawler import WebCrawler
 from risk.risk_scorer import RiskScorer
@@ -47,6 +48,11 @@ pdf_generator = PDFReportGenerator()
 
 # Initialize integration manager
 integration_manager = IntegrationManager()
+
+# Initialize Slack notifier (if enabled)
+slack_notifier = None
+if SLACK_ENABLED and SLACK_WEBHOOK_URL:
+    slack_notifier = SlackNotifier(SLACK_WEBHOOK_URL)
 
 
 class ScanRequest(BaseModel):
@@ -329,9 +335,11 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
         }
         scan_history_db.save_scan(scan_data_for_db)
         
-        return {
+        # Prepare result
+        result = {
             'scan_id': scan_id,
             'timestamp': timestamp,
+            'target_url': MOODLE_URL,
             'crawl_statistics': crawl_results['statistics'],
             'endpoints_discovered': len(targets),
             'endpoints_scanned': scanned_count,
@@ -340,6 +348,20 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
             'findings': all_findings[:100],  # Return top 100 findings
             'top_risks': all_findings[:10]  # Top 10 highest risk findings
         }
+        
+        # Send Slack notification if enabled
+        if slack_notifier:
+            try:
+                await slack_notifier.send_scan_complete(result)
+                
+                # Send critical alerts for critical findings
+                critical_findings = [f for f in all_findings if f.get('severity', '').lower() == 'critical']
+                for finding in critical_findings[:3]:  # Alert for top 3 critical
+                    await slack_notifier.send_critical_alert(finding, scan_id)
+            except Exception as e:
+                print(f"[Slack] Notification failed: {str(e)}")
+        
+        return result
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Full scan failed: {str(e)}")
