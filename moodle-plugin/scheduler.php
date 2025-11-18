@@ -3,7 +3,7 @@
  * Scan Scheduler Management page
  *
  * @package    local_security_dashboard
- * @copyright  2024 Krisopras & Nathanael
+ * @copyright  2025 Krisopras & Nathanael
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -36,6 +36,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
         $scan_type = optional_param('scan_type', 'full', PARAM_TEXT);
         
         $schedule_result = local_security_dashboard_create_schedule($target_url, $frequency, $scan_type);
+        $schedule_created = true;
+    } elseif ($action === 'delete') {
+        $schedule_id = required_param('schedule_id', PARAM_TEXT);
+        $schedule_result = local_security_dashboard_delete_schedule($schedule_id);
         $schedule_created = true;
     }
 }
@@ -186,16 +190,22 @@ echo $OUTPUT->header();
                                 <td><?php echo htmlspecialchars($schedule['scan_type'] ?? 'N/A'); ?></td>
                                 <td><?php echo htmlspecialchars($schedule['next_run'] ?? 'N/A'); ?></td>
                                 <td>
-                                    <?php if ($schedule['enabled'] ?? false): ?>
+                                    <?php if (($schedule['enabled'] ?? 0) == 1): ?>
                                         <span class="badge badge-success">Active</span>
                                     <?php else: ?>
                                         <span class="badge badge-secondary">Disabled</span>
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <button class="btn btn-sm btn-danger" disabled>
-                                        <i class="fa fa-trash"></i> Delete
-                                    </button>
+                                    <form method="post" action="" style="display: inline;">
+                                        <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="schedule_id" value="<?php echo htmlspecialchars($schedule['schedule_id']); ?>">
+                                        <button type="submit" class="btn btn-sm btn-danger" 
+                                                onclick="return confirm('Are you sure you want to delete this schedule?');">
+                                            <i class="fa fa-trash"></i> Delete
+                                        </button>
+                                    </form>
                                 </td>
                             </tr>
                         <?php endforeach; ?>

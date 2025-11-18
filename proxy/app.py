@@ -16,6 +16,7 @@ from scanners.scanner_engine import ScannerEngine
 from crawler.web_crawler import WebCrawler
 from risk.risk_scorer import RiskScorer
 from database.scan_history import ScanHistoryDB
+from database.scheduler_db import SchedulerDB
 from reporting.pdf_generator import PDFReportGenerator
 from integrations.integration_manager import IntegrationManager
 
@@ -37,6 +38,9 @@ risk_scorer = RiskScorer()
 
 # Initialize scan history database
 scan_history_db = ScanHistoryDB()
+
+# Initialize scheduler database
+scheduler_db = SchedulerDB()
 
 # Initialize PDF generator
 pdf_generator = PDFReportGenerator()
@@ -563,51 +567,35 @@ async def create_schedule(schedule_req: ScheduleRequest) -> Dict[str, Any]:
         Schedule details
     """
     try:
-        from scheduler.scan_scheduler import ScanScheduler, ScanPriority
-        from datetime import datetime, timedelta
-        
-        # Map priority string to enum
-        priority_map = {
-            'low': ScanPriority.LOW,
-            'normal': ScanPriority.NORMAL,
-            'high': ScanPriority.HIGH,
-            'critical': ScanPriority.CRITICAL
-        }
-        
-        priority_enum = priority_map.get(schedule_req.priority.lower(), ScanPriority.NORMAL)
-        
-        # Calculate next run time
-        now = datetime.utcnow()
-        if schedule_req.cron_expression == "hourly":
-            next_run = now + timedelta(hours=1)
-        elif schedule_req.cron_expression == "daily":
-            next_run = now + timedelta(days=1)
-        elif schedule_req.cron_expression == "weekly":
-            next_run = now + timedelta(weeks=1)
-        elif schedule_req.cron_expression == "monthly":
-            next_run = now + timedelta(days=30)
-        else:
-            next_run = now + timedelta(days=1)
+        import uuid
+        from datetime import datetime
         
         # Create schedule ID
-        import uuid
         schedule_id = str(uuid.uuid4())
         
-        # For now, just return the schedule info
-        # In production, this would be saved to database
+        # Calculate next run time
+        next_run = scheduler_db.calculate_next_run(schedule_req.cron_expression)
+        
+        # Create schedule data
         schedule_info = {
             'schedule_id': schedule_id,
             'target_url': schedule_req.target_url,
             'cron_expression': schedule_req.cron_expression,
             'scan_type': schedule_req.scan_type,
             'priority': schedule_req.priority,
-            'enabled': True,
-            'next_run': next_run.isoformat() + 'Z',
-            'created_at': now.isoformat() + 'Z'
+            'next_run': next_run
         }
         
-        return schedule_info
+        # Save to database
+        result = scheduler_db.create_schedule(schedule_info)
+        
+        if 'error' in result:
+            raise HTTPException(status_code=400, detail=result['error'])
+        
+        return result
     
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create schedule: {str(e)}")
 
@@ -621,12 +609,56 @@ async def list_schedules() -> List[Dict[str, Any]]:
         List of schedules
     """
     try:
-        # For now, return empty list
-        # In production, this would fetch from database
-        return []
+        schedules = scheduler_db.get_all_schedules()
+        return schedules
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list schedules: {str(e)}")
+
+
+@app.delete("/schedule/{schedule_id}")
+async def delete_schedule(schedule_id: str) -> Dict[str, Any]:
+    """
+    Delete a scheduled scan.
+    
+    Args:
+        schedule_id: Schedule ID to delete
+        
+    Returns:
+        Success status
+    """
+    try:
+        success = scheduler_db.delete_schedule(schedule_id)
+        
+        if success:
+            return {'success': True, 'message': 'Schedule deleted'}
+        else:
+            raise HTTPException(status_code=404, detail='Schedule not found')
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete schedule: {str(e)}")
+
+
+@app.get("/schedule/{schedule_id}/history")
+async def get_schedule_history(schedule_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+    """
+    Get execution history for a schedule.
+    
+    Args:
+        schedule_id: Schedule ID
+        limit: Maximum number of records
+        
+    Returns:
+        Execution history
+    """
+    try:
+        history = scheduler_db.get_execution_history(schedule_id, limit)
+        return history
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get history: {str(e)}")
 
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])

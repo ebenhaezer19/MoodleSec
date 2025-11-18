@@ -282,3 +282,38 @@ function local_security_dashboard_get_schedules() {
         return ['error' => $e->getMessage()];
     }
 }
+
+/**
+ * Delete a scheduled scan
+ *
+ * @param string $schedule_id Schedule ID to delete
+ * @return array Delete result
+ */
+function local_security_dashboard_delete_schedule($schedule_id) {
+    $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    
+    if (empty($proxy_url)) {
+        return ['error' => 'Proxy URL not configured'];
+    }
+    
+    $url = rtrim($proxy_url, '/') . '/schedule/' . urlencode($schedule_id);
+    
+    try {
+        $curl = new curl();
+        $response = $curl->delete($url);
+        
+        if ($curl->get_errno()) {
+            return ['error' => 'Connection error: ' . $curl->error];
+        }
+        
+        $result = json_decode($response, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return ['error' => 'Invalid response from proxy service'];
+        }
+        
+        return $result;
+    } catch (Exception $e) {
+        return ['error' => $e->getMessage()];
+    }
+}
