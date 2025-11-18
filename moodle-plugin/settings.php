@@ -31,4 +31,38 @@ if ($hassiteconfig) {
     ));
 
     $ADMIN->add('localplugins', $settings);
+    
+    // Add external pages
+    $ADMIN->add('localplugins', new admin_category('local_security_dashboard_cat', 
+        get_string('pluginname', 'local_security_dashboard')));
+    
+    $ADMIN->add('local_security_dashboard_cat', new admin_externalpage(
+        'local_security_dashboard_dashboard',
+        'Dashboard',
+        new moodle_url('/local/security_dashboard/index.php')
+    ));
+    
+    $ADMIN->add('local_security_dashboard_cat', new admin_externalpage(
+        'local_security_dashboard_auth',
+        'Auth & API Scan',
+        new moodle_url('/local/security_dashboard/auth_scan.php')
+    ));
+    
+    $ADMIN->add('local_security_dashboard_cat', new admin_externalpage(
+        'local_security_dashboard_reports',
+        'Reports',
+        new moodle_url('/local/security_dashboard/reports.php')
+    ));
+    
+    $ADMIN->add('local_security_dashboard_cat', new admin_externalpage(
+        'local_security_dashboard_scheduler',
+        'Scheduler',
+        new moodle_url('/local/security_dashboard/scheduler.php')
+    ));
+    
+    $ADMIN->add('local_security_dashboard_cat', new admin_externalpage(
+        'local_security_dashboard_trends',
+        'Trends',
+        new moodle_url('/local/security_dashboard/trends.php')
+    ));
 }

@@ -826,6 +826,200 @@ async def proxy_request(request: Request, path: str) -> Response:
         )
 
 
+@app.post("/scan-auth")
+async def scan_authentication() -> Dict[str, Any]:
+    """
+    Comprehensive authentication & authorization security scan.
+    
+    Tests:
+    - Session management
+    - RBAC (Role-Based Access Control)
+    - OAuth/SSO security
+    
+    Returns:
+        Complete authentication security assessment
+    """
+    from auth.session_tester import SessionTester
+    from auth.rbac_tester import RBACTester
+    from auth.oauth_tester import OAuthTester
+    
+    scan_id = f"auth_scan_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    timestamp = datetime.utcnow().isoformat() + "Z"
+    
+    print(f"[Auth Scan] Starting authentication security scan: {scan_id}")
+    
+    results = {
+        'scan_id': scan_id,
+        'scan_type': 'authentication',
+        'target_url': MOODLE_URL,
+        'timestamp': timestamp,
+        'tests': {}
+    }
+    
+    try:
+        # Test 1: Session Management
+        print("[Auth Scan] Testing session management...")
+        session_tester = SessionTester(MOODLE_URL)
+        results['tests']['session'] = await session_tester.test_all()
+        await session_tester.close()
+        
+        # Test 2: RBAC
+        print("[Auth Scan] Testing RBAC...")
+        rbac_tester = RBACTester(MOODLE_URL)
+        results['tests']['rbac'] = await rbac_tester.test_all()
+        await rbac_tester.close()
+        
+        # Test 3: OAuth/SSO
+        print("[Auth Scan] Testing OAuth/SSO...")
+        oauth_tester = OAuthTester(MOODLE_URL)
+        results['tests']['oauth'] = await oauth_tester.test_all()
+        await oauth_tester.close()
+        
+        # Compile all findings
+        all_findings = []
+        for test_name, test_results in results['tests'].items():
+            all_findings.extend(test_results.get('findings', []))
+        
+        results['total_findings'] = len(all_findings)
+        results['all_findings'] = all_findings
+        results['summary'] = _generate_finding_summary(all_findings)
+        
+        # Save to database
+        scan_data = {
+            'scan_id': scan_id,
+            'scan_type': 'authentication',
+            'target_url': MOODLE_URL,
+            'timestamp': timestamp,
+            'total_findings': len(all_findings),
+            'summary': results['summary'],
+            'findings': all_findings
+        }
+        scan_history_db.save_scan(scan_data)
+        
+        print(f"[Auth Scan] Complete! Found {len(all_findings)} issues")
+        
+        # Send Slack notification if enabled
+        if slack_notifier and len(all_findings) > 0:
+            try:
+                await slack_notifier.send_scan_complete({
+                    'scan_id': scan_id,
+                    'target_url': MOODLE_URL,
+                    'endpoints_scanned': 3,  # 3 test modules
+                    'total_findings': len(all_findings),
+                    'summary': results['summary']
+                })
+            except Exception as e:
+                print(f"[Slack] Notification failed: {str(e)}")
+        
+        return results
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Auth scan failed: {str(e)}")
+
+
+@app.post("/scan-api")
+async def scan_api() -> Dict[str, Any]:
+    """
+    Comprehensive REST API security scan.
+    
+    Tests:
+    - API endpoint discovery
+    - Authentication bypass
+    - Input validation
+    - Rate limiting
+    - Mass assignment
+    - Data exposure
+    
+    Returns:
+        Complete API security assessment
+    """
+    from api.rest_scanner import RESTScanner
+    from api.api_discovery import APIDiscovery
+    
+    scan_id = f"api_scan_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    timestamp = datetime.utcnow().isoformat() + "Z"
+    
+    print(f"[API Scan] Starting API security scan: {scan_id}")
+    
+    results = {
+        'scan_id': scan_id,
+        'scan_type': 'api',
+        'target_url': MOODLE_URL,
+        'timestamp': timestamp
+    }
+    
+    try:
+        # API Discovery
+        print("[API Scan] Discovering API endpoints...")
+        api_discovery = APIDiscovery(MOODLE_URL)
+        discovery_results = await api_discovery.discover_all()
+        await api_discovery.close()
+        
+        # API Security Scan
+        print("[API Scan] Running security tests...")
+        api_scanner = RESTScanner(MOODLE_URL)
+        scan_results = await api_scanner.scan_all()
+        await api_scanner.close()
+        
+        results['discovery'] = discovery_results
+        results['security_tests'] = scan_results
+        results['total_findings'] = scan_results['total_findings']
+        results['all_findings'] = scan_results['findings']
+        results['summary'] = scan_results['summary']
+        results['discovered_endpoints'] = scan_results['discovered_endpoints']
+        
+        # Save to database
+        scan_data = {
+            'scan_id': scan_id,
+            'scan_type': 'api',
+            'target_url': MOODLE_URL,
+            'timestamp': timestamp,
+            'total_findings': results['total_findings'],
+            'summary': results['summary'],
+            'findings': results['all_findings']
+        }
+        scan_history_db.save_scan(scan_data)
+        
+        print(f"[API Scan] Complete! Found {results['total_findings']} issues")
+        print(f"[API Scan] Discovered {len(results['discovered_endpoints'])} endpoints")
+        
+        # Send Slack notification if enabled
+        if slack_notifier and results['total_findings'] > 0:
+            try:
+                await slack_notifier.send_scan_complete({
+                    'scan_id': scan_id,
+                    'target_url': MOODLE_URL,
+                    'endpoints_scanned': len(results['discovered_endpoints']),
+                    'total_findings': results['total_findings'],
+                    'summary': results['summary']
+                })
+            except Exception as e:
+                print(f"[Slack] Notification failed: {str(e)}")
+        
+        return results
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"API scan failed: {str(e)}")
+
+
+def _generate_finding_summary(findings: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Generate summary of findings by severity."""
+    summary = {
+        'critical': 0,
+        'high': 0,
+        'medium': 0,
+        'low': 0,
+        'info': 0
+    }
+    
+    for finding in findings:
+        severity = finding.get('severity', '').lower()
+        if severity in summary:
+            summary[severity] += 1
+    
+    return summary
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=LISTEN_PORT)
