@@ -217,3 +217,140 @@
     padding-right: 15px;
     padding-left: 15px;
 }
+
+/* Additional severity badges for risk scoring */
+.badge-critical {
+    color: #fff !important;
+    background-color: #8b0000 !important;
+}
+
+.badge-high {
+    color: #fff !important;
+    background-color: #dc3545 !important;
+}
+
+.badge-medium {
+    color: #212529 !important;
+    background-color: #ffc107 !important;
+}
+
+.badge-low {
+    color: #fff !important;
+    background-color: #28a745 !important;
+}
+
+/* Stat boxes for full scan results */
+.stat-box {
+    text-align: center;
+    padding: 20px;
+    background-color: #f8f9fa;
+    border-radius: 0.25rem;
+    border: 1px solid #dee2e6;
+}
+
+.stat-box h3 {
+    margin: 0;
+    font-size: 2rem;
+    color: #007bff;
+}
+
+.stat-box p {
+    margin: 0.5rem 0 0 0;
+    color: #6c757d;
+    font-size: 0.9rem;
+}
+
+/* Card header styling */
+.card-header {
+    padding: 0.75rem 1.25rem;
+    margin-bottom: 0;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid rgba(0,0,0,.125);
+}
+
+.card-header h5 {
+    margin: 0;
+    font-size: 1.25rem;
+}
+
+/* Column utilities */
+.col {
+    flex-basis: 0;
+    flex-grow: 1;
+    max-width: 100%;
+}
+
+.col-md-3 {
+    flex: 0 0 25%;
+    max-width: 25%;
+    padding-right: 15px;
+    padding-left: 15px;
+}
+
+.col-md-9 {
+    flex: 0 0 75%;
+    max-width: 75%;
+    padding-right: 15px;
+    padding-left: 15px;
+}
+
+.offset-md-3 {
+    margin-left: 25%;
+}
+
+/* Button utilities */
+.btn-success {
+    color: #fff;
+    background-color: #28a745;
+    border-color: #28a745;
+}
+
+.btn-success:hover {
+    color: #fff;
+    background-color: #218838;
+    border-color: #1e7e34;
+}
+
+.mr-2 {
+    margin-right: 0.5rem !important;
+}
+
+.mt-2 {
+    margin-top: 0.5rem !important;
+}
+
+.text-center {
+    text-align: center !important;
+}
+
+/* Table responsive */
+.table-responsive {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(0,0,0,.05);
+}
+
+/* Form text helper */
+.form-text {
+    display: block;
+    margin-top: 0.25rem;
+}
+
+.text-muted {
+    color: #6c757d !important;
+}
+
+/* Row utilities */
+.row.text-center {
+    text-align: center;
+}
+
+/* Badge dark */
+.badge-dark {
+    color: #fff !important;
+    background-color: #343a40 !important;
+}

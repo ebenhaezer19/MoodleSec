@@ -161,3 +161,45 @@ function local_security_dashboard_check_health() {
     
     return $status;
 }
+
+/**
+ * Trigger full site scan (crawl + scan all endpoints)
+ *
+ * @param int $max_depth Maximum crawl depth
+ * @param int $max_pages Maximum pages to crawl
+ * @return array Scan results
+ */
+function local_security_dashboard_trigger_full_scan($max_depth = 2, $max_pages = 30) {
+    $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    
+    if (empty($proxy_url)) {
+        return ['error' => 'Proxy URL not configured'];
+    }
+    
+    $url = rtrim($proxy_url, '/') . '/scan-full';
+    
+    try {
+        $curl = new curl();
+        $response = $curl->post($url, json_encode([
+            'max_depth' => $max_depth,
+            'max_pages' => $max_pages
+        ]), [
+            'CURLOPT_HTTPHEADER' => ['Content-Type: application/json'],
+            'CURLOPT_TIMEOUT' => 300  // 5 minutes timeout for full scan
+        ]);
+        
+        if ($curl->get_errno()) {
+            return ['error' => 'Connection error: ' . $curl->error];
+        }
+        
+        $result = json_decode($response, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return ['error' => 'Invalid response from proxy service'];
+        }
+        
+        return $result;
+    } catch (Exception $e) {
+        return ['error' => $e->getMessage()];
+    }
+}

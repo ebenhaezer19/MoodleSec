@@ -1,9 +1,9 @@
-<?php
+DD<?php
 /**
  * Security Dashboard main page
  *
  * @package    local_security_dashboard
- * @copyright  2024 Your Name
+ * @copyright  2024 Krisopras & Nathanael
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -40,12 +40,17 @@ if (isset($logs_data['error'])) {
     // Display summary
     echo html_writer::start_div('row');
     
-    // Scan button
+    // Scan buttons
     echo html_writer::start_div('col-md-12 mb-3');
     echo html_writer::link(
         new moodle_url('/local/security_dashboard/scan.php'),
-        get_string('scan_now', 'local_security_dashboard'),
-        ['class' => 'btn btn-primary']
+        '<i class="fa fa-search"></i> ' . get_string('scan_now', 'local_security_dashboard'),
+        ['class' => 'btn btn-primary mr-2']
+    );
+    echo html_writer::link(
+        new moodle_url('/local/security_dashboard/fullscan.php'),
+        '<i class="fa fa-globe"></i> Full Site Scan',
+        ['class' => 'btn btn-success']
     );
     echo html_writer::end_div();
     

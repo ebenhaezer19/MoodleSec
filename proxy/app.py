@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 from config import MOODLE_URL, LISTEN_PORT, LOG_DIR, MAX_LOG_ENTRIES
 from utils.logger import append_log, read_logs, ensure_log_directory
 from scanners.scanner_engine import ScannerEngine
+from crawler.web_crawler import WebCrawler
+from risk.risk_scorer import RiskScorer
 
 
 app = FastAPI(
@@ -26,6 +28,9 @@ ensure_log_directory(LOG_DIR)
 
 # Initialize scanner engine
 scanner_engine = ScannerEngine()
+
+# Initialize risk scorer
+risk_scorer = RiskScorer()
 
 
 class ScanRequest(BaseModel):
@@ -169,6 +174,173 @@ async def trigger_scan(scan_request: ScanRequest) -> ScanResult:
         findings=findings,
         summary=scan_results['summary']
     )
+
+
+@app.post("/crawl")
+async def crawl_site(max_depth: int = 3, max_pages: int = 50) -> Dict[str, Any]:
+    """
+    Crawl the Moodle site to discover all endpoints.
+    
+    Args:
+        max_depth: Maximum crawl depth
+        max_pages: Maximum pages to crawl
+        
+    Returns:
+        Crawl results with discovered endpoints and forms
+    """
+    try:
+        crawler = WebCrawler(
+            base_url=MOODLE_URL,
+            max_depth=max_depth,
+            max_pages=max_pages
+        )
+        
+        results = await crawler.crawl()
+        
+        return {
+            'status': 'success',
+            'crawl_results': results,
+            'scan_targets': crawler.get_endpoints_for_scanning()
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Crawl failed: {str(e)}")
+
+
+@app.post("/scan-full")
+async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, Any]:
+    """
+    Perform full site scan: crawl + scan all discovered endpoints.
+    
+    Args:
+        max_depth: Maximum crawl depth
+        max_pages: Maximum pages to crawl
+        
+    Returns:
+        Complete scan results with all findings
+    """
+    scan_id = f"full_scan_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    timestamp = datetime.utcnow().isoformat() + "Z"
+    
+    try:
+        # Step 1: Crawl site
+        print(f"[Full Scan] Starting crawl...")
+        crawler = WebCrawler(
+            base_url=MOODLE_URL,
+            max_depth=max_depth,
+            max_pages=max_pages
+        )
+        
+        crawl_results = await crawler.crawl()
+        targets = crawler.get_endpoints_for_scanning()
+        
+        print(f"[Full Scan] Discovered {len(targets)} endpoints")
+        
+        # Step 2: Scan all discovered endpoints
+        all_findings = []
+        scanned_count = 0
+        
+        for target in targets[:50]:  # Limit to 50 endpoints to avoid timeout
+            try:
+                # Fetch target page
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.request(
+                        method=target['method'],
+                        url=target['url'],
+                        params=target.get('parameters') if target['method'] == 'GET' else None,
+                        data=target.get('parameters') if target['method'] == 'POST' else None
+                    )
+                    response_body = response.text
+                    response_headers = dict(response.headers)
+                    status_code = response.status_code
+                
+                # Scan endpoint
+                scan_results = scanner_engine.scan(
+                    url=target['url'],
+                    method=target['method'],
+                    params=target.get('parameters'),
+                    response_body=response_body,
+                    response_headers=response_headers,
+                    status_code=status_code
+                )
+                
+                # Enrich findings with risk scores
+                enriched_findings = risk_scorer.batch_enrich_findings(scan_results['findings'])
+                all_findings.extend(enriched_findings)
+                scanned_count += 1
+                
+            except Exception as e:
+                print(f"[Full Scan] Error scanning {target['url']}: {str(e)}")
+                continue
+        
+        # Step 3: Aggregate results
+        # Sort by risk score
+        all_findings.sort(key=lambda x: x.get('risk_score', 0), reverse=True)
+        
+        # Calculate summary
+        summary = {
+            'critical': sum(1 for f in all_findings if f.get('severity', '').lower() == 'critical'),
+            'high': sum(1 for f in all_findings if f.get('severity', '').lower() == 'high'),
+            'medium': sum(1 for f in all_findings if f.get('severity', '').lower() == 'medium'),
+            'low': sum(1 for f in all_findings if f.get('severity', '').lower() == 'low'),
+            'info': sum(1 for f in all_findings if f.get('severity', '').lower() == 'info')
+        }
+        
+        # Log the full scan
+        scan_log = {
+            "type": "full_site_scan",
+            "scan_id": scan_id,
+            "base_url": MOODLE_URL,
+            "endpoints_discovered": len(targets),
+            "endpoints_scanned": scanned_count,
+            "findings_count": len(all_findings),
+            "summary": summary,
+            "timestamp": timestamp
+        }
+        append_log(LOG_DIR, scan_log)
+        
+        return {
+            'scan_id': scan_id,
+            'timestamp': timestamp,
+            'crawl_statistics': crawl_results['statistics'],
+            'endpoints_discovered': len(targets),
+            'endpoints_scanned': scanned_count,
+            'total_findings': len(all_findings),
+            'summary': summary,
+            'findings': all_findings[:100],  # Return top 100 findings
+            'top_risks': all_findings[:10]  # Top 10 highest risk findings
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Full scan failed: {str(e)}")
+
+
+@app.get("/risk/calculate")
+async def calculate_risk(
+    category: str,
+    severity: str,
+    url: str = ""
+) -> Dict[str, Any]:
+    """
+    Calculate risk score for a finding.
+    
+    Args:
+        category: Vulnerability category
+        severity: Severity level
+        url: Target URL for context
+        
+    Returns:
+        Risk score details
+    """
+    finding = {
+        'category': category,
+        'severity': severity,
+        'url': url,
+        'evidence': url
+    }
+    
+    risk_info = risk_scorer.calculate_risk_score(finding)
+    return risk_info
 
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
