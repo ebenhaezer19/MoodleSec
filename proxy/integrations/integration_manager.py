@@ -498,8 +498,8 @@ if __name__ == "__main__":
             'description': 'SQL injection vulnerability found in login form'
         }
         
-        # result = await manager.send_webhook('slack', message, slack_config)
-        # print(f"Slack webhook sent: {result}")
+        result = await manager.send_webhook('slack', message, slack_config)
+        print(f"Slack webhook sent: {result}")
         
         await manager.close()
     
