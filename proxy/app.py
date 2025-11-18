@@ -748,105 +748,6 @@ async def get_scan_history_endpoint(limit: int = 10) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Failed to get scan history: {str(e)}")
 
 
-@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
-async def proxy_request(request: Request, path: str) -> Response:
-    """
-    Proxy all other requests to the target Moodle instance.
-    
-    Args:
-        request: Incoming FastAPI request
-        path: Request path to forward
-        
-    Returns:
-        Response from the target Moodle instance
-    """
-    # Build target URL
-    target_url = f"{MOODLE_URL}/{path}"
-    if request.url.query:
-        target_url += f"?{request.url.query}"
-    
-    # Prepare request data
-    headers = dict(request.headers)
-    # Remove host header to avoid conflicts
-    headers.pop("host", None)
-    
-    # Read request body
-    body = await request.body()
-    
-    # Log the incoming request
-    request_log = {
-        "type": "proxy_request",
-        "method": request.method,
-        "path": path,
-        "target_url": target_url,
-        "query_params": dict(request.query_params),
-        "headers": {k: v for k, v in headers.items() if k.lower() not in ["authorization", "cookie"]},
-        "body_size": len(body),
-        "timestamp": datetime.utcnow().isoformat() + "Z"
-    }
-    
-    try:
-        # Forward request to Moodle
-        async with httpx.AsyncClient(follow_redirects=False, timeout=30.0) as client:
-            response = await client.request(
-                method=request.method,
-                url=target_url,
-                headers=headers,
-                content=body
-            )
-        
-        # Log the response
-        response_log = {
-            "type": "proxy_response",
-            "method": request.method,
-            "path": path,
-            "target_url": target_url,
-            "status_code": response.status_code,
-            "response_size": len(response.content),
-            "timestamp": datetime.utcnow().isoformat() + "Z"
-        }
-        append_log(LOG_DIR, {**request_log, **response_log, "type": "proxy_transaction"})
-        
-        # Return response (remove Content-Length to avoid conflicts)
-        response_headers = dict(response.headers)
-        response_headers.pop("content-length", None)
-        response_headers.pop("transfer-encoding", None)
-        
-        return Response(
-            content=response.content,
-            status_code=response.status_code,
-            headers=response_headers,
-            media_type=response.headers.get("content-type")
-        )
-        
-    except httpx.RequestError as e:
-        error_log = {
-            **request_log,
-            "type": "proxy_error",
-            "error": str(e),
-            "error_type": type(e).__name__
-        }
-        append_log(LOG_DIR, error_log)
-        
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to connect to target Moodle instance: {str(e)}"
-        )
-    except Exception as e:
-        error_log = {
-            **request_log,
-            "type": "proxy_error",
-            "error": str(e),
-            "error_type": type(e).__name__
-        }
-        append_log(LOG_DIR, error_log)
-        
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal proxy error: {str(e)}"
-        )
-
-
 @app.post("/scan-auth")
 async def scan_authentication() -> Dict[str, Any]:
     """
@@ -1039,6 +940,86 @@ def _generate_finding_summary(findings: List[Dict[str, Any]]) -> Dict[str, int]:
             summary[severity] += 1
     
     return summary
+
+
+# IMPORTANT: Catch-all proxy route MUST be at the end to not interfere with specific endpoints
+@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
+async def proxy_request_catchall(request: Request, path: str) -> Response:
+    """
+    Proxy all other requests to the target Moodle instance.
+    This route catches everything that doesn't match specific endpoints above.
+    """
+    # Build target URL
+    target_url = f"{MOODLE_URL}/{path}"
+    if request.url.query:
+        target_url += f"?{request.url.query}"
+    
+    # Prepare request data
+    headers = dict(request.headers)
+    headers.pop("host", None)
+    
+    # Read request body
+    body = await request.body()
+    
+    # Log the incoming request
+    request_log = {
+        "type": "proxy_request",
+        "method": request.method,
+        "path": path,
+        "target_url": target_url,
+        "query_params": dict(request.query_params),
+        "headers": {k: v for k, v in headers.items() if k.lower() not in ["authorization", "cookie"]},
+        "body_size": len(body),
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    }
+    
+    try:
+        # Forward request to Moodle
+        async with httpx.AsyncClient(follow_redirects=False, timeout=30.0) as client:
+            response = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=headers,
+                content=body
+            )
+        
+        # Log the response
+        response_log = {
+            "type": "proxy_response",
+            "method": request.method,
+            "path": path,
+            "target_url": target_url,
+            "status_code": response.status_code,
+            "response_size": len(response.content),
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
+        append_log(LOG_DIR, {**request_log, **response_log, "type": "proxy_transaction"})
+        
+        # Return response
+        response_headers = dict(response.headers)
+        response_headers.pop("content-length", None)
+        response_headers.pop("transfer-encoding", None)
+        
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            headers=response_headers,
+            media_type=response.headers.get("content-type")
+        )
+        
+    except httpx.RequestError as e:
+        error_log = {
+            **request_log,
+            "type": "proxy_error",
+            "error": str(e),
+            "error_type": type(e).__name__
+        }
+        append_log(LOG_DIR, error_log)
+        
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal proxy error: {str(e)}"
+        )
 
 
 if __name__ == "__main__":
