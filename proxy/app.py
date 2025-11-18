@@ -519,14 +519,21 @@ async def generate_executive_summary(scan_id: str) -> Response:
         PDF file
     """
     try:
+        print(f"[Report] Generating executive summary for scan: {scan_id}")
+        
         # Get complete scan data with findings from database
         scan_data = scan_history_db.get_scan_with_findings(scan_id)
         
         if not scan_data:
-            raise HTTPException(status_code=404, detail="Scan not found")
+            print(f"[Report] Scan not found: {scan_id}")
+            raise HTTPException(status_code=404, detail=f"Scan not found: {scan_id}")
+        
+        print(f"[Report] Scan data retrieved: {scan_data.get('scan_type', 'unknown')} scan with {scan_data.get('total_findings', 0)} findings")
         
         # Generate PDF
         pdf_bytes = pdf_generator.generate_executive_summary(scan_data)
+        
+        print(f"[Report] PDF generated successfully, size: {len(pdf_bytes)} bytes")
         
         return Response(
             content=pdf_bytes,
@@ -535,8 +542,13 @@ async def generate_executive_summary(scan_id: str) -> Response:
                 "Content-Disposition": f"attachment; filename=executive_summary_{scan_id}.pdf"
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
+        import traceback
+        error_detail = f"Failed to generate report: {str(e)}\n{traceback.format_exc()}"
+        print(f"[Report] ERROR: {error_detail}")
+        raise HTTPException(status_code=500, detail=error_detail)
 
 
 @app.get("/reports/compliance")
