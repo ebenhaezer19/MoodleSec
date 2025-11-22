@@ -84,9 +84,24 @@ if ($scan_triggered) {
         echo html_writer::start_div('card');
         echo html_writer::start_div('card-body');
         
-        echo html_writer::tag('p', '<strong>Scan ID:</strong> ' . ($scan_result['scan_id'] ?? 'N/A'));
+        $scan_id = $scan_result['scan_id'] ?? 'N/A';
+        echo html_writer::tag('p', '<strong>Scan ID:</strong> ' . $scan_id);
         echo html_writer::tag('p', '<strong>Target URL:</strong> ' . ($scan_result['target_url'] ?? 'N/A'));
         echo html_writer::tag('p', '<strong>Timestamp:</strong> ' . ($scan_result['timestamp'] ?? 'N/A'));
+        
+        // Download Report Button
+        if ($scan_id !== 'N/A') {
+            $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+            $report_url = rtrim($proxy_url, '/') . '/reports/executive-summary?scan_id=' . urlencode($scan_id);
+            echo html_writer::div(
+                html_writer::link(
+                    $report_url,
+                    '📄 Download PDF Report',
+                    ['class' => 'btn btn-success', 'target' => '_blank']
+                ),
+                'mt-2 mb-3'
+            );
+        }
         
         // Summary
         if (isset($scan_result['summary'])) {

@@ -3,7 +3,7 @@
  * API client for external security services
  *
  * @package    local_security_dashboard
- * @copyright  2024 Your Name
+ * @copyright  2025 Krisopras & Nathanael
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

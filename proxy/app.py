@@ -186,6 +186,9 @@ async def trigger_scan(scan_request: ScanRequest) -> ScanResult:
         for f in scan_results['findings']
     ]
     
+    # Enrich findings with risk scores
+    enriched_findings = risk_scorer.batch_enrich_findings(scan_results['findings'])
+    
     # Log the scan
     scan_log = {
         "type": "dast_scan",
@@ -198,6 +201,30 @@ async def trigger_scan(scan_request: ScanRequest) -> ScanResult:
         "timestamp": scan_results['timestamp']
     }
     append_log(LOG_DIR, scan_log)
+    
+    # Save to database
+    scan_data = {
+        'scan_id': scan_results['scan_id'],
+        'scan_type': 'dast',
+        'target_url': target_url,
+        'timestamp': scan_results['timestamp'],
+        'total_findings': len(enriched_findings),
+        'summary': scan_results['summary'],
+        'findings': enriched_findings
+    }
+    scan_history_db.save_scan(scan_data)
+    print(f"[DAST Scan] Saved scan {scan_results['scan_id']} to database with {len(enriched_findings)} findings")
+    
+    # Update findings with enriched data for response
+    findings = [
+        ScanFinding(
+            severity=f.get('severity', 'Info'),
+            category=f.get('category', 'General'),
+            description=f.get('description', ''),
+            evidence=f.get('evidence')
+        )
+        for f in enriched_findings
+    ]
     
     return ScanResult(
         scan_id=scan_results['scan_id'],
@@ -868,6 +895,10 @@ async def scan_authentication() -> Dict[str, Any]:
         for test_name, test_results in results['tests'].items():
             all_findings.extend(test_results.get('findings', []))
         
+        # Enrich findings with risk scores
+        print(f"[Auth Scan] Enriching {len(all_findings)} findings with risk scores...")
+        all_findings = risk_scorer.batch_enrich_findings(all_findings)
+        
         results['total_findings'] = len(all_findings)
         results['all_findings'] = all_findings
         results['summary'] = _generate_finding_summary(all_findings)
@@ -960,9 +991,14 @@ async def scan_api() -> Dict[str, Any]:
         
         results['discovery'] = discovery_results
         results['security_tests'] = scan_results
-        results['total_findings'] = scan_results['total_findings']
-        results['all_findings'] = scan_results['findings']
-        results['summary'] = scan_results['summary']
+        
+        # Enrich findings with risk scores
+        print(f"[API Scan] Enriching {len(scan_results['findings'])} findings with risk scores...")
+        enriched_findings = risk_scorer.batch_enrich_findings(scan_results['findings'])
+        
+        results['total_findings'] = len(enriched_findings)
+        results['all_findings'] = enriched_findings
+        results['summary'] = _generate_finding_summary(enriched_findings)
         results['discovered_endpoints'] = scan_results['discovered_endpoints']
         
         # Save to database

@@ -3,7 +3,7 @@
  * Capability definitions for Security Dashboard
  *
  * @package    local_security_dashboard
- * @copyright  2024 Your Name
+ * @copyright  2025 Krisopras & Nathanael
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
