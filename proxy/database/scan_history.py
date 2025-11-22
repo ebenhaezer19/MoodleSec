@@ -153,8 +153,8 @@ class ScanHistoryDB:
         existing = cursor.fetchone()
         
         if existing:
-            # Update last_seen and metadata
-            print(f"[DB] Finding already exists, updating with new PoC data")
+            # Update last_seen, metadata, and risk scores
+            print(f"[DB] Finding already exists, updating with new data")
             
             # Prepare metadata - include PoC if present
             metadata = finding.get('metadata', {})
@@ -164,11 +164,22 @@ class ScanHistoryDB:
             if 'recommendation' in finding:
                 metadata['recommendation'] = finding['recommendation']
             
+            # Update with risk scores
             cursor.execute("""
                 UPDATE findings 
-                SET last_seen = ?, scan_id = ?, metadata = ?
+                SET last_seen = ?, scan_id = ?, metadata = ?,
+                    risk_score = ?, cvss_score = ?, priority = ?
                 WHERE finding_hash = ?
-            """, (datetime.utcnow().isoformat(), scan_id, json.dumps(metadata), finding_hash))
+            """, (
+                datetime.utcnow().isoformat(), 
+                scan_id, 
+                json.dumps(metadata),
+                finding.get('risk_score', 0),
+                finding.get('cvss_score', 0),
+                finding.get('priority', 5),
+                finding_hash
+            ))
+            print(f"[DB] Updated risk_score={finding.get('risk_score', 0)}, cvss_score={finding.get('cvss_score', 0)}, priority={finding.get('priority', 5)}")
         else:
             # Insert new finding
             # Prepare metadata - include PoC if present
