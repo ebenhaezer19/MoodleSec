@@ -896,8 +896,18 @@ async def scan_authentication() -> Dict[str, Any]:
             all_findings.extend(test_results.get('findings', []))
         
         # Enrich findings with risk scores
+        print("=" * 80)
+        print(f"[Auth Scan] BEFORE ENRICHMENT: {len(all_findings)} findings")
+        if all_findings:
+            print(f"[Auth Scan] Sample finding before: risk_score={all_findings[0].get('risk_score', 'NOT SET')}")
+        
         print(f"[Auth Scan] Enriching {len(all_findings)} findings with risk scores...")
         all_findings = risk_scorer.batch_enrich_findings(all_findings)
+        
+        print(f"[Auth Scan] AFTER ENRICHMENT: {len(all_findings)} findings")
+        if all_findings:
+            print(f"[Auth Scan] Sample finding after: risk_score={all_findings[0].get('risk_score', 'NOT SET')}")
+        print("=" * 80)
         
         results['total_findings'] = len(all_findings)
         results['all_findings'] = all_findings
