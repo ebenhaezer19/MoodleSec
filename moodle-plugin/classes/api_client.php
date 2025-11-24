@@ -240,6 +240,52 @@ class api_client {
     }
     
     /**
+     * Make HTTP request (generic method)
+     *
+     * @param string $url Request URL
+     * @param string $method HTTP method (GET or POST)
+     * @param array $params Optional parameters for POST
+     * @return object|false Response object or false on error
+     */
+    private function make_request($url, $method = 'GET', $params = null) {
+        try {
+            $curl = new \curl();
+            $curl->setopt(['CURLOPT_TIMEOUT' => $this->timeout]);
+            
+            $options = [
+                'CURLOPT_HTTPHEADER' => [
+                    'Content-Type: application/json',
+                    'Accept: application/json'
+                ]
+            ];
+            
+            if ($method === 'POST') {
+                $response = $curl->post($url, $params ? json_encode($params) : '', $options);
+            } else {
+                $response = $curl->get($url, null, $options);
+            }
+            
+            if ($curl->get_errno()) {
+                debugging("$method request error: " . $curl->error, DEBUG_DEVELOPER);
+                return false;
+            }
+            
+            $result = json_decode($response);
+            
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                debugging('JSON decode error: ' . json_last_error_msg(), DEBUG_DEVELOPER);
+                return false;
+            }
+            
+            return $result;
+            
+        } catch (\Exception $e) {
+            debugging("$method request exception: " . $e->getMessage(), DEBUG_DEVELOPER);
+            return false;
+        }
+    }
+    
+    /**
      * Set request timeout
      *
      * @param int $timeout Timeout in seconds
