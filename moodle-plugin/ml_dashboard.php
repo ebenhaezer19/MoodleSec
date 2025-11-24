@@ -15,7 +15,11 @@ require_once(__DIR__ . '/classes/api_client.php');
 
 // Require login and admin capability
 require_login();
-require_capability('local/security_dashboard:manage', context_system::instance());
+// Check if user has manage capability, otherwise check for view capability
+$context = context_system::instance();
+if (!has_capability('local/security_dashboard:manage', $context)) {
+    require_capability('local/security_dashboard:view', $context);
+}
 
 // Set up page
 $PAGE->set_url(new moodle_url('/local/security_dashboard/ml_dashboard.php'));
