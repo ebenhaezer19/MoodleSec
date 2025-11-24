@@ -21,6 +21,7 @@ from database.scan_history import ScanHistoryDB
 from database.scheduler_db import SchedulerDB
 from reporting.pdf_generator import PDFReportGenerator
 from integrations.integration_manager import IntegrationManager
+from ml.ml_manager import MLManager
 
 
 app = FastAPI(
@@ -58,6 +59,9 @@ pdf_generator = PDFReportGenerator()
 
 # Initialize integration manager
 integration_manager = IntegrationManager()
+
+# Initialize ML Manager
+ml_manager = MLManager(enable_ml=True)
 
 # Initialize Slack notifier (if enabled)
 slack_notifier = None
@@ -909,6 +913,13 @@ async def scan_authentication() -> Dict[str, Any]:
             print(f"[Auth Scan] Sample finding after: risk_score={all_findings[0].get('risk_score', 'NOT SET')}")
         print("=" * 80)
         
+        # ML-Enhanced Processing
+        print(f"[Auth Scan] ML Processing: Filtering false positives and adjusting severity...")
+        ml_result = ml_manager.filter_findings(all_findings, context={'environment': 'production'})
+        all_findings = ml_result['findings']
+        print(f"[Auth Scan] ML Results: {ml_result['filtered_count']} FPs filtered, {ml_result['severity_adjusted_count']} severities adjusted")
+        print(f"[Auth Scan] Final count: {ml_result['final_count']} findings")
+        
         results['total_findings'] = len(all_findings)
         results['all_findings'] = all_findings
         results['summary'] = _generate_finding_summary(all_findings)
@@ -1141,6 +1152,116 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
             status_code=500,
             detail=f"Internal proxy error: {str(e)}"
         )
+
+
+@app.get("/ml/status")
+async def get_ml_status():
+    """
+    Get ML modules status.
+    
+    Returns:
+        ML modules status and training information
+    """
+    return ml_manager.get_status()
+
+
+@app.get("/ml/models/info")
+async def get_ml_models_info():
+    """
+    Get detailed information about all ML models.
+    
+    Returns:
+        Detailed ML models information
+    """
+    return ml_manager.export_models_info()
+
+
+@app.post("/ml/feedback")
+async def provide_ml_feedback(
+    finding_id: str,
+    is_false_positive: bool,
+    scan_id: Optional[str] = None
+):
+    """
+    Provide feedback for ML model improvement.
+    
+    Args:
+        finding_id: ID of the finding
+        is_false_positive: Whether the finding is a false positive
+        scan_id: Optional scan ID
+        
+    Returns:
+        Feedback confirmation
+    """
+    # Get finding from database
+    if scan_id:
+        scan_data = scan_history_db.get_scan_with_findings(scan_id)
+        if scan_data:
+            findings = scan_data.get('findings', [])
+            finding = next((f for f in findings if f.get('id') == finding_id), None)
+            
+            if finding:
+                ml_manager.provide_feedback(finding, is_false_positive)
+                return {
+                    'success': True,
+                    'message': 'Feedback recorded for ML training',
+                    'finding_id': finding_id,
+                    'is_false_positive': is_false_positive
+                }
+    
+    raise HTTPException(status_code=404, detail="Finding not found")
+
+
+@app.get("/ml/ip-stats/{ip}")
+async def get_ip_stats(ip: str):
+    """
+    Get rate limiting statistics for an IP.
+    
+    Args:
+        ip: IP address
+        
+    Returns:
+        IP statistics
+    """
+    return ml_manager.get_ip_stats(ip)
+
+
+@app.post("/ml/whitelist/{ip}")
+async def whitelist_ip(ip: str):
+    """
+    Add IP to whitelist.
+    
+    Args:
+        ip: IP address to whitelist
+        
+    Returns:
+        Confirmation
+    """
+    ml_manager.whitelist_ip(ip)
+    return {
+        'success': True,
+        'message': f'IP {ip} added to whitelist',
+        'ip': ip
+    }
+
+
+@app.post("/ml/blacklist/{ip}")
+async def blacklist_ip(ip: str):
+    """
+    Add IP to blacklist.
+    
+    Args:
+        ip: IP address to blacklist
+        
+    Returns:
+        Confirmation
+    """
+    ml_manager.blacklist_ip(ip)
+    return {
+        'success': True,
+        'message': f'IP {ip} added to blacklist',
+        'ip': ip
+    }
 
 
 if __name__ == "__main__":
