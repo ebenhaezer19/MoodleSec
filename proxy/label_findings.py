@@ -68,9 +68,16 @@ def save_labeled_data(data, original_file):
     auto_file = str(original_file).replace('_needs_review.json', '_auto_labeled.json')
     
     if Path(auto_file).exists():
-        with open(auto_file, 'r') as f:
-            existing_labeled = json.load(f)
-        labeled = existing_labeled + labeled
+        try:
+            with open(auto_file, 'r') as f:
+                existing_labeled = json.load(f)
+            labeled = existing_labeled + labeled
+        except json.JSONDecodeError as e:
+            print(f"\n⚠️  Warning: Existing auto_labeled file is corrupt: {e}")
+            print(f"   Backing up corrupt file and creating new one...")
+            backup_file = str(auto_file) + '.backup'
+            Path(auto_file).rename(backup_file)
+            print(f"   Backup saved to: {backup_file}")
     
     with open(auto_file, 'w') as f:
         json.dump(labeled, f, indent=2)
