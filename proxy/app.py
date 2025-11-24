@@ -378,12 +378,12 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
         print(f"[Full Scan] BEFORE ML: {len(all_findings)} findings")
         
         # Apply ML-enhanced processing
-        ml_results = ml_manager.process_findings(all_findings, scan_id)
-        filtered_findings = ml_results['filtered_findings']
+        ml_results = ml_manager.filter_findings(all_findings)
+        filtered_findings = ml_results['findings']
         
         print(f"[Full Scan] AFTER ML: {len(filtered_findings)} findings")
-        print(f"[Full Scan] ML Stats: {ml_results['fp_filtered']} FPs filtered, "
-              f"{ml_results['severity_adjusted']} severities adjusted")
+        print(f"[Full Scan] ML Stats: {ml_results['filtered_count']} FPs filtered, "
+              f"{ml_results['severity_adjusted_count']} severities adjusted")
         
         # Step 4: Aggregate results
         # Sort by risk score
@@ -407,9 +407,9 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
             "endpoints_scanned": scanned_count,
             "findings_count": len(filtered_findings),
             "ml_stats": {
-                "original_findings": len(all_findings),
-                "fp_filtered": ml_results['fp_filtered'],
-                "severity_adjusted": ml_results['severity_adjusted']
+                "original_findings": ml_results['original_count'],
+                "fp_filtered": ml_results['filtered_count'],
+                "severity_adjusted": ml_results['severity_adjusted_count']
             },
             "summary": summary,
             "timestamp": timestamp
