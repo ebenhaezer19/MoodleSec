@@ -19,38 +19,72 @@ OUTPUT_FILE = f"{OUTPUT_DIR}/real_findings_{datetime.now().strftime('%Y%m%d_%H%M
 def collect_findings_from_db():
     """Extract all findings from scan history database."""
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
-    # Get all scans with findings
+    # Get all findings from findings table
     cursor.execute("""
-        SELECT scan_id, scan_type, timestamp, findings_json
-        FROM scans
-        WHERE findings_json IS NOT NULL
-        ORDER BY timestamp DESC
+        SELECT 
+            f.scan_id,
+            f.severity,
+            f.category,
+            f.description,
+            f.evidence,
+            f.url,
+            f.cvss_score,
+            f.risk_score,
+            f.priority,
+            f.first_seen,
+            f.last_seen,
+            f.status,
+            f.metadata,
+            s.scan_type,
+            s.timestamp as scan_timestamp
+        FROM findings f
+        JOIN scans s ON f.scan_id = s.scan_id
+        ORDER BY f.last_seen DESC
     """)
     
     all_findings = []
-    scan_count = 0
     
     for row in cursor.fetchall():
-        scan_id, scan_type, timestamp, findings_json = row
-        scan_count += 1
+        # Convert Row to dict
+        finding = {
+            'scan_id': row['scan_id'],
+            'severity': row['severity'],
+            'category': row['category'],
+            'description': row['description'],
+            'evidence': row['evidence'],
+            'url': row['url'],
+            'cvss_score': row['cvss_score'],
+            'risk_score': row['risk_score'],
+            'priority': row['priority'],
+            'first_seen': row['first_seen'],
+            'last_seen': row['last_seen'],
+            'status': row['status'],
+            'scan_type': row['scan_type'],
+            'scan_timestamp': row['scan_timestamp']
+        }
         
-        try:
-            findings = json.loads(findings_json)
-            for finding in findings:
-                # Add scan context
-                finding['scan_id'] = scan_id
-                finding['scan_type'] = scan_type
-                finding['scan_timestamp'] = timestamp
-                all_findings.append(finding)
-        except json.JSONDecodeError:
-            print(f"Warning: Could not parse findings for scan {scan_id}")
-            continue
+        # Parse metadata if exists
+        if row['metadata']:
+            try:
+                metadata = json.loads(row['metadata'])
+                finding['metadata'] = metadata
+                # Add PoC if exists in metadata
+                if 'proof_of_concept' in metadata:
+                    finding['proof_of_concept'] = metadata['proof_of_concept']
+            except json.JSONDecodeError:
+                pass
+        
+        all_findings.append(finding)
     
     conn.close()
     
-    print(f"Collected {len(all_findings)} findings from {scan_count} scans")
+    # Count unique scans
+    scan_ids = set(f['scan_id'] for f in all_findings)
+    
+    print(f"Collected {len(all_findings)} findings from {len(scan_ids)} scans")
     return all_findings
 
 def categorize_findings(findings):
