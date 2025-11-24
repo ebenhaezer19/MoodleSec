@@ -270,7 +270,7 @@ class api_client {
                 return false;
             }
             
-            $result = json_decode($response);
+            $result = json_decode($response, true); // Decode as associative array
             
             if (json_last_error() !== JSON_ERROR_NONE) {
                 debugging('JSON decode error: ' . json_last_error_msg(), DEBUG_DEVELOPER);
@@ -307,8 +307,8 @@ class api_client {
         $url = rtrim($this->proxy_url, '/') . '/ml/status';
         $response = $this->make_request($url, 'GET');
         
-        if ($response && isset($response->ml_enabled)) {
-            return (array)$response;
+        if ($response && isset($response['ml_enabled'])) {
+            return $response;
         }
         
         throw new \Exception('Failed to fetch ML status');
@@ -328,7 +328,7 @@ class api_client {
         $response = $this->make_request($url, 'GET');
         
         if ($response) {
-            return (array)$response;
+            return $response;
         }
         
         throw new \Exception('Failed to fetch ML models info');
@@ -349,7 +349,7 @@ class api_client {
         $response = $this->make_request($url, 'GET');
         
         if ($response) {
-            return (array)$response;
+            return $response;
         }
         
         throw new \Exception('Failed to fetch IP stats');
@@ -369,8 +369,8 @@ class api_client {
         $url = rtrim($this->proxy_url, '/') . '/ml/whitelist/' . urlencode($ip);
         $response = $this->make_request($url, 'POST');
         
-        if ($response && isset($response->success)) {
-            return (array)$response;
+        if ($response && isset($response['success'])) {
+            return $response;
         }
         
         throw new \Exception('Failed to whitelist IP');
@@ -390,8 +390,8 @@ class api_client {
         $url = rtrim($this->proxy_url, '/') . '/ml/blacklist/' . urlencode($ip);
         $response = $this->make_request($url, 'POST');
         
-        if ($response && isset($response->success)) {
-            return (array)$response;
+        if ($response && isset($response['success'])) {
+            return $response;
         }
         
         throw new \Exception('Failed to blacklist IP');
@@ -422,8 +422,8 @@ class api_client {
         
         $response = $this->make_request($url, 'POST', $params);
         
-        if ($response && isset($response->success)) {
-            return (array)$response;
+        if ($response && isset($response['success'])) {
+            return $response;
         }
         
         throw new \Exception('Failed to provide feedback');
