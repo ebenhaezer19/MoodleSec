@@ -53,39 +53,75 @@ def parse_acunetix_json(json_file):
     """Parse Acunetix JSON export."""
     print(f"Parsing Acunetix JSON: {json_file}")
     
-    with open(json_file, 'r') as f:
+    with open(json_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
     
     findings = []
     
-    # Acunetix JSON structure varies by version
-    # Try common structures
-    vulnerabilities = data.get('vulnerabilities', [])
-    if not vulnerabilities:
-        vulnerabilities = data.get('results', [])
-    if not vulnerabilities:
-        vulnerabilities = data.get('issues', [])
+    # Check for Acunetix export format
+    if 'export' in data and 'scans' in data['export']:
+        # New Acunetix format (24.x)
+        for scan in data['export']['scans']:
+            vuln_types = scan.get('vulnerability_types', [])
+            
+            for vt in vuln_types:
+                # Create a finding for each vulnerability type
+                finding = {
+                    'category': vt.get('name', 'Unknown'),
+                    'severity': map_acunetix_severity(vt.get('severity', 0)),
+                    'description': vt.get('description', ''),
+                    'url': scan.get('info', {}).get('start_url', ''),
+                    'evidence': vt.get('details_template', ''),
+                    'cvss_score': float(vt.get('cvss_score', 0) or 0),
+                    'recommendation': vt.get('recommendation', ''),
+                    'source': 'acunetix',
+                    'scan_timestamp': scan.get('info', {}).get('start_date', datetime.now().isoformat()),
+                    'impact': vt.get('impact', ''),
+                    'tags': vt.get('tags', []),
+                    'vuln_count': vt.get('vuln_count', 1)
+                }
+                
+                findings.append(finding)
     
-    for vuln in vulnerabilities:
-        finding = {
-            'category': vuln.get('name', vuln.get('title', 'Unknown')),
-            'severity': map_acunetix_severity(vuln.get('severity', '0')),
-            'description': vuln.get('description', ''),
-            'url': vuln.get('url', vuln.get('affects', '')),
-            'evidence': vuln.get('details', vuln.get('evidence', '')),
-            'cvss_score': float(vuln.get('cvss', vuln.get('cvss_score', 0)) or 0),
-            'recommendation': vuln.get('recommendation', vuln.get('remediation', '')),
-            'source': 'acunetix',
-            'scan_timestamp': datetime.now().isoformat()
-        }
-        
-        # Add PoC if exists
-        if 'request' in vuln:
-            finding['proof_of_concept'] = vuln['request']
-        elif 'http_request' in vuln:
-            finding['proof_of_concept'] = vuln['http_request']
-        
-        findings.append(finding)
+    # Try other common structures
+    elif 'vulnerabilities' in data:
+        vulnerabilities = data.get('vulnerabilities', [])
+        for vuln in vulnerabilities:
+            finding = {
+                'category': vuln.get('name', vuln.get('title', 'Unknown')),
+                'severity': map_acunetix_severity(vuln.get('severity', '0')),
+                'description': vuln.get('description', ''),
+                'url': vuln.get('url', vuln.get('affects', '')),
+                'evidence': vuln.get('details', vuln.get('evidence', '')),
+                'cvss_score': float(vuln.get('cvss', vuln.get('cvss_score', 0)) or 0),
+                'recommendation': vuln.get('recommendation', vuln.get('remediation', '')),
+                'source': 'acunetix',
+                'scan_timestamp': datetime.now().isoformat()
+            }
+            
+            # Add PoC if exists
+            if 'request' in vuln:
+                finding['proof_of_concept'] = vuln['request']
+            elif 'http_request' in vuln:
+                finding['proof_of_concept'] = vuln['http_request']
+            
+            findings.append(finding)
+    
+    elif 'results' in data:
+        vulnerabilities = data.get('results', [])
+        for vuln in vulnerabilities:
+            finding = {
+                'category': vuln.get('name', vuln.get('title', 'Unknown')),
+                'severity': map_acunetix_severity(vuln.get('severity', '0')),
+                'description': vuln.get('description', ''),
+                'url': vuln.get('url', vuln.get('affects', '')),
+                'evidence': vuln.get('details', vuln.get('evidence', '')),
+                'cvss_score': float(vuln.get('cvss', vuln.get('cvss_score', 0)) or 0),
+                'recommendation': vuln.get('recommendation', vuln.get('remediation', '')),
+                'source': 'acunetix',
+                'scan_timestamp': datetime.now().isoformat()
+            }
+            findings.append(finding)
     
     print(f"Extracted {len(findings)} findings from JSON")
     return findings
