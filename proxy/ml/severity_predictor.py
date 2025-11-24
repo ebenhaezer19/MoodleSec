@@ -284,9 +284,20 @@ class SeverityPredictor:
         # Encode labels
         y = self.label_encoder.transform(labels)
         
+        # Check class distribution
+        unique, counts = np.unique(y, return_counts=True)
+        min_samples = counts.min()
+        
+        # Disable stratify if any class has < 2 samples
+        use_stratify = min_samples >= 2 and len(unique) > 1
+        
+        if not use_stratify:
+            print(f"⚠️  Warning: Class imbalance detected (min samples: {min_samples})")
+            print("   Disabling stratified split")
+        
         # Split data
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y if len(np.unique(y)) > 1 else None
+            X, y, test_size=0.2, random_state=42, stratify=y if use_stratify else None
         )
         
         # Scale features

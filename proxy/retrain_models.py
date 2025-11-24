@@ -17,8 +17,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from ml.false_positive_reducer import FalsePositiveReducer
 from ml.severity_predictor import SeverityPredictor
 
-def load_training_data(data_dir="ml/training_data/real_data"):
-    """Load labeled training data."""
+def load_training_data(data_dir="ml/training_data"):
+    """Load labeled training data from merged or real data."""
     data_path = Path(data_dir)
     
     if not data_path.exists():
@@ -26,15 +26,26 @@ def load_training_data(data_dir="ml/training_data/real_data"):
         print("Run collect_real_training_data.py first!")
         return None, None
     
-    # Find latest auto-labeled file
-    auto_files = sorted(data_path.glob("*_auto_labeled.json"), reverse=True)
+    # Priority: augmented > merged > real_data
+    search_patterns = [
+        (data_path / "merged", "augmented_training_data_*.json"),
+        (data_path / "merged", "merged_training_data_*.json"),
+        (data_path / "real_data", "*_auto_labeled.json")
+    ]
     
-    if not auto_files:
-        print("Error: No auto-labeled training data found!")
-        print("Run collect_real_training_data.py first!")
+    latest_file = None
+    for search_dir, pattern in search_patterns:
+        if search_dir.exists():
+            files = sorted(search_dir.glob(pattern), reverse=True)
+            if files:
+                latest_file = files[0]
+                break
+    
+    if not latest_file:
+        print("Error: No training data found!")
+        print("Run merge_training_data.py or collect_real_training_data.py first!")
         return None, None
     
-    latest_file = auto_files[0]
     print(f"Loading training data from: {latest_file}")
     
     with open(latest_file, 'r') as f:
@@ -45,8 +56,12 @@ def load_training_data(data_dir="ml/training_data/real_data"):
     labels = []
     
     for item in labeled_data:
-        if item['label'] is not None:  # Only use labeled data
-            training_data.append(item['finding'])
+        if item.get('label') is not None:  # Only use labeled data
+            # Check if data has 'finding' key (real_data format) or is the finding itself (merged format)
+            if 'finding' in item:
+                training_data.append(item['finding'])
+            else:
+                training_data.append(item)
             labels.append(item['label'])
     
     print(f"Loaded {len(training_data)} labeled findings")
