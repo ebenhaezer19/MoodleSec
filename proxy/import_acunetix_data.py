@@ -181,11 +181,29 @@ def auto_label_acunetix_findings(findings):
             'pattern': lambda f: (
                 f.get('severity', '').lower() in ['low', 'info'] and
                 any(h in f.get('category', '').lower() for h in [
-                    'header', 'hsts', 'csp', 'x-frame', 'x-content'
+                    'header', 'hsts', 'csp', 'x-frame', 'x-content', 'permissions-policy'
                 ])
             ),
             'label': 1,
             'reason': 'Missing security headers (best practice, not vulnerability)'
+        },
+        'credentials_over_http': {
+            'pattern': lambda f: (
+                'credentials' in f.get('category', '').lower() and
+                'clear text' in f.get('category', '').lower() and
+                f.get('severity', '').lower() in ['medium', 'high']
+            ),
+            'label': 0,
+            'reason': 'Credentials sent over HTTP (TRUE POSITIVE - security risk)'
+        },
+        'apache_server_status': {
+            'pattern': lambda f: (
+                'apache' in f.get('category', '').lower() and
+                'server-status' in f.get('category', '').lower() and
+                f.get('severity', '').lower() in ['medium', 'high']
+            ),
+            'label': 0,
+            'reason': 'Apache server-status exposed (TRUE POSITIVE - info disclosure)'
         },
         'csrf_confirmed': {
             'pattern': lambda f: (
