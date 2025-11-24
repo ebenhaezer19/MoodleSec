@@ -247,4 +247,139 @@ class api_client {
     public function set_timeout($timeout) {
         $this->timeout = $timeout;
     }
+    
+    /**
+     * Get ML system status
+     *
+     * @return array ML status information
+     */
+    public function get_ml_status() {
+        if (empty($this->proxy_url)) {
+            throw new \Exception('Proxy URL not configured');
+        }
+        
+        $url = rtrim($this->proxy_url, '/') . '/ml/status';
+        $response = $this->make_request($url, 'GET');
+        
+        if ($response && isset($response->ml_enabled)) {
+            return (array)$response;
+        }
+        
+        throw new \Exception('Failed to fetch ML status');
+    }
+    
+    /**
+     * Get detailed ML models information
+     *
+     * @return array ML models information
+     */
+    public function get_ml_models_info() {
+        if (empty($this->proxy_url)) {
+            throw new \Exception('Proxy URL not configured');
+        }
+        
+        $url = rtrim($this->proxy_url, '/') . '/ml/models/info';
+        $response = $this->make_request($url, 'GET');
+        
+        if ($response) {
+            return (array)$response;
+        }
+        
+        throw new \Exception('Failed to fetch ML models info');
+    }
+    
+    /**
+     * Get IP statistics
+     *
+     * @param string $ip IP address
+     * @return array IP statistics
+     */
+    public function get_ip_stats($ip) {
+        if (empty($this->proxy_url)) {
+            throw new \Exception('Proxy URL not configured');
+        }
+        
+        $url = rtrim($this->proxy_url, '/') . '/ml/ip-stats/' . urlencode($ip);
+        $response = $this->make_request($url, 'GET');
+        
+        if ($response) {
+            return (array)$response;
+        }
+        
+        throw new \Exception('Failed to fetch IP stats');
+    }
+    
+    /**
+     * Whitelist an IP address
+     *
+     * @param string $ip IP address to whitelist
+     * @return array Response
+     */
+    public function whitelist_ip($ip) {
+        if (empty($this->proxy_url)) {
+            throw new \Exception('Proxy URL not configured');
+        }
+        
+        $url = rtrim($this->proxy_url, '/') . '/ml/whitelist/' . urlencode($ip);
+        $response = $this->make_request($url, 'POST');
+        
+        if ($response && isset($response->success)) {
+            return (array)$response;
+        }
+        
+        throw new \Exception('Failed to whitelist IP');
+    }
+    
+    /**
+     * Blacklist an IP address
+     *
+     * @param string $ip IP address to blacklist
+     * @return array Response
+     */
+    public function blacklist_ip($ip) {
+        if (empty($this->proxy_url)) {
+            throw new \Exception('Proxy URL not configured');
+        }
+        
+        $url = rtrim($this->proxy_url, '/') . '/ml/blacklist/' . urlencode($ip);
+        $response = $this->make_request($url, 'POST');
+        
+        if ($response && isset($response->success)) {
+            return (array)$response;
+        }
+        
+        throw new \Exception('Failed to blacklist IP');
+    }
+    
+    /**
+     * Provide feedback for ML model improvement
+     *
+     * @param string $finding_id Finding ID
+     * @param bool $is_false_positive Whether finding is false positive
+     * @param string $scan_id Optional scan ID
+     * @return array Response
+     */
+    public function provide_ml_feedback($finding_id, $is_false_positive, $scan_id = null) {
+        if (empty($this->proxy_url)) {
+            throw new \Exception('Proxy URL not configured');
+        }
+        
+        $url = rtrim($this->proxy_url, '/') . '/ml/feedback';
+        $params = [
+            'finding_id' => $finding_id,
+            'is_false_positive' => $is_false_positive
+        ];
+        
+        if ($scan_id) {
+            $params['scan_id'] = $scan_id;
+        }
+        
+        $response = $this->make_request($url, 'POST', $params);
+        
+        if ($response && isset($response->success)) {
+            return (array)$response;
+        }
+        
+        throw new \Exception('Failed to provide feedback');
+    }
 }

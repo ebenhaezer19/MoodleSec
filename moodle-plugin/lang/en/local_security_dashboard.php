@@ -34,3 +34,15 @@ $string['trigger_scan'] = 'Trigger Scan';
 $string['scan_success'] = 'Scan completed successfully';
 $string['scan_error'] = 'Error triggering scan';
 $string['connection_error'] = 'Cannot connect to security services';
+
+// ML Dashboard
+$string['ml_dashboard'] = 'ML Dashboard';
+$string['ml_system_status'] = 'Machine Learning System Status';
+$string['ml_enabled'] = 'ML Enabled';
+$string['ml_disabled'] = 'ML Disabled';
+$string['ml_models'] = 'ML Models';
+$string['ml_training'] = 'Training Information';
+$string['ml_performance'] = 'Performance Metrics';
+$string['ml_management'] = 'Management';
+$string['retrain_models'] = 'Retrain Models';
+$string['export_models'] = 'Export Models';
