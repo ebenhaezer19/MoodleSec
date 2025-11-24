@@ -75,13 +75,31 @@ def retrain_fp_reducer(training_data, labels):
     print(f"  Recall: {results.get('recall', 0):.2%}")
     print(f"  F1 Score: {results.get('f1', 0):.2%}")
     
-    if 'feature_importance' in results:
+    if 'feature_importance' in results and results['feature_importance']:
         print("\nTop 5 Important Features:")
-        for i, (feature, importance) in enumerate(results['feature_importance'][:5], 1):
-            print(f"  {i}. {feature}: {importance:.3f}")
+        feature_importance = results['feature_importance']
+        # Handle both list and dict formats
+        if isinstance(feature_importance, list):
+            for i, item in enumerate(feature_importance[:5], 1):
+                if isinstance(item, tuple):
+                    feature, importance = item
+                    print(f"  {i}. {feature}: {importance:.3f}")
+        elif isinstance(feature_importance, dict):
+            for i, (feature, importance) in enumerate(list(feature_importance.items())[:5], 1):
+                print(f"  {i}. {feature}: {importance:.3f}")
     
     # Save model
     print(f"\nModel saved to: {fp_reducer.model_path}")
+    
+    # Check if training was successful
+    if results.get('accuracy', 0) == 0:
+        print("\n⚠️  WARNING: Training accuracy is 0%!")
+        print("This usually means:")
+        print("  - Dataset too small (need 50+ samples)")
+        print("  - Data quality issues")
+        print("  - All findings have same label")
+        print("\nCurrent dataset: 32 samples")
+        print("Recommendation: Collect more scan data or use pattern-based filtering")
     
     return results
 
