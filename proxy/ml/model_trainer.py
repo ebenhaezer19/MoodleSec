@@ -6,11 +6,15 @@ Trains all ML models using generated or collected training data.
 
 import json
 import os
+import sys
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
-from ml_manager import MLManager
-from training_data_generator import TrainingDataGenerator
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from ml.ml_manager import MLManager
+from ml.training_data_generator import TrainingDataGenerator
 
 
 class ModelTrainer:
