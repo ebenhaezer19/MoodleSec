@@ -374,17 +374,28 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
                 print(f"[Full Scan] Error scanning {target['url']}: {str(e)}")
                 continue
         
-        # Step 3: Aggregate results
+        # Step 3: ML Processing
+        print(f"[Full Scan] BEFORE ML: {len(all_findings)} findings")
+        
+        # Apply ML-enhanced processing
+        ml_results = ml_manager.process_findings(all_findings, scan_id)
+        filtered_findings = ml_results['filtered_findings']
+        
+        print(f"[Full Scan] AFTER ML: {len(filtered_findings)} findings")
+        print(f"[Full Scan] ML Stats: {ml_results['fp_filtered']} FPs filtered, "
+              f"{ml_results['severity_adjusted']} severities adjusted")
+        
+        # Step 4: Aggregate results
         # Sort by risk score
-        all_findings.sort(key=lambda x: x.get('risk_score', 0), reverse=True)
+        filtered_findings.sort(key=lambda x: x.get('risk_score', 0), reverse=True)
         
         # Calculate summary
         summary = {
-            'critical': sum(1 for f in all_findings if f.get('severity', '').lower() == 'critical'),
-            'high': sum(1 for f in all_findings if f.get('severity', '').lower() == 'high'),
-            'medium': sum(1 for f in all_findings if f.get('severity', '').lower() == 'medium'),
-            'low': sum(1 for f in all_findings if f.get('severity', '').lower() == 'low'),
-            'info': sum(1 for f in all_findings if f.get('severity', '').lower() == 'info')
+            'critical': sum(1 for f in filtered_findings if f.get('severity', '').lower() == 'critical'),
+            'high': sum(1 for f in filtered_findings if f.get('severity', '').lower() == 'high'),
+            'medium': sum(1 for f in filtered_findings if f.get('severity', '').lower() == 'medium'),
+            'low': sum(1 for f in filtered_findings if f.get('severity', '').lower() == 'low'),
+            'info': sum(1 for f in filtered_findings if f.get('severity', '').lower() == 'info')
         }
         
         # Log the full scan
@@ -394,7 +405,12 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
             "base_url": MOODLE_URL,
             "endpoints_discovered": len(targets),
             "endpoints_scanned": scanned_count,
-            "findings_count": len(all_findings),
+            "findings_count": len(filtered_findings),
+            "ml_stats": {
+                "original_findings": len(all_findings),
+                "fp_filtered": ml_results['fp_filtered'],
+                "severity_adjusted": ml_results['severity_adjusted']
+            },
             "summary": summary,
             "timestamp": timestamp
         }
@@ -408,9 +424,10 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
             'timestamp': timestamp,
             'endpoints_discovered': len(targets),
             'endpoints_scanned': scanned_count,
-            'total_findings': len(all_findings),
+            'total_findings': len(filtered_findings),
+            'ml_stats': ml_results,
             'summary': summary,
-            'findings': all_findings
+            'findings': filtered_findings
         }
         scan_history_db.save_scan(scan_data_for_db)
         
@@ -422,10 +439,11 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
             'crawl_statistics': crawl_results['statistics'],
             'endpoints_discovered': len(targets),
             'endpoints_scanned': scanned_count,
-            'total_findings': len(all_findings),
+            'total_findings': len(filtered_findings),
+            'ml_stats': ml_results,
             'summary': summary,
-            'findings': all_findings[:100],  # Return top 100 findings
-            'top_risks': all_findings[:10]  # Top 10 highest risk findings
+            'findings': filtered_findings[:100],  # Return top 100 findings
+            'top_risks': filtered_findings[:10]  # Top 10 highest risk findings
         }
         
         # Send Slack notification if enabled
