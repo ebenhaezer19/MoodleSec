@@ -55,6 +55,14 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
     
+    // Add ML Dashboard page
+    $ADMIN->add('local_security_dashboard', new admin_externalpage(
+        'local_security_dashboard_ml',
+        'ML Dashboard',
+        new moodle_url('/local/security_dashboard/ml_dashboard.php'),
+        'moodle/site:config'
+    ));
+    
     // Add Settings page at the end
     $settingspage = new admin_settingpage('local_security_dashboard_settings', 
         'Settings');
