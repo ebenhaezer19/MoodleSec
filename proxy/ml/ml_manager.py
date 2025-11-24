@@ -83,10 +83,22 @@ class MLManager:
         if is_fp and fp_confidence > 0.7:
             enhanced_finding['filtered'] = True
             enhanced_finding['filter_reason'] = f'ML detected false positive ({fp_confidence:.2%})'
-        elif finding.get('category') == 'Cross-Site Scripting (XSS)' and 'dangerous HTML tag' in finding.get('description', '').lower():
-            # Aggressive filtering for known FP pattern
-            enhanced_finding['filtered'] = True
-            enhanced_finding['filter_reason'] = 'Known false positive pattern: Moodle legitimate HTML tags'
+        elif finding.get('category') == 'Cross-Site Scripting (XSS)':
+            description = finding.get('description', '').lower()
+            # Check for multiple FP patterns
+            fp_patterns = [
+                'dangerous html tag',
+                'potentially dangerous html tag',
+                'dangerous tag detected',
+                '<script>',
+                '<iframe>',
+                '<object>',
+                '<embed>'
+            ]
+            if any(pattern in description for pattern in fp_patterns):
+                # Aggressive filtering for known FP pattern
+                enhanced_finding['filtered'] = True
+                enhanced_finding['filter_reason'] = 'Known false positive pattern: Moodle legitimate HTML tags'
         
         # 2. Severity Prediction
         predicted_severity, severity_confidence, severity_dist = self.severity_predictor.predict(finding, context)
@@ -167,6 +179,15 @@ class MLManager:
         
         # Debug: Track FP predictions
         fp_predictions = []
+        pattern_filtered = 0
+        
+        # Debug: Sample first XSS finding to see description format
+        xss_findings = [f for f in findings if f.get('category') == 'Cross-Site Scripting (XSS)']
+        if xss_findings:
+            sample = xss_findings[0]
+            print(f"[Debug] Sample XSS finding:")
+            print(f"  Category: {sample.get('category')}")
+            print(f"  Description: {sample.get('description', 'N/A')[:100]}...")
         
         for finding in findings:
             enhanced = self.process_finding(finding, context)
@@ -183,6 +204,8 @@ class MLManager:
             # Track statistics
             if enhanced.get('filtered'):
                 filtered_count += 1
+                if 'pattern' in enhanced.get('filter_reason', '').lower():
+                    pattern_filtered += 1
             if enhanced.get('severity_adjusted'):
                 severity_adjusted_count += 1
             
@@ -193,12 +216,15 @@ class MLManager:
         # Debug: Print FP prediction summary
         if fp_predictions:
             fp_count = sum(1 for p in fp_predictions if p['is_fp'])
-            high_conf_fp = sum(1 for p in fp_predictions if p['is_fp'] and p['confidence'] > 0.8)
-            print(f"[FP Reducer] Predictions: {fp_count}/{len(fp_predictions)} marked as FP")
-            print(f"[FP Reducer] High confidence (>80%): {high_conf_fp} findings")
+            high_conf_fp = sum(1 for p in fp_predictions if p['is_fp'] and p['confidence'] > 0.7)
+            print(f"[FP Reducer] ML Predictions: {fp_count}/{len(fp_predictions)} marked as FP")
+            print(f"[FP Reducer] High confidence (>70%): {high_conf_fp} findings")
             if high_conf_fp == 0 and fp_count > 0:
                 avg_conf = np.mean([p['confidence'] for p in fp_predictions if p['is_fp']])
-                print(f"[FP Reducer] Average FP confidence: {avg_conf:.2%} (below 80% threshold)")
+                print(f"[FP Reducer] Average FP confidence: {avg_conf:.2%} (below 70% threshold)")
+        
+        print(f"[FP Reducer] Pattern-based filtering: {pattern_filtered} findings")
+        print(f"[FP Reducer] Total filtered: {filtered_count} findings")
         
         return {
             'findings': processed_findings,
