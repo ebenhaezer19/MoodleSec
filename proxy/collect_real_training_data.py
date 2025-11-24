@@ -95,7 +95,15 @@ def categorize_findings(findings):
         'xss_dangerous_tag': {
             'pattern': lambda f: (
                 f.get('category') == 'Cross-Site Scripting (XSS)' and
-                'dangerous HTML tag' in f.get('description', '').lower()
+                any(pattern in f.get('description', '').lower() for pattern in [
+                    'dangerous html tag',
+                    'potentially dangerous html tag',
+                    'dangerous tag detected',
+                    '<script>',
+                    '<iframe>',
+                    '<object>',
+                    '<embed>'
+                ])
             ),
             'label': 1,  # False Positive
             'reason': 'XSS dangerous tag in Moodle legitimate HTML'
@@ -103,7 +111,12 @@ def categorize_findings(findings):
         'sql_in_button': {
             'pattern': lambda f: (
                 f.get('category') == 'SQL Injection' and
-                'submitbutton' in f.get('description', '').lower()
+                any(pattern in f.get('description', '').lower() for pattern in [
+                    'submitbutton',
+                    'button',
+                    'create my new account',
+                    'create account'
+                ])
             ),
             'label': 1,  # False Positive
             'reason': 'SQL keyword in button text, not SQL query'
@@ -111,7 +124,11 @@ def categorize_findings(findings):
         'csrf_missing_token': {
             'pattern': lambda f: (
                 f.get('category') == 'Cross-Site Request Forgery (CSRF)' and
-                'missing' in f.get('description', '').lower()
+                any(pattern in f.get('description', '').lower() for pattern in [
+                    'missing',
+                    'no csrf token',
+                    'csrf token not found'
+                ])
             ),
             'label': 0,  # True Positive
             'reason': 'Real CSRF vulnerability'
@@ -120,10 +137,32 @@ def categorize_findings(findings):
             'pattern': lambda f: (
                 f.get('category') == 'Cross-Site Scripting (XSS)' and
                 f.get('proof_of_concept') is not None and
-                'dangerous HTML tag' not in f.get('description', '').lower()
+                'dangerous html tag' not in f.get('description', '').lower()
             ),
             'label': 0,  # True Positive
             'reason': 'Real XSS with PoC'
+        },
+        # Additional patterns based on common findings
+        'xss_reflected': {
+            'pattern': lambda f: (
+                f.get('category') == 'Cross-Site Scripting (XSS)' and
+                any(pattern in f.get('description', '').lower() for pattern in [
+                    'reflected xss',
+                    'user input reflected',
+                    'parameter reflected'
+                ]) and
+                'dangerous html tag' not in f.get('description', '').lower()
+            ),
+            'label': 0,  # True Positive
+            'reason': 'Real reflected XSS vulnerability'
+        },
+        'info_disclosure_low_risk': {
+            'pattern': lambda f: (
+                f.get('category') in ['Information Disclosure', 'Info'] and
+                f.get('severity', '').lower() in ['low', 'info']
+            ),
+            'label': 1,  # False Positive (usually)
+            'reason': 'Low severity info disclosure, typically FP'
         }
     }
     
