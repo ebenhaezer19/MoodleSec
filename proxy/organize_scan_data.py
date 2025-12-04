@@ -174,10 +174,18 @@ class DataOrganizer:
                     with open(json_file, 'r', encoding='utf-8') as f:
                         data = json.load(f)
                     
+                    # Count Acunetix findings
                     if 'export' in data and 'scans' in data['export']:
                         for scan in data['export']['scans']:
                             vuln_types = scan.get('vulnerability_types', [])
                             scanner_findings += len(vuln_types)
+                    
+                    # Count OWASP ZAP findings
+                    elif 'site' in data:
+                        sites = data['site'] if isinstance(data['site'], list) else [data['site']]
+                        for site in sites:
+                            alerts = site.get('alerts', [])
+                            scanner_findings += len(alerts)
                 
                 except Exception as e:
                     print(f'[!] Error reading {json_file}: {e}')
