@@ -38,31 +38,60 @@ class DataOrganizer:
             with open(json_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
-            # Check for Acunetix format
+            # Check for Acunetix format (most reliable: structure-based detection)
             if 'export' in data and 'scans' in data['export']:
-                scan_info = data['export']['scans'][0].get('info', {})
-                
-                # Check scanner identifier
-                if 'build' in scan_info:
-                    build = scan_info['build']
-                    if 'acunetix' in build.lower() or build.startswith('24.'):
-                        return 'acunetix'
-                    elif 'zap' in build.lower():
+                scans = data['export']['scans']
+                if len(scans) > 0:
+                    scan = scans[0]
+                    
+                    # Acunetix has 'vulnerability_types' array
+                    if 'vulnerability_types' in scan:
+                        vuln_types = scan['vulnerability_types']
+                        if len(vuln_types) > 0:
+                            # Check for Acunetix-specific fields
+                            first_vuln = vuln_types[0]
+                            if 'vt_id' in first_vuln or 'app_id' in first_vuln:
+                                # Check if app_id contains 'acx' (Acunetix signature)
+                                app_id = first_vuln.get('app_id', '')
+                                if 'acx' in app_id or 'acunetix' in app_id.lower():
+                                    return 'acunetix'
+                                # Even without explicit acunetix marker, if it has vt_id + app_id, it's Acunetix
+                                if 'vt_id' in first_vuln and 'app_id' in first_vuln:
+                                    return 'acunetix'
+                    
+                    # Check scan_info for explicit scanner markers
+                    scan_info = scan.get('info', {})
+                    
+                    # Check build field
+                    if 'build' in scan_info:
+                        build = scan_info['build']
+                        if 'acunetix' in build.lower() or build.startswith('24.'):
+                            return 'acunetix'
+                        elif 'zap' in build.lower():
+                            return 'owasp_zap'
+                    
+                    # Check source_type
+                    source_type = scan_info.get('source_type', '')
+                    if 'zap' in source_type.lower():
                         return 'owasp_zap'
-                
-                # Check source_type
-                source_type = scan_info.get('source_type', '')
-                if 'zap' in source_type.lower():
-                    return 'owasp_zap'
-                elif 'acunetix' in source_type.lower():
-                    return 'acunetix'
-                
-                # Check scanner field
-                scanner = scan_info.get('scanner', '')
-                if 'zap' in scanner.lower():
-                    return 'owasp_zap'
-                elif 'acunetix' in scanner.lower():
-                    return 'acunetix'
+                    elif 'acunetix' in source_type.lower():
+                        return 'acunetix'
+                    
+                    # Check scanner field
+                    scanner = scan_info.get('scanner', '')
+                    if 'zap' in scanner.lower():
+                        return 'owasp_zap'
+                    elif 'acunetix' in scanner.lower():
+                        return 'acunetix'
+                    
+                    # If we have export.scans with vulnerability_types but no explicit marker,
+                    # it's most likely Acunetix (this is the default Acunetix export format)
+                    if 'vulnerability_types' in scan:
+                        return 'acunetix'
+            
+            # Check for OWASP ZAP format (different structure)
+            if 'site' in data or '@version' in data:
+                return 'owasp_zap'
             
             return 'other'
         
