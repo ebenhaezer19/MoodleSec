@@ -35,6 +35,22 @@ class DataOrganizer:
     def detect_scanner_type(self, json_file):
         """Detect which scanner produced the JSON file"""
         try:
+            # Check file size first
+            file_size_mb = Path(json_file).stat().st_size / (1024 * 1024)
+            
+            # For large files (>100MB), read only first 10KB to detect type
+            if file_size_mb > 100:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    sample = f.read(10240)  # Read first 10KB
+                    # Quick detection based on file structure markers
+                    if '"export"' in sample and '"scans"' in sample:
+                        return 'acunetix'
+                    elif '"site"' in sample or '"@programName": "ZAP"' in sample:
+                        return 'owasp_zap'
+                    else:
+                        return 'other'
+            
+            # For normal files, parse full JSON
             with open(json_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
@@ -107,6 +123,13 @@ class DataOrganizer:
             print(f'[!] File not found: {json_file}')
             return False
         
+        # Check file size (skip if > 100MB to avoid memory issues)
+        file_size_mb = json_path.stat().st_size / (1024 * 1024)
+        if file_size_mb > 100:
+            print(f'[!] Skipping large file ({file_size_mb:.1f} MB): {json_path.name}')
+            print(f'    → Consider compressing or splitting this file')
+            return False
+        
         # Auto-detect scanner type if not provided
         if scanner_type is None:
             scanner_type = self.detect_scanner_type(json_file)
@@ -119,14 +142,20 @@ class DataOrganizer:
         if dest_file.exists():
             backup_dir = self.base_dir / 'backup'
             backup_file = backup_dir / f"{json_path.stem}_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            shutil.copy2(dest_file, backup_file)
-            print(f'[*] Backed up existing file to: {backup_file}')
+            try:
+                shutil.copy2(dest_file, backup_file)
+                print(f'[*] Backed up existing file to: {backup_file}')
+            except Exception as e:
+                print(f'[!] Warning: Failed to backup file: {e}')
         
-        # Move file
-        shutil.copy2(json_path, dest_file)
-        print(f'[+] Organized: {json_path.name} → {dest_dir}')
-        
-        return True
+        # Move file with error handling
+        try:
+            shutil.copy2(json_path, dest_file)
+            print(f'[+] Organized: {json_path.name} → {dest_dir}')
+            return True
+        except Exception as e:
+            print(f'[!] Error organizing file {json_path.name}: {e}')
+            return False
     
     def organize_all(self, source_dir='.'):
         """Organize all JSON files in a directory"""
@@ -171,6 +200,19 @@ class DataOrganizer:
             
             for json_file in json_files:
                 try:
+                    # Skip empty files
+                    file_size = json_file.stat().st_size
+                    if file_size == 0:
+                        print(f'[!] Skipping empty file: {json_file.name}')
+                        continue
+                    
+                    # Skip very large files (>100MB) to avoid memory issues
+                    file_size_mb = file_size / (1024 * 1024)
+                    if file_size_mb > 100:
+                        print(f'[!] Skipping large file ({file_size_mb:.1f} MB): {json_file.name}')
+                        print(f'    → Consider processing separately or compressing')
+                        continue
+                    
                     with open(json_file, 'r', encoding='utf-8') as f:
                         data = json.load(f)
                     
@@ -187,8 +229,10 @@ class DataOrganizer:
                             alerts = site.get('alerts', [])
                             scanner_findings += len(alerts)
                 
+                except json.JSONDecodeError as e:
+                    print(f'[!] Invalid JSON in {json_file.name}: {e}')
                 except Exception as e:
-                    print(f'[!] Error reading {json_file}: {e}')
+                    print(f'[!] Error reading {json_file.name}: {e}')
             
             scanner_stats[scanner_type] = scanner_findings
             total_findings += scanner_findings
