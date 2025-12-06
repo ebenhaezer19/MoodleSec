@@ -7,6 +7,7 @@ Organize scan results from different sources into structured folders
 import os
 import json
 import shutil
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -185,6 +186,39 @@ class DataOrganizer:
         print(f'    Total: {sum(stats.values())}')
         print(f'{"="*60}\n')
     
+    def count_zap_alerts_streaming(self, json_file):
+        """
+        Count ZAP alerts in large files without loading entire JSON into memory.
+        Uses regex to find "alertRef" occurrences (unique identifier for each alert).
+        """
+        try:
+            alert_count = 0
+            
+            # Read file in chunks and count "alertRef" occurrences
+            with open(json_file, 'r', encoding='utf-8') as f:
+                chunk_size = 1024 * 1024  # 1MB chunks
+                buffer = ""
+                
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    
+                    buffer += chunk
+                    
+                    # Count "alertRef" occurrences in buffer
+                    matches = re.findall(r'"alertRef":', buffer)
+                    alert_count += len(matches)
+                    
+                    # Keep last 1000 chars in buffer to handle split patterns
+                    buffer = buffer[-1000:]
+            
+            return alert_count
+            
+        except Exception as e:
+            print(f'[!] Error in streaming parser: {e}')
+            return 0
+    
     def count_findings(self):
         """Count total findings in all organized files"""
         print(f'\n[*] Counting findings...\n')
@@ -206,11 +240,18 @@ class DataOrganizer:
                         print(f'[!] Skipping empty file: {json_file.name}')
                         continue
                     
-                    # Skip very large files (>100MB) to avoid memory issues
+                    # Use streaming parser for very large files (>100MB)
                     file_size_mb = file_size / (1024 * 1024)
                     if file_size_mb > 100:
-                        print(f'[!] Skipping large file ({file_size_mb:.1f} MB): {json_file.name}')
-                        print(f'    → Consider processing separately or compressing')
+                        print(f'[*] Processing large file ({file_size_mb:.1f} MB) with streaming parser: {json_file.name}')
+                        
+                        # Only use streaming for ZAP files (they have alertRef pattern)
+                        if scanner_type == 'owasp_zap':
+                            large_file_findings = self.count_zap_alerts_streaming(json_file)
+                            scanner_findings += large_file_findings
+                            print(f'    → Found {large_file_findings} findings')
+                        else:
+                            print(f'[!] Skipping large non-ZAP file (no streaming parser available)')
                         continue
                     
                     with open(json_file, 'r', encoding='utf-8') as f:
