@@ -26,11 +26,13 @@ def load_training_data(data_dir="ml/training_data"):
         print("Run collect_real_training_data.py first!")
         return None, None
     
-    # Priority: augmented > merged > real_data
+    # Priority: augmented > merged > auto_labeled
     search_patterns = [
         (data_path / "merged", "augmented_training_data_*.json"),
         (data_path / "merged", "merged_training_data_*.json"),
-        (data_path / "real_data", "*_auto_labeled.json")
+        (data_path, "merged_training_data_*.json"),  # Check root dir too
+        (data_path / "real_data", "*_auto_labeled.json"),
+        (data_path, "auto_labeled_*.json")  # Fallback to auto_labeled
     ]
     
     latest_file = None
