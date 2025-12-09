@@ -239,7 +239,8 @@ def auto_label_and_export():
             'scan_id': row['scan_id']
         }
         
-        if label is not None and confidence >= 0.8:
+        # Lower threshold to 0.7 for more auto-labeling
+        if label is not None and confidence >= 0.7:
             auto_labeled.append(labeled_finding)
         else:
             needs_review.append(labeled_finding)
