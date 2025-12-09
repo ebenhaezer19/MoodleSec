@@ -174,35 +174,58 @@ def test_improved_confidence(training_data, labels):
     # Load retrained model
     fp_reducer = FalsePositiveReducer()
     
+    # Verify model is loaded
+    if not fp_reducer.is_trained:
+        print("\n⚠️  Warning: Model not loaded properly!")
+        return 0.0
+    
     # Test on sample findings
     sample_size = min(10, len(training_data))
     print(f"\nTesting on {sample_size} sample findings:")
     print()
     
     high_confidence_count = 0
+    correct_predictions = 0
     
     for i in range(sample_size):
         finding = training_data[i]
         true_label = labels[i]
         
-        is_fp, confidence = fp_reducer.predict(finding)
-        
-        category = finding.get('category', 'Unknown')
-        print(f"{i+1}. {category}")
-        print(f"   True Label: {'FP' if true_label == 1 else 'TP'}")
-        print(f"   Predicted: {'FP' if is_fp else 'TP'}")
-        print(f"   Confidence: {confidence:.2%}")
-        
-        if confidence > 0.7:
-            high_confidence_count += 1
-            print(f"   Status: ✅ High confidence (>70%)")
-        else:
-            print(f"   Status: ⚠️ Low confidence (<70%)")
-        print()
+        # Predict using the trained model
+        try:
+            is_fp, confidence = fp_reducer.predict(finding)
+            
+            category = finding.get('category', 'Unknown')
+            print(f"{i+1}. {category}")
+            print(f"   True Label: {'FP' if true_label == 1 else 'TP'}")
+            print(f"   Predicted: {'FP' if is_fp else 'TP'}")
+            print(f"   Confidence: {confidence:.2%}")
+            
+            # Check if prediction is correct
+            predicted_label = 1 if is_fp else 0
+            if predicted_label == true_label:
+                correct_predictions += 1
+                print(f"   Accuracy: ✅ Correct")
+            else:
+                print(f"   Accuracy: ❌ Wrong")
+            
+            if confidence > 0.7:
+                high_confidence_count += 1
+                print(f"   Status: ✅ High confidence (>70%)")
+            else:
+                print(f"   Status: ⚠️ Low confidence (<70%)")
+            print()
+        except Exception as e:
+            print(f"   Error: {e}")
+            print()
     
-    print(f"High confidence predictions: {high_confidence_count}/{sample_size} ({high_confidence_count/sample_size:.0%})")
+    accuracy = correct_predictions / sample_size if sample_size > 0 else 0
+    conf_rate = high_confidence_count / sample_size if sample_size > 0 else 0
     
-    return high_confidence_count / sample_size
+    print(f"Test Accuracy: {correct_predictions}/{sample_size} ({accuracy:.0%})")
+    print(f"High confidence predictions: {high_confidence_count}/{sample_size} ({conf_rate:.0%})")
+    
+    return conf_rate
 
 def main():
     """Main function."""
