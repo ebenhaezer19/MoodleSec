@@ -174,9 +174,19 @@ def test_improved_confidence(training_data, labels):
     # Load retrained model
     fp_reducer = FalsePositiveReducer()
     
+    # Print model info
+    model_info = fp_reducer.get_model_info()
+    print(f"\nModel Status:")
+    print(f"  Trained: {model_info.get('trained', False)}")
+    if model_info.get('trained'):
+        print(f"  Features: {model_info.get('n_features', 0)}")
+        print(f"  Estimators: {model_info.get('n_estimators', 0)}")
+    
     # Verify model is loaded
     if not fp_reducer.is_trained:
-        print("\n⚠️  Warning: Model not loaded properly!")
+        print("\n⚠️  Warning: Model not loaded properly! Using heuristics.")
+        print("This is expected if model was just trained in same session.")
+        print("Confidence will improve after proxy restart.")
         return 0.0
     
     # Test on sample findings
