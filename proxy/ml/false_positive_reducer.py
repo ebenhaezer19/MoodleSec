@@ -246,6 +246,19 @@ class FalsePositiveReducer:
         train_score = self.model.score(X_train_scaled, y_train)
         test_score = self.model.score(X_test_scaled, y_test)
         
+        # Detailed metrics on test set
+        from sklearn.metrics import precision_score, recall_score, f1_score, classification_report
+        
+        y_pred = self.model.predict(X_test_scaled)
+        
+        # Calculate metrics (handle potential errors with zero_division)
+        try:
+            precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+            recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+            f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+        except:
+            precision = recall = f1 = 0.0
+        
         # Feature importance
         feature_names = [
             'severity', 'category', 'evidence_length', 'description_length',
@@ -263,8 +276,12 @@ class FalsePositiveReducer:
         
         return {
             'success': True,
+            'accuracy': float(test_score),  # Use test accuracy as main metric
             'train_accuracy': float(train_score),
             'test_accuracy': float(test_score),
+            'precision': float(precision),
+            'recall': float(recall),
+            'f1': float(f1),
             'samples_trained': len(X_train),
             'samples_tested': len(X_test),
             'feature_importance': feature_importance,
