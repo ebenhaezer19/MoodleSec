@@ -17,7 +17,7 @@ import sys
 
 # Import auto-labeling logic
 sys.path.append(str(Path(__file__).parent))
-from enhanced_auto_label import auto_label_finding
+from enhanced_auto_label import EnhancedAutoLabeler
 
 DB_PATH = "data/scan_history.db"
 ACUNETIX_DIR = Path("data/raw/acunetix")
@@ -184,6 +184,9 @@ def auto_label_and_export():
     
     print(f"\n[*] Auto-labeling {len(all_findings)} findings...")
     
+    # Initialize auto-labeler
+    labeler = EnhancedAutoLabeler()
+    
     for row in all_findings:
         finding = {
             'severity': row['severity'],
@@ -195,17 +198,18 @@ def auto_label_and_export():
         }
         
         # Auto-label using enhanced patterns
-        label, confidence, reason = auto_label_finding(finding)
+        label, confidence, reason, strategy = labeler.label_finding(finding)
         
         labeled_finding = {
             **finding,
-            'label': label,
+            'label': label if label is not None else -1,  # -1 for needs review
             'confidence': confidence,
             'reason': reason,
+            'strategy': strategy,
             'scan_id': row['scan_id']
         }
         
-        if confidence >= 0.8:
+        if label is not None and confidence >= 0.8:
             auto_labeled.append(labeled_finding)
         else:
             needs_review.append(labeled_finding)
