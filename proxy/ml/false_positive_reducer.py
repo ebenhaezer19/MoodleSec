@@ -51,18 +51,31 @@ class FalsePositiveReducer:
             'info': 1
         }
         
-        self.category_encoding = {
-            'SQL Injection': 10,
-            'XSS': 9,
-            'CSRF': 8,
-            'Authentication': 7,
-            'Authorization': 6,
-            'Session Management': 5,
-            'API Security': 4,
-            'Input Validation': 3,
-            'Security Misconfiguration': 2,
-            'Information Disclosure': 1
-        }
+        # Enhanced category encoding with more categories
+        self.category_encoding = {}
+        self._build_category_encoding()
+        
+        # Keywords for feature extraction
+        self.fp_keywords = [
+            'missing', 'not implemented', 'not set', 'header', 'best practice',
+            'recommendation', 'information', 'disclosure', 'version', 'banner'
+        ]
+        self.tp_keywords = [
+            'injection', 'xss', 'csrf', 'bypass', 'exploit', 'vulnerability',
+            'attack', 'malicious', 'unauthorized', 'exposed', 'sensitive'
+        ]
+    
+    def _build_category_encoding(self):
+        """Build dynamic category encoding from common categories."""
+        categories = [
+            'SQL Injection', 'XSS', 'Cross-site Scripting', 'CSRF',
+            'Authentication', 'Authorization', 'Session Management',
+            'Cookie', 'Header', 'CSP', 'HSTS', 'Clickjacking',
+            'Information Disclosure', 'Directory Listing', 'Version Disclosure',
+            'Security Misconfiguration', 'TLS', 'SSL', 'Certificate'
+        ]
+        for i, cat in enumerate(categories, start=1):
+            self.category_encoding[cat] = i
         
         # Load existing model if available
         self._load_model()
@@ -84,21 +97,25 @@ class FalsePositiveReducer:
         severity = finding.get('severity', 'info').lower()
         features.append(self.severity_encoding.get(severity, 1))
         
-        # Feature 2: Category (encoded)
+        # Feature 2: Category (encoded with partial matching)
         category = finding.get('category', 'Unknown')
-        features.append(self.category_encoding.get(category, 0))
+        cat_score = 0
+        for key, value in self.category_encoding.items():
+            if key.lower() in category.lower():
+                cat_score = max(cat_score, value)
+        features.append(cat_score)
         
-        # Feature 3: Evidence length
-        evidence = finding.get('evidence', '')
-        features.append(len(str(evidence)))
+        # Feature 3: Evidence length (normalized)
+        evidence = str(finding.get('evidence', ''))
+        features.append(min(len(evidence) / 100, 10))  # Normalize to 0-10
         
-        # Feature 4: Description length
-        description = finding.get('description', '')
-        features.append(len(str(description)))
+        # Feature 4: Description length (normalized)
+        description = str(finding.get('description', ''))
+        features.append(min(len(description) / 100, 10))  # Normalize to 0-10
         
         # Feature 5: URL complexity (number of path segments)
         url = finding.get('url', '')
-        features.append(url.count('/'))
+        features.append(min(url.count('/'), 10))
         
         # Feature 6: Has query parameters
         features.append(1 if '?' in url else 0)
@@ -109,18 +126,38 @@ class FalsePositiveReducer:
         # Feature 8: Risk score (if available)
         features.append(finding.get('risk_score', 0))
         
+        # NEW Feature 9: FP keyword count in description
+        desc_lower = description.lower()
+        fp_count = sum(1 for kw in self.fp_keywords if kw in desc_lower)
+        features.append(fp_count)
+        
+        # NEW Feature 10: TP keyword count in description
+        tp_count = sum(1 for kw in self.tp_keywords if kw in desc_lower)
+        features.append(tp_count)
+        
+        # NEW Feature 11: Keyword ratio (FP vs TP)
+        if tp_count + fp_count > 0:
+            keyword_ratio = fp_count / (tp_count + fp_count)
+        else:
+            keyword_ratio = 0.5
+        features.append(keyword_ratio)
+        
+        # NEW Feature 12: Is informational (low severity + no exploit keywords)
+        is_info = 1 if (severity in ['info', 'low'] and tp_count == 0) else 0
+        features.append(is_info)
+        
         # Context features (if provided)
         if context:
-            # Feature 9: Response status code
+            # Feature 13: Response status code
             features.append(context.get('status_code', 200))
             
-            # Feature 10: Response time (ms)
+            # Feature 14: Response time (ms)
             features.append(context.get('response_time', 0))
             
-            # Feature 11: Historical occurrence count
+            # Feature 15: Historical occurrence count
             features.append(context.get('occurrence_count', 1))
             
-            # Feature 12: Days since first seen
+            # Feature 16: Days since first seen
             features.append(context.get('days_since_first_seen', 0))
         else:
             # Default values if no context
@@ -234,14 +271,46 @@ class FalsePositiveReducer:
         X_train_scaled = self.scaler.fit_transform(X_train)
         X_test_scaled = self.scaler.transform(X_test)
         
-        # Train Random Forest
-        self.model = RandomForestClassifier(
-            n_estimators=100,
-            max_depth=10,
-            min_samples_split=5,
+        # Train Ensemble Model (Random Forest + Gradient Boosting)
+        from sklearn.ensemble import GradientBoostingClassifier, VotingClassifier
+        from sklearn.calibration import CalibratedClassifierCV
+        
+        # Model 1: Random Forest
+        rf_model = RandomForestClassifier(
+            n_estimators=150,  # Increased from 100
+            max_depth=12,      # Increased from 10
+            min_samples_split=4,
             min_samples_leaf=2,
             random_state=42,
-            class_weight='balanced'  # Handle imbalanced data
+            class_weight='balanced'
+        )
+        
+        # Model 2: Gradient Boosting
+        gb_model = GradientBoostingClassifier(
+            n_estimators=100,
+            max_depth=5,
+            learning_rate=0.1,
+            random_state=42
+        )
+        
+        # Ensemble: Voting Classifier
+        ensemble = VotingClassifier(
+            estimators=[
+                ('rf', rf_model),
+                ('gb', gb_model)
+            ],
+            voting='soft',  # Use probability voting
+            weights=[2, 1]  # RF gets more weight
+        )
+        
+        # Train ensemble
+        ensemble.fit(X_train_scaled, y_train)
+        
+        # Calibrate probabilities for better confidence estimates
+        self.model = CalibratedClassifierCV(
+            ensemble,
+            method='sigmoid',  # Platt scaling
+            cv=3
         )
         
         self.model.fit(X_train_scaled, y_train)
@@ -264,17 +333,26 @@ class FalsePositiveReducer:
         except:
             precision = recall = f1 = 0.0
         
-        # Feature importance
+        # Feature importance (from base estimator)
         feature_names = [
             'severity', 'category', 'evidence_length', 'description_length',
             'url_complexity', 'has_params', 'cvss_score', 'risk_score',
+            'fp_keyword_count', 'tp_keyword_count', 'keyword_ratio', 'is_informational',
             'status_code', 'response_time', 'occurrence_count', 'days_since_first_seen'
         ]
         
-        feature_importance = dict(zip(
-            feature_names,
-            self.model.feature_importances_.tolist()
-        ))
+        # Get feature importance from the base estimator (before calibration)
+        try:
+            # Access the base estimator's feature importance
+            base_estimator = self.model.calibrated_classifiers_[0].base_estimator
+            if hasattr(base_estimator, 'estimators_'):
+                # It's a VotingClassifier, get RF importance
+                rf_estimator = base_estimator.estimators_[0]
+                feature_importance = dict(zip(feature_names, rf_estimator.feature_importances_.tolist()))
+            else:
+                feature_importance = {name: 0.0 for name in feature_names}
+        except:
+            feature_importance = {name: 0.0 for name in feature_names}
         
         # Save model
         self._save_model()
