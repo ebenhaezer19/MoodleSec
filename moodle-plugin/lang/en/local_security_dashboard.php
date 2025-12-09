@@ -46,3 +46,15 @@ $string['ml_performance'] = 'Performance Metrics';
 $string['ml_management'] = 'Management';
 $string['retrain_models'] = 'Retrain Models';
 $string['export_models'] = 'Export Models';
+
+// Capabilities
+$string['security_dashboard:view'] = 'View security dashboard';
+$string['security_dashboard:scan'] = 'Trigger security scans';
+$string['security_dashboard:viewreports'] = 'View security reports';
+$string['security_dashboard:downloadreports'] = 'Download security reports';
+$string['security_dashboard:manageschedule'] = 'Manage scan schedule';
+
+// Tasks
+$string['scan_task'] = 'Scheduled security scan';
+$string['scheduled_scan_paths'] = 'Scheduled scan paths';
+$string['scheduled_scan_paths_desc'] = 'Comma-separated list of paths to scan automatically (e.g., /login/index.php, /course/view.php)';

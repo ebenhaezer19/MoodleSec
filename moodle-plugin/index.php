@@ -83,26 +83,28 @@ if (isset($logs_data['error'])) {
         
         foreach ($logs_data['logs'] as $log) {
             $row = [];
-            $row[] = $log['type'] ?? 'N/A';
-            $row[] = $log['timestamp'] ?? 'N/A';
+            
+            // XSS Prevention: Sanitize all log data
+            $row[] = s($log['type'] ?? 'N/A');
+            $row[] = s($log['timestamp'] ?? 'N/A');
             
             // Format details based on log type
             $details = '';
             if (isset($log['scan_id'])) {
-                $details .= 'Scan ID: ' . $log['scan_id'] . '<br>';
+                $details .= 'Scan ID: ' . s($log['scan_id']) . '<br>';
             }
             if (isset($log['target_url'])) {
-                $details .= 'URL: ' . $log['target_url'] . '<br>';
+                $details .= 'URL: ' . s($log['target_url']) . '<br>';
             }
             if (isset($log['findings_count'])) {
-                $details .= 'Findings: ' . $log['findings_count'] . '<br>';
+                $details .= 'Findings: ' . intval($log['findings_count']) . '<br>';
             }
             if (isset($log['summary'])) {
                 $summary = $log['summary'];
-                $details .= 'Critical: ' . ($summary['critical'] ?? 0) . ' | ';
-                $details .= 'High: ' . ($summary['high'] ?? 0) . ' | ';
-                $details .= 'Medium: ' . ($summary['medium'] ?? 0) . ' | ';
-                $details .= 'Low: ' . ($summary['low'] ?? 0);
+                $details .= 'Critical: ' . intval($summary['critical'] ?? 0) . ' | ';
+                $details .= 'High: ' . intval($summary['high'] ?? 0) . ' | ';
+                $details .= 'Medium: ' . intval($summary['medium'] ?? 0) . ' | ';
+                $details .= 'Low: ' . intval($summary['low'] ?? 0);
             }
             
             $row[] = $details ?: 'N/A';

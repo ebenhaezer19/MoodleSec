@@ -28,11 +28,23 @@ $scan_triggered = false;
 $scan_result = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
-    $path = required_param('path', PARAM_TEXT);
-    $method = optional_param('method', 'GET', PARAM_TEXT);
+    // Enhanced input validation
+    $path = required_param('path', PARAM_PATH);
+    $method = required_param('method', PARAM_ALPHA);
     
-    $scan_result = local_security_dashboard_trigger_scan($path, $method);
-    $scan_triggered = true;
+    // Validate method
+    $allowed_methods = ['GET', 'POST'];
+    if (!in_array($method, $allowed_methods)) {
+        $method = 'GET';
+    }
+    
+    // Validate path format (must start with /)
+    if (!preg_match('#^/[a-zA-Z0-9/_\-\.]+$#', $path)) {
+        echo $OUTPUT->notification('Invalid path format. Path must start with / and contain only alphanumeric characters, /, _, -, and .', 'error');
+    } else {
+        $scan_result = local_security_dashboard_trigger_scan($path, $method);
+        $scan_triggered = true;
+    }
 }
 
 echo $OUTPUT->header();
@@ -84,10 +96,14 @@ if ($scan_triggered) {
         echo html_writer::start_div('card');
         echo html_writer::start_div('card-body');
         
-        $scan_id = $scan_result['scan_id'] ?? 'N/A';
+        // XSS Prevention: Sanitize all output
+        $scan_id = s($scan_result['scan_id'] ?? 'N/A');
+        $target_url = s($scan_result['target_url'] ?? 'N/A');
+        $timestamp = s($scan_result['timestamp'] ?? 'N/A');
+        
         echo html_writer::tag('p', '<strong>Scan ID:</strong> ' . $scan_id);
-        echo html_writer::tag('p', '<strong>Target URL:</strong> ' . ($scan_result['target_url'] ?? 'N/A'));
-        echo html_writer::tag('p', '<strong>Timestamp:</strong> ' . ($scan_result['timestamp'] ?? 'N/A'));
+        echo html_writer::tag('p', '<strong>Target URL:</strong> ' . $target_url);
+        echo html_writer::tag('p', '<strong>Timestamp:</strong> ' . $timestamp);
         
         // Download Report Button
         if ($scan_id !== 'N/A') {
@@ -127,8 +143,12 @@ if ($scan_triggered) {
             foreach ($scan_result['findings'] as $finding) {
                 $row = [];
                 
-                // Severity with color badge
-                $severity = $finding['severity'] ?? 'N/A';
+                // XSS Prevention: Sanitize all finding data
+                $severity = s($finding['severity'] ?? 'N/A');
+                $category = s($finding['category'] ?? 'N/A');
+                $description = s($finding['description'] ?? 'N/A');
+                $evidence = s($finding['evidence'] ?? 'N/A');
+                
                 $severity_lower = strtolower($severity);
                 
                 // Map severity to Bootstrap badge classes
@@ -143,9 +163,9 @@ if ($scan_triggered) {
                 $badge_class = $badge_map[$severity_lower] ?? 'secondary';
                 $row[] = html_writer::span(ucfirst($severity), 'badge badge-' . $badge_class . ' severity-badge');
                 
-                $row[] = $finding['category'] ?? 'N/A';
-                $row[] = $finding['description'] ?? 'N/A';
-                $row[] = $finding['evidence'] ?? 'N/A';
+                $row[] = $category;
+                $row[] = $description;
+                $row[] = $evidence;
                 
                 $table->data[] = $row;
             }

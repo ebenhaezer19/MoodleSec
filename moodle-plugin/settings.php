@@ -84,6 +84,15 @@ if ($hassiteconfig) {
         'http://localhost:8001',
         PARAM_URL
     ));
+    
+    // Scheduled scan paths
+    $settingspage->add(new admin_setting_configtextarea(
+        'local_security_dashboard/scheduled_scan_paths',
+        get_string('scheduled_scan_paths', 'local_security_dashboard'),
+        get_string('scheduled_scan_paths_desc', 'local_security_dashboard'),
+        '/login/index.php',
+        PARAM_TEXT
+    ));
 
     $ADMIN->add('local_security_dashboard', $settingspage);
 }
