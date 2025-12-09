@@ -6,18 +6,35 @@ This document outlines the security measures implemented in the Security Dashboa
 ## Security Measures Implemented
 
 ### 1. Input Validation ✅
-- **Path Validation**: All scan paths are validated using `PARAM_PATH` and regex patterns
+- **Path Validation**: Multi-layer validation with strict pattern matching
+- **Path Traversal Prevention**: Explicit checks for `..`, `//`, and `\` patterns
 - **Method Validation**: HTTP methods are restricted to GET and POST only
 - **Parameter Sanitization**: All user inputs are sanitized before processing
+- **Length Limits**: Maximum path length of 255 characters
 
 ```php
-// Example from scan.php
+// Example from scan.php - Multi-layer validation
 $path = required_param('path', PARAM_PATH);
-$method = required_param('method', PARAM_ALPHA);
 
-// Validate path format
+// Check 1: Must start with /
+if (!preg_match('#^/#', $path)) {
+    $validation_errors[] = 'Path must start with /';
+}
+
+// Check 2: No path traversal patterns
+if (preg_match('#\.\.|//|\\\\#', $path)) {
+    $validation_errors[] = 'Path contains invalid patterns';
+}
+
+// Check 3: Only allowed characters
 if (!preg_match('#^/[a-zA-Z0-9/_\-\.]+$#', $path)) {
-    // Reject invalid paths
+    $validation_errors[] = 'Path contains invalid characters';
+}
+
+// Example from lib.php - API-level validation
+$path = clean_param($path, PARAM_PATH);
+if (preg_match('#\.\.|//|\\\\#', $path)) {
+    return ['error' => 'Invalid path: contains path traversal patterns'];
 }
 ```
 
@@ -145,6 +162,7 @@ This plugin follows:
 
 | Date | Version | Security Changes |
 |------|---------|------------------|
+| 2025-12-09 | v1.1.1-beta | **CRITICAL FIX**: Enhanced path traversal prevention with multi-layer validation |
 | 2025-12-09 | v1.1.0-beta | Initial security hardening: Input validation, XSS prevention, enhanced capabilities, background tasks |
 | 2025-11-16 | v1.0.0 | Initial release with basic security measures |
 

@@ -66,6 +66,14 @@ function local_security_dashboard_trigger_scan($path, $method = 'GET', $paramete
         return ['error' => 'Proxy URL not configured'];
     }
     
+    // Additional security: Normalize and validate path before sending
+    $path = clean_param($path, PARAM_PATH);
+    
+    // Final security check: reject if contains traversal patterns
+    if (preg_match('#\.\.|//|\\\\#', $path)) {
+        return ['error' => 'Invalid path: contains path traversal patterns'];
+    }
+    
     $url = rtrim($proxy_url, '/') . '/scan-trigger';
     
     $data = [

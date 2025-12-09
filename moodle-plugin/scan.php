@@ -38,9 +38,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
         $method = 'GET';
     }
     
-    // Validate path format (must start with /)
+    // Strict path validation - prevent path traversal
+    $validation_errors = [];
+    
+    // Check 1: Must start with /
+    if (!preg_match('#^/#', $path)) {
+        $validation_errors[] = 'Path must start with /';
+    }
+    
+    // Check 2: No path traversal patterns
+    if (preg_match('#\.\.|//|\\\\#', $path)) {
+        $validation_errors[] = 'Path contains invalid patterns (.. or // or \\)';
+    }
+    
+    // Check 3: Only allowed characters
     if (!preg_match('#^/[a-zA-Z0-9/_\-\.]+$#', $path)) {
-        echo $OUTPUT->notification('Invalid path format. Path must start with / and contain only alphanumeric characters, /, _, -, and .', 'error');
+        $validation_errors[] = 'Path contains invalid characters';
+    }
+    
+    // Check 4: Path length limit
+    if (strlen($path) > 255) {
+        $validation_errors[] = 'Path is too long (max 255 characters)';
+    }
+    
+    if (!empty($validation_errors)) {
+        foreach ($validation_errors as $error) {
+            echo $OUTPUT->notification($error, 'error');
+        }
     } else {
         $scan_result = local_security_dashboard_trigger_scan($path, $method);
         $scan_triggered = true;
