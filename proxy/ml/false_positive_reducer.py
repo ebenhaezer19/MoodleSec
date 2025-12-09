@@ -143,21 +143,26 @@ class FalsePositiveReducer:
             # If model not trained, use rule-based heuristics
             return self._heuristic_classification(finding)
         
-        # Extract features
-        features = self.extract_features(finding, context)
-        
-        # Scale features
-        features_scaled = self.scaler.transform(features)
-        
-        # Predict
-        prediction = self.model.predict(features_scaled)[0]
-        probability = self.model.predict_proba(features_scaled)[0]
-        
-        # prediction: 0 = True Positive, 1 = False Positive
-        is_false_positive = bool(prediction)
-        confidence = probability[1] if is_false_positive else probability[0]
-        
-        return is_false_positive, float(confidence)
+        try:
+            # Extract features
+            features = self.extract_features(finding, context)
+            
+            # Scale features
+            features_scaled = self.scaler.transform(features)
+            
+            # Predict
+            prediction = self.model.predict(features_scaled)[0]
+            probability = self.model.predict_proba(features_scaled)[0]
+            
+            # prediction: 0 = True Positive, 1 = False Positive
+            is_false_positive = bool(prediction)
+            confidence = probability[1] if is_false_positive else probability[0]
+            
+            return is_false_positive, float(confidence)
+        except Exception as e:
+            # Fallback to heuristics if prediction fails
+            print(f"[FP Reducer] Prediction error: {e}, using heuristics")
+            return self._heuristic_classification(finding)
     
     def _heuristic_classification(self, finding: Dict[str, Any]) -> Tuple[bool, float]:
         """
