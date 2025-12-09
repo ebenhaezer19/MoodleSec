@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# ML Models
+*.pkl
+*.joblib
+*.h5
+*.model
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files (keep structure, ignore content)
+proxy/data/raw/*/*.json
+proxy/data/processed/*.json
+proxy/data/merged/*.json
+proxy/data/backup/*.json
+
+# Keep directory structure
+!proxy/data/raw/.gitkeep
+!proxy/data/processed/.gitkeep
+!proxy/data/merged/.gitkeep
+!proxy/data/backup/.gitkeep
