@@ -75,11 +75,16 @@ def parse_acunetix_file(file_path):
     
     findings = []
     scan_id = f"acunetix_{file_path.stem}"
+    target_url = 'unknown'
     
-    # Parse Acunetix export format
+    # Try to get target URL from locations
+    if 'locations' in data and data['locations']:
+        target_url = data['locations'][0].get('root_url', 'unknown')
+    
+    # Parse Acunetix export format (old format)
     if 'export' in data and 'scans' in data['export']:
         for scan in data['export']['scans']:
-            target_url = scan.get('target', {}).get('url', 'unknown')
+            target_url = scan.get('target', {}).get('url', target_url)
             
             for vuln_type in scan.get('vulnerability_types', []):
                 for vuln in vuln_type.get('vulnerabilities', []):
@@ -94,6 +99,25 @@ def parse_acunetix_file(file_path):
                         'timestamp': scan.get('start_date', datetime.now().isoformat())
                     }
                     findings.append(finding)
+    
+    # Parse Acunetix new format (vulnerability_types at root)
+    elif 'vulnerability_types' in data:
+        for vuln_type in data['vulnerability_types']:
+            # Map severity number to string
+            severity_map = {0: 'info', 1: 'low', 2: 'medium', 3: 'high', 4: 'critical'}
+            severity = severity_map.get(vuln_type.get('severity', 0), 'unknown')
+            
+            finding = {
+                'scan_id': scan_id,
+                'severity': severity,
+                'category': vuln_type.get('name', 'unknown'),
+                'description': vuln_type.get('description', ''),
+                'evidence': vuln_type.get('recommendation', ''),
+                'url': target_url,
+                'cvss_score': vuln_type.get('cvss_score', 0.0),
+                'timestamp': datetime.now().isoformat()
+            }
+            findings.append(finding)
     
     return scan_id, findings
 
