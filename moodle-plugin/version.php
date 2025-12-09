@@ -10,7 +10,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_security_dashboard';
-$plugin->version = 2025120901;  // YYYYMMDDXX - Path traversal fix
+$plugin->version = 2025120902;  // YYYYMMDDXX - System path protection
 $plugin->requires = 2022041900; // Moodle 4.0+
 $plugin->maturity = MATURITY_BETA;
-$plugin->release = 'v1.1.1-beta';
+$plugin->release = 'v1.1.2-beta';

@@ -162,6 +162,7 @@ This plugin follows:
 
 | Date | Version | Security Changes |
 |------|---------|------------------|
+| 2025-12-09 | v1.1.2-beta | **CRITICAL FIX**: Added system path blacklist and Moodle path whitelist to prevent direct system file access |
 | 2025-12-09 | v1.1.1-beta | **CRITICAL FIX**: Enhanced path traversal prevention with multi-layer validation |
 | 2025-12-09 | v1.1.0-beta | Initial security hardening: Input validation, XSS prevention, enhanced capabilities, background tasks |
 | 2025-11-16 | v1.0.0 | Initial release with basic security measures |

@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
         $method = 'GET';
     }
     
-    // Strict path validation - prevent path traversal
+    // Strict path validation - prevent path traversal and system file access
     $validation_errors = [];
     
     // Check 1: Must start with /
@@ -51,12 +51,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
         $validation_errors[] = 'Path contains invalid patterns (.. or // or \\)';
     }
     
-    // Check 3: Only allowed characters
+    // Check 3: Block system/sensitive paths
+    $blocked_paths = [
+        '/etc/', '/var/', '/usr/', '/bin/', '/sbin/', '/root/', '/home/',
+        '/proc/', '/sys/', '/dev/', '/tmp/', '/boot/', '/opt/', '/mnt/'
+    ];
+    foreach ($blocked_paths as $blocked) {
+        if (stripos($path, $blocked) === 0) {
+            $validation_errors[] = 'Access to system directories is not allowed';
+            break;
+        }
+    }
+    
+    // Check 4: Whitelist allowed Moodle paths
+    $allowed_prefixes = [
+        '/login/', '/course/', '/user/', '/mod/', '/admin/', '/local/',
+        '/theme/', '/blocks/', '/report/', '/grade/', '/message/',
+        '/calendar/', '/badges/', '/cohort/', '/tag/', '/question/',
+        '/enrol/', '/auth/', '/lib/', '/webservice/', '/repository/'
+    ];
+    
+    $is_allowed = false;
+    foreach ($allowed_prefixes as $prefix) {
+        if (stripos($path, $prefix) === 0) {
+            $is_allowed = true;
+            break;
+        }
+    }
+    
+    if (!$is_allowed) {
+        $validation_errors[] = 'Path must start with an allowed Moodle directory (e.g., /login/, /course/, /user/)';
+    }
+    
+    // Check 5: Only allowed characters
     if (!preg_match('#^/[a-zA-Z0-9/_\-\.]+$#', $path)) {
         $validation_errors[] = 'Path contains invalid characters';
     }
     
-    // Check 4: Path length limit
+    // Check 6: Path length limit
     if (strlen($path) > 255) {
         $validation_errors[] = 'Path is too long (max 255 characters)';
     }
