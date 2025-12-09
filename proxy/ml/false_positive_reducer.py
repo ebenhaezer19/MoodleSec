@@ -460,10 +460,27 @@ class FalsePositiveReducer:
                 'message': 'Model not trained yet. Using heuristic classification.'
             }
         
-        return {
-            'trained': True,
-            'n_estimators': self.model.n_estimators,
-            'max_depth': self.model.max_depth,
-            'n_features': self.model.n_features_in_,
-            'model_path': self.model_path
-        }
+        # Get info from calibrated ensemble
+        try:
+            base_estimator = self.model.calibrated_classifiers_[0].base_estimator
+            if hasattr(base_estimator, 'estimators_'):
+                # VotingClassifier
+                n_models = len(base_estimator.estimators_)
+                model_type = 'Calibrated Ensemble (RF + GB)'
+            else:
+                n_models = 1
+                model_type = 'Calibrated Classifier'
+            
+            return {
+                'trained': True,
+                'model_type': model_type,
+                'n_models': n_models,
+                'n_features': len(self.scaler.mean_) if hasattr(self.scaler, 'mean_') else 16,
+                'model_path': self.model_path
+            }
+        except:
+            return {
+                'trained': True,
+                'model_type': 'Unknown',
+                'model_path': self.model_path
+            }
