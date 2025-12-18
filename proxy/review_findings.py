@@ -29,26 +29,49 @@ def display_finding(finding, index, total):
     print('=' * 70)
     
     print(f'\n📋 Category: {finding.get("category", "Unknown")}')
-    print(f'⚠️  Severity: {finding.get("severity", "Unknown")}')
-    print(f'🔗 URL: {finding.get("url", "Unknown")[:60]}...')
+    print(f'⚠️  Severity: {finding.get("severity", "Unknown").upper()}')
+    
+    # Show scan source
+    scan_id = finding.get("scan_id", "Unknown")
+    if scan_id != "Unknown":
+        # Extract meaningful info from scan_id
+        if "localhost" in scan_id:
+            print(f'🌐 Source: localhost:8998 (Test Instance)')
+        else:
+            # Extract domain from scan_id
+            parts = scan_id.replace("acunetix_", "").replace("zap_", "").split("_")
+            domain = " ".join(parts[2:5]) if len(parts) > 2 else scan_id
+            print(f'🌐 Source: {domain[:50]}')
+    
+    # Show URL if available and not "unknown"
+    url = finding.get("url", "")
+    if url and url != "unknown":
+        print(f'🔗 URL: {url[:60]}...' if len(url) > 60 else f'🔗 URL: {url}')
     
     if 'description' in finding:
         desc = finding['description']
         print(f'\n📝 Description:')
-        print(f'   {desc[:200]}...' if len(desc) > 200 else f'   {desc}')
+        # Clean up description
+        desc_clean = desc.replace('<br/>', ' ').replace('<br>', ' ')
+        desc_clean = desc_clean.replace('&quot;', '"').replace('&lt;', '<').replace('&gt;', '>')
+        print(f'   {desc_clean[:250]}...' if len(desc_clean) > 250 else f'   {desc_clean}')
     
     if 'evidence' in finding:
         evidence = finding['evidence']
-        print(f'\n🔍 Evidence:')
-        print(f'   {evidence[:150]}...' if len(evidence) > 150 else f'   {evidence}')
+        print(f'\n🔍 Evidence/Recommendation:')
+        evidence_clean = evidence.replace('\n', ' ').strip()
+        print(f'   {evidence_clean[:200]}...' if len(evidence_clean) > 200 else f'   {evidence_clean}')
     
     if 'cvss_score' in finding:
-        print(f'\n💯 CVSS Score: {finding.get("cvss_score", "N/A")}')
+        cvss = finding.get("cvss_score", 0)
+        risk = "CRITICAL" if cvss >= 9.0 else "HIGH" if cvss >= 7.0 else "MEDIUM" if cvss >= 4.0 else "LOW"
+        print(f'\n💯 CVSS Score: {cvss} ({risk})')
     
-    if 'recommendation' in finding:
-        rec = finding['recommendation']
-        print(f'\n💡 Recommendation:')
-        print(f'   {rec[:150]}...' if len(rec) > 150 else f'   {rec}')
+    # Show current auto-label info if available
+    if 'confidence' in finding and finding.get('confidence', 0) > 0:
+        conf = finding.get('confidence', 0) * 100
+        reason = finding.get('reason', 'Unknown')
+        print(f'\n🤖 Auto-label: Confidence {conf:.1f}% - {reason[:60]}')
 
 def get_label():
     """Get label from user."""
