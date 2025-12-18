@@ -209,8 +209,13 @@ class MLManager:
             if enhanced.get('severity_adjusted'):
                 severity_adjusted_count += 1
             
-            # Only include non-filtered findings
-            if not enhanced.get('filtered'):
+            # Include non-filtered findings OR low/info severity for informational purposes
+            severity = finding.get('severity', '').lower()
+            if not enhanced.get('filtered') or severity in ['low', 'info', 'informational']:
+                # Mark low/info FPs as informational
+                if enhanced.get('filtered') and severity in ['low', 'info', 'informational']:
+                    enhanced['informational_only'] = True
+                    enhanced['filtered'] = False  # Unmark as filtered so it shows
                 processed_findings.append(enhanced)
         
         # Debug: Print FP prediction summary
