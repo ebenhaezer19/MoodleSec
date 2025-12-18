@@ -82,22 +82,32 @@ def deduplicate_findings(findings):
     print(f"  Unique findings: {len(unique)}")
     return unique
 
-def filter_valid_labels(findings):
-    """Filter findings with valid labels (0 or 1)."""
-    print("\n🔍 Filtering valid labels...")
+def filter_valid_labels(findings, min_confidence=0.6):
+    """Filter findings with valid labels (0 or 1) and minimum confidence."""
+    print(f"\n🔍 Filtering valid labels (confidence >= {min_confidence})...")
     
     valid = []
     invalid = 0
+    low_confidence = 0
     
     for finding in findings:
         label = finding.get('label', -1)
-        if label in [0, 1]:
+        confidence = finding.get('confidence', finding.get('auto_label_confidence', 0))
+        
+        # Must have valid label
+        if label not in [0, 1]:
+            invalid += 1
+            continue
+        
+        # Must have minimum confidence OR be manually reviewed
+        if confidence >= min_confidence or finding.get('manually_reviewed', False):
             valid.append(finding)
         else:
-            invalid += 1
+            low_confidence += 1
     
     print(f"  Valid labels: {len(valid)}")
     print(f"  Invalid/unlabeled: {invalid}")
+    print(f"  Low confidence (filtered): {low_confidence}")
     return valid
 
 def analyze_dataset(findings):
@@ -164,8 +174,8 @@ def main():
     # Deduplicate
     unique_findings = deduplicate_findings(all_findings)
     
-    # Filter valid labels
-    valid_findings = filter_valid_labels(unique_findings)
+    # Filter valid labels with confidence threshold
+    valid_findings = filter_valid_labels(unique_findings, min_confidence=0.65)
     
     if not valid_findings:
         print("\n❌ No valid labeled findings!")
