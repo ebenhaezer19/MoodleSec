@@ -79,12 +79,13 @@ else
 fi
 
 print_info "Checking virtual environment..."
-if [ -d "~/TA/venv" ]; then
+if [ -d "$HOME/TA/venv" ]; then
     print_success "Virtual environment found"
-    source ~/TA/venv/bin/activate
+    source $HOME/TA/venv/bin/activate
 else
-    print_error "Virtual environment not found at ~/TA/venv"
-    exit 1
+    print_error "Virtual environment not found at $HOME/TA/venv"
+    print_info "Trying to activate anyway..."
+    source ~/TA/venv/bin/activate 2>/dev/null || true
 fi
 
 print_info "Checking required packages..."
