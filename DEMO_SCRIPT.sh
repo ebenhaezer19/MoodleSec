@@ -185,37 +185,66 @@ read -p "Choose option (1/2/3): " SCAN_OPTION
 
 case $SCAN_OPTION in
     1)
-        print_info "Starting live scan..."
-        print_info "Target: http://localhost:8998 (Test Moodle)"
+        print_info "Live scan demo requires:"
+        print_info "  • Security proxy running on port 8999"
+        print_info "  • Test Moodle instance on port 8998"
+        print_info "  • OWASP ZAP scanner configured"
+        print_info ""
+        print_info "For demo purposes, showing simulated scan output..."
         
-        # Start proxy in background
-        print_info "Starting security proxy..."
-        python3 app.py > /tmp/proxy.log 2>&1 &
-        PROXY_PID=$!
-        sleep 3
+        cat << 'EOF'
+
+📋 SIMULATED SCAN RESULTS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Scan ID: demo-scan-001
+Target: http://localhost:8998
+Scanner: OWASP ZAP
+Status: Completed
+Duration: 2m 34s
+
+Findings Summary:
+  Critical:  0  
+  High:      2  🟠
+  Medium:    5  🟡
+  Low:       8  🟢
+  Info:     12  ⚪
+  ─────────────────
+  Total:    27
+
+Sample Findings:
+
+1. SQL Injection (HIGH)
+   URL: /login/index.php?id=1
+   Confidence: 95.0%
+   Label: TRUE POSITIVE
+   Status: Needs fixing
+
+2. XSS Reflected (HIGH)
+   URL: /search.php?q=<script>
+   Confidence: 92.5%
+   Label: TRUE POSITIVE
+   Status: Needs fixing
+
+3. Missing Security Headers (LOW)
+   URL: /
+   Confidence: 75.0%
+   Label: FALSE POSITIVE
+   Status: Informational
+
+After ML Filtering:
+  • True Positives: 7 (26%)
+  • False Positives: 20 (74%)
+  • Needs Review: 0
+
+Time Saved: 6.5 hours (manual review avoided)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EOF
         
-        print_success "Proxy started (PID: $PROXY_PID)"
-        
-        # Trigger scan
-        print_info "Triggering OWASP ZAP scan..."
-        curl -s -X POST http://localhost:5000/api/scan \
-            -H "Content-Type: application/json" \
-            -d '{
-                "target_url": "http://localhost:8998",
-                "scan_type": "quick",
-                "scanner": "zap"
-            }' | python3 -m json.tool
-        
-        print_info "Scan initiated. Waiting 30 seconds..."
-        sleep 30
-        
-        # Show results
-        print_info "Fetching scan results..."
-        curl -s http://localhost:5000/api/scans/latest | python3 -m json.tool
-        
-        # Stop proxy
-        kill $PROXY_PID 2>/dev/null || true
         print_success "Scan demo complete!"
+        print_info "Note: For actual live scan, ensure proxy is running first"
         ;;
     2)
         print_info "Showing previous scan results..."
