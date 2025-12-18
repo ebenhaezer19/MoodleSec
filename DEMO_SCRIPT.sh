@@ -82,9 +82,10 @@ print_info "Checking virtual environment..."
 if [ -d "$HOME/TA/venv" ]; then
     print_success "Virtual environment found"
     source $HOME/TA/venv/bin/activate
+elif [ -n "$VIRTUAL_ENV" ]; then
+    print_success "Virtual environment already active"
 else
-    print_error "Virtual environment not found at $HOME/TA/venv"
-    print_info "Trying to activate anyway..."
+    print_info "Trying to activate venv..."
     source ~/TA/venv/bin/activate 2>/dev/null || true
 fi
 
@@ -93,8 +94,8 @@ python3 -c "import flask, sklearn, numpy, pandas" 2>/dev/null
 if [ $? -eq 0 ]; then
     print_success "All required packages installed"
 else
-    print_error "Missing required packages"
-    exit 1
+    print_info "Some packages might be missing, but continuing..."
+    print_info "If you see errors later, run: pip install -r requirements.txt"
 fi
 
 print_success "Environment check complete!"
