@@ -3,9 +3,9 @@ Configuration constants for the Moodle proxy service.
 """
 
 # Target Moodle instance base URL
-# MOODLE_URL: str = "http://localhost:8998"
+MOODLE_URL: str = "http://localhost:8998"
 # MOODLE_URL: str = "http://localhost:9000"
-MOODLE_URL: str = "https://sdecdtsepas2024.gnomio.com"
+# MOODLE_URL: str = "https://sdecdtsepas2024.gnomio.com"
 
 # Port for the proxy service to listen on
 LISTEN_PORT: int = 8999
