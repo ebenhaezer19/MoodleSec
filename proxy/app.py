@@ -320,8 +320,8 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
     Returns:
         Complete scan results with all findings
     """
-    scan_id = f"full_scan_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
-    timestamp = datetime.utcnow().isoformat() + "Z"
+    scan_id = f"full_scan_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    timestamp = datetime.now().isoformat() + "Z"
     
     try:
         # Step 1: Crawl site
