@@ -131,8 +131,8 @@ class PhishingDetector:
         if social_score > 0.3:
             threat_types.append('social_engineering')
         
-        # Final classification
-        is_malicious = total_score > 0.5
+        # Final classification (lowered threshold for better detection)
+        is_malicious = total_score > 0.3
         
         results.update({
             'is_malicious': is_malicious,
