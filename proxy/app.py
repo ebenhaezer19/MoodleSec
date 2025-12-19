@@ -1147,6 +1147,62 @@ async def provide_ml_feedback(
                     'finding_id': finding_id,
                     'is_false_positive': is_false_positive
                 }
+
+
+@app.post("/api/check-phishing")
+async def check_phishing(request: Request):
+    """
+    Check content for phishing/HTML injection.
+    
+    For Moodle plugin integration - checks user-generated content
+    (comments, forum posts, etc.) for malicious content.
+    
+    Request body:
+        {
+            "content": "text to analyze",
+            "context": {
+                "user_id": 123,
+                "post_id": 456,
+                "type": "comment"
+            }
+        }
+    
+    Returns:
+        {
+            "is_malicious": bool,
+            "confidence": float,
+            "threat_type": str,
+            "details": [],
+            "recommendation": str
+        }
+    """
+    try:
+        data = await request.json()
+        content = data.get('content', '')
+        context = data.get('context', {})
+        
+        if not content:
+            return {
+                'success': False,
+                'error': 'No content provided'
+            }
+        
+        # Use phishing detector
+        result = ml_manager.phishing_detector.detect(content, context)
+        
+        # Add recommendation
+        result['recommendation'] = ml_manager.phishing_detector.get_recommendation(result)
+        result['success'] = True
+        
+        return result
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e),
+            'is_malicious': False,
+            'confidence': 0.0
+        }
     
     raise HTTPException(status_code=404, detail="Finding not found")
 
