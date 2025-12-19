@@ -4,12 +4,14 @@ require_once('../../config.php');
 require_once($CFG->libdir.'/adminlib.php');
 require_once('phishing_checker.php');
 
-admin_externalpage_setup('local_security_dashboard_phishing');
+require_login();
+require_capability('moodle/site:config', context_system::instance());
 
 $PAGE->set_url('/local/security_dashboard/phishing_detection.php');
 $PAGE->set_context(context_system::instance());
-$PAGE->set_title(get_string('phishing_detection', 'local_security_dashboard'));
-$PAGE->set_heading(get_string('phishing_detection', 'local_security_dashboard'));
+$PAGE->set_pagelayout('admin');
+$PAGE->set_title('Phishing Detection');
+$PAGE->set_heading('Phishing & HTML Injection Detection');
 
 echo $OUTPUT->header();
 
