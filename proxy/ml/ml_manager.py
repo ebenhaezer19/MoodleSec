@@ -15,6 +15,7 @@ from .false_positive_reducer import FalsePositiveReducer
 from .anomaly_detector import AnomalyDetector
 from .severity_predictor import SeverityPredictor
 from .rate_limiter import MLRateLimiter
+from .phishing_detector import PhishingDetector
 
 
 class MLManager:
@@ -42,6 +43,7 @@ class MLManager:
         self.anomaly_detector = AnomalyDetector() if enable_ml else None
         self.severity_predictor = SeverityPredictor() if enable_ml else None
         self.rate_limiter = MLRateLimiter() if enable_ml else None
+        self.phishing_detector = PhishingDetector() if enable_ml else None
         
         print(f"[ML Manager] Initialized (ML {'enabled' if enable_ml else 'disabled'})")
         if enable_ml:
