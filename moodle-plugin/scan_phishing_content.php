@@ -3,7 +3,7 @@
  * MoodleSec - Phishing Content Scanner
  * Scans user-generated content (bio, comments) for phishing attempts
  * 
- * @package    local_securityscanner
+ * @package    local_security_dashboard
  * @copyright  2025 MoodleSec
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -16,11 +16,11 @@ require_once(__DIR__ . '/lib.php');
 require_login();
 require_capability('moodle/site:config', context_system::instance());
 
-admin_externalpage_setup('local_securityscanner_phishing');
+admin_externalpage_setup('local_security_dashboard_phishing');
 
-$PAGE->set_url(new moodle_url('/local/securityscanner/scan_phishing_content.php'));
-$PAGE->set_title(get_string('phishing_scanner', 'local_securityscanner'));
-$PAGE->set_heading(get_string('phishing_scanner', 'local_securityscanner'));
+$PAGE->set_url(new moodle_url('/local/security_dashboard/scan_phishing_content.php'));
+$PAGE->set_title(get_string('phishing_scanner', 'local_security_dashboard'));
+$PAGE->set_heading(get_string('phishing_scanner', 'local_security_dashboard'));
 
 // Get proxy service URL from config
 $proxy_url = get_config('local_securityscanner', 'proxy_url') ?: 'http://localhost:8999';
@@ -253,7 +253,7 @@ if ($scan_type && confirm_sesskey()) {
 // Output page
 echo $OUTPUT->header();
 
-echo html_writer::tag('h2', get_string('phishing_content_scanner', 'local_securityscanner'));
+echo html_writer::tag('h2', 'Phishing Content Scanner');
 
 echo html_writer::div(
     'This tool scans user-generated content (profile bio, forum posts, comments) for potential phishing attempts. ' .
@@ -272,7 +272,7 @@ $scan_buttons = [
 ];
 
 foreach ($scan_buttons as $type => $label) {
-    $url = new moodle_url('/local/securityscanner/scan_phishing_content.php', [
+    $url = new moodle_url('/local/security_dashboard/scan_phishing_content.php', [
         'scan_type' => $type,
         'sesskey' => sesskey()
     ]);
