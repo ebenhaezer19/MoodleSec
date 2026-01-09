@@ -47,6 +47,14 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
     
+    // Add Phishing Scanner page
+    $ADMIN->add('local_security_dashboard', new admin_externalpage(
+        'local_security_dashboard_phishing',
+        'Phishing Content Scanner',
+        new moodle_url('/local/security_dashboard/scan_phishing_content.php'),
+        'moodle/site:config'
+    ));
+    
     // Add Trends page
     $ADMIN->add('local_security_dashboard', new admin_externalpage(
         'local_security_dashboard_trends',

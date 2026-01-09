@@ -65,7 +65,12 @@ if (isset($logs_data['error'])) {
     echo html_writer::link(
         new moodle_url('/local/security_dashboard/ml_dashboard.php'),
         '<i class="fa fa-brain"></i> ML Dashboard',
-        ['class' => 'btn btn-info']
+        ['class' => 'btn btn-info mr-2']
+    );
+    echo html_writer::link(
+        new moodle_url('/local/security_dashboard/scan_phishing_content.php'),
+        '<i class="fa fa-shield"></i> Phishing Scanner',
+        ['class' => 'btn btn-danger']
     );
     echo html_writer::end_div();
     
