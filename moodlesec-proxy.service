@@ -1,0 +1,17 @@
+[Unit]
+Description=MoodleSec Proxy Service
+After=network.target
+
+[Service]
+Type=simple
+User=krisopras1913
+WorkingDirectory=/home/krisopras1913/TA/adaptive-moodle-security/MoodleSec/proxy
+Environment="PATH=/home/krisopras1913/TA/adaptive-moodle-security/MoodleSec/venv/bin:/usr/bin"
+ExecStart=/home/krisopras1913/TA/adaptive-moodle-security/MoodleSec/venv/bin/uvicorn app:app --host 0.0.0.0 --port 8999
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/krisopras1913/TA/adaptive-moodle-security/MoodleSec/logs/proxy.log
+StandardError=append:/home/krisopras1913/TA/adaptive-moodle-security/MoodleSec/logs/proxy-error.log
+
+[Install]
+WantedBy=multi-user.target

@@ -10,11 +10,13 @@ import httpx
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from api.phishing_scan_api import phishing_api, init_phishing_detector
 
 from config import MOODLE_URL, LISTEN_PORT, LOG_DIR, MAX_LOG_ENTRIES, SLACK_WEBHOOK_URL, SLACK_ENABLED
 from utils.logger import append_log, read_logs, ensure_log_directory
 from utils.slack_notifier import SlackNotifier
 from scanners.scanner_engine import ScannerEngine
+from scanners.phishing_detector import PhishingDetector
 from crawler.web_crawler import WebCrawler
 from risk.risk_scorer import RiskScorer
 from database.scan_history import ScanHistoryDB
@@ -62,6 +64,11 @@ integration_manager = IntegrationManager()
 
 # Initialize ML Manager
 ml_manager = MLManager(enable_ml=True)
+
+# Initialize Phishing Detector
+MOODLE_BASE_DOMAIN = "localhost"  # Change to your actual domain
+phishing_detector = PhishingDetector(moodle_base_domain=MOODLE_BASE_DOMAIN)
+print(f"[Phishing Detector] Initialized with base domain: {MOODLE_BASE_DOMAIN}")
 
 # Initialize Slack notifier (if enabled)
 slack_notifier = None
@@ -1203,6 +1210,155 @@ async def check_phishing(request: Request):
             'is_malicious': False,
             'confidence': 0.0
         }
+
+
+# Phishing Detection Endpoints (FastAPI native)
+@app.post("/phishing/scan/profile")
+async def scan_user_profile_phishing(request: Request) -> Dict[str, Any]:
+    """
+    Scan user profile bio for phishing.
+    
+    Request Body:
+    {
+        "user_id": 123,
+        "bio_content": "User bio HTML/text"
+    }
+    """
+    try:
+        data = await request.json()
+        user_id = data.get('user_id')
+        bio_content = data.get('bio_content')
+        
+        if not user_id or not bio_content:
+            raise HTTPException(status_code=400, detail="Missing required fields: user_id, bio_content")
+        
+        result = phishing_detector.scan_user_profile(user_id, bio_content)
+        result['success'] = True
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Scan failed: {str(e)}")
+
+
+@app.post("/phishing/scan/comment")
+async def scan_comment_phishing(request: Request) -> Dict[str, Any]:
+    """
+    Scan comment/forum post for phishing.
+    
+    Request Body:
+    {
+        "comment_id": 456,
+        "comment_content": "Comment HTML/text",
+        "context": "comment" | "forum_post" | "assignment_feedback"
+    }
+    """
+    try:
+        data = await request.json()
+        comment_id = data.get('comment_id')
+        comment_content = data.get('comment_content')
+        context = data.get('context', 'comment')
+        
+        if not comment_id or not comment_content:
+            raise HTTPException(status_code=400, detail="Missing required fields: comment_id, comment_content")
+        
+        result = phishing_detector.scan_comment(comment_id, comment_content, context)
+        result['success'] = True
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Scan failed: {str(e)}")
+
+
+@app.post("/phishing/scan/batch")
+async def scan_batch_content_phishing(request: Request) -> Dict[str, Any]:
+    """
+    Scan multiple content items in batch.
+    
+    Request Body:
+    {
+        "items": [
+            {
+                "type": "profile" | "comment",
+                "id": 123,
+                "content": "...",
+                "context": "..."
+            }
+        ]
+    }
+    """
+    try:
+        data = await request.json()
+        items = data.get('items', [])
+        
+        if not items:
+            raise HTTPException(status_code=400, detail="Missing required field: items")
+        
+        results = []
+        suspicious_count = 0
+        
+        for item in items:
+            item_type = item.get('type')
+            item_id = item.get('id')
+            content = item.get('content')
+            context = item.get('context', 'unknown')
+            
+            if not all([item_type, item_id, content]):
+                results.append({'id': item_id, 'error': 'Missing required fields'})
+                continue
+            
+            if item_type == 'profile':
+                result = phishing_detector.scan_user_profile(item_id, content)
+            elif item_type == 'comment':
+                result = phishing_detector.scan_comment(item_id, content, context)
+            else:
+                results.append({'id': item_id, 'error': f'Unknown type: {item_type}'})
+                continue
+            
+            results.append(result)
+            if result['findings_count'] > 0:
+                suspicious_count += 1
+        
+        return {
+            'success': True,
+            'total_items': len(items),
+            'suspicious_items': suspicious_count,
+            'results': results
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch scan failed: {str(e)}")
+
+
+@app.get("/phishing/stats")
+async def get_phishing_stats() -> Dict[str, Any]:
+    """
+    Get phishing detection statistics.
+    """
+    try:
+        return {
+            'success': True,
+            'moodle_domain': phishing_detector.moodle_domain,
+            'detector_ready': True,
+            'detection_methods': [
+                'URL Shortener Detection',
+                'IP-based URL Detection',
+                'Suspicious TLD Analysis',
+                'Domain Spoofing (Typosquatting)',
+                'Link Text vs URL Mismatch',
+                'URL Obfuscation Detection',
+                'Homograph Attack Detection',
+                'Social Engineering Keyword Analysis'
+            ],
+            'suspicious_tlds': phishing_detector.SUSPICIOUS_TLDS,
+            'url_shorteners': phishing_detector.URL_SHORTENERS
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
     
     raise HTTPException(status_code=404, detail="Finding not found")
 
