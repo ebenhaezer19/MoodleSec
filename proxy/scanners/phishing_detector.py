@@ -138,15 +138,21 @@ class PhishingDetector:
                 indicators.append(f"Possible domain spoofing: {spoofing_check}")
                 risk_score += 5.0
             
-            # Check 5: Link text vs URL mismatch
+            # Check 5: Link text vs URL mismatch (suspicious generic text)
             if link_text and self._check_link_text_mismatch(link_text, url):
-                indicators.append("Link text doesn't match actual URL")
-                risk_score += 4.0
+                indicators.append("Suspicious link text (generic/misleading)")
+                risk_score += 5.0  # Increased from 4.0
             
             # Check 6: External domain (not Moodle instance)
-            if not self._is_internal_domain(url):
+            is_external = not self._is_internal_domain(url)
+            if is_external:
                 indicators.append("External link (outside Moodle)")
                 risk_score += 1.0
+                
+                # Check 6b: Unknown external domain (not in legitimate list)
+                if not self._is_known_legitimate_domain(url):
+                    indicators.append("Unknown/uncommon external domain")
+                    risk_score += 2.0  # Additional risk for unknown domains
             
             # Check 7: Obfuscated URL (excessive encoding)
             if self._is_obfuscated_url(url):
@@ -270,6 +276,21 @@ class PhishingDetector:
     
     def _check_link_text_mismatch(self, link_text: str, url: str) -> bool:
         """Check if link text misleads about destination"""
+        # Common generic/suspicious link texts used in phishing
+        suspicious_link_texts = [
+            'klik disini', 'klik di sini', 'click here', 'klik',
+            'click', 'here', 'di sini', 'disini',
+            'claim', 'verify', 'confirm', 'update',
+            'login', 'sign in', 'masuk',
+            'download', 'unduh', 'get', 'lihat'
+        ]
+        
+        link_text_lower = link_text.lower().strip()
+        
+        # Check if link text is generic/suspicious (phishing red flag)
+        if any(susp in link_text_lower for susp in suspicious_link_texts):
+            return True
+        
         # Extract domain from link text if it looks like URL
         text_domain = None
         url_pattern = re.search(r'(?:https?://)?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', link_text)
@@ -295,6 +316,21 @@ class PhishingDetector:
             extracted = tldextract.extract(url)
             url_domain = f"{extracted.domain}.{extracted.suffix}"
             return url_domain == self.moodle_domain or url.startswith('/')
+        except:
+            return False
+    
+    def _is_known_legitimate_domain(self, url: str) -> bool:
+        """Check if URL is from a known legitimate domain"""
+        try:
+            extracted = tldextract.extract(url)
+            url_domain = f"{extracted.domain}.{extracted.suffix}".lower()
+            
+            # Check against legitimate domains list
+            for legit_domain in self.LEGITIMATE_DOMAINS:
+                if url_domain == legit_domain.lower():
+                    return True
+            
+            return False
         except:
             return False
     
