@@ -124,6 +124,12 @@ class RESTScanner:
         print(f"[REST Scanner] Complete! Found {len(self.findings)} issues")
         print(f"[REST Scanner] Discovered {len(self.discovered_endpoints)} API endpoints")
         
+        # Print summary breakdown
+        if self.findings:
+            summary = results['summary']
+            print(f"[REST Scanner] Summary: Critical={summary.get('critical', 0)}, High={summary.get('high', 0)}, Medium={summary.get('medium', 0)}, Low={summary.get('low', 0)}")
+            print(f"[REST Scanner] Tested endpoints: {list(self.discovered_endpoints)}")
+        
         return results
     
     async def discover_apis(self) -> Dict[str, Any]:
@@ -561,6 +567,10 @@ class RESTScanner:
     def _add_finding(self, severity: str, category: str, description: str,
                     evidence: str, recommendation: str):
         """Add a security finding."""
+        # Log the finding with URL/endpoint details
+        print(f"[REST Scanner] 🔍 {severity}: {description}")
+        print(f"[REST Scanner]    📍 {evidence}")
+        
         self.findings.append({
             'severity': severity,
             'category': category,
