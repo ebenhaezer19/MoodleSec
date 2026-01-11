@@ -101,6 +101,15 @@ if ($hassiteconfig) {
         '/login/index.php',
         PARAM_TEXT
     ));
+    
+    // Database path for vulnerability map
+    $settingspage->add(new admin_setting_configtext(
+        'local_security_dashboard/db_path',
+        'SQLite Database Path',
+        'Full path to moodlesec.db file (e.g., /root/TA/adaptive-moodle-security/MoodleSec/proxy/moodlesec.db). Leave empty to auto-detect.',
+        '',
+        PARAM_TEXT
+    ));
 
     $ADMIN->add('local_security_dashboard', $settingspage);
 }
