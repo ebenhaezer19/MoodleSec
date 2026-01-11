@@ -21,6 +21,11 @@ from datetime import datetime
 import random
 import string
 
+# Import Moodle-specific scanners
+from .xss_scanner import XSSScanner
+from .file_upload_scanner import FileUploadScanner
+from .info_disclosure_scanner import InfoDisclosureScanner
+
 
 class RESTScanner:
     """Comprehensive REST API security scanner."""
@@ -114,6 +119,27 @@ class RESTScanner:
         # Test 8: Security Headers
         print("[REST Scanner] Testing security headers...")
         results['tests']['security_headers'] = await self.test_security_headers()
+        
+        # Test 9: XSS Vulnerabilities (Moodle-specific)
+        print("[REST Scanner] Testing XSS vulnerabilities...")
+        xss_scanner = XSSScanner(self.base_url)
+        results['tests']['xss'] = await xss_scanner.scan_all()
+        self.findings.extend(xss_scanner.findings)
+        await xss_scanner.close()
+        
+        # Test 10: File Upload Vulnerabilities (Moodle-specific)
+        print("[REST Scanner] Testing file upload vulnerabilities...")
+        upload_scanner = FileUploadScanner(self.base_url)
+        results['tests']['file_upload'] = await upload_scanner.scan_all()
+        self.findings.extend(upload_scanner.findings)
+        await upload_scanner.close()
+        
+        # Test 11: Information Disclosure (Moodle-specific)
+        print("[REST Scanner] Testing information disclosure...")
+        info_scanner = InfoDisclosureScanner(self.base_url)
+        results['tests']['info_disclosure'] = await info_scanner.scan_all()
+        self.findings.extend(info_scanner.findings)
+        await info_scanner.close()
         
         # Compile findings
         results['findings'] = self.findings
