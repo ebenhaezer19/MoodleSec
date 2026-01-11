@@ -77,6 +77,11 @@ if (isset($logs_data['error'])) {
         '<i class="fa fa-shield"></i> Phishing Scanner',
         ['class' => 'btn btn-danger mr-2']
     );
+    echo html_writer::link(
+        new moodle_url('/local/security_dashboard/login_monitor.php'),
+        '<i class="fa fa-user-shield"></i> Login Monitor',
+        ['class' => 'btn btn-info mr-2']
+    );
     // Vulnerability Map disabled - requires external SQLite database
     // echo html_writer::link(
     //     new moodle_url('/local/security_dashboard/vulnerability_map.php'),

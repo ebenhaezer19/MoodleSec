@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Login Monitoring Table Schema -->
+<XMLDB PATH="local/security_dashboard/db" VERSION="20260112" COMMENT="Login monitoring tables">
+  <TABLES>
+    <!-- Login Activity Log Table -->
+    <TABLE NAME="local_security_login_log" COMMENT="Comprehensive login activity tracking">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="User ID (null for failed logins)"/>
+        <FIELD NAME="username" TYPE="char" LENGTH="100" NOTNULL="false" SEQUENCE="false" COMMENT="Username attempted"/>
+        <FIELD NAME="success" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1 = success, 0 = failed"/>
+        <FIELD NAME="ip_address" TYPE="char" LENGTH="45" NOTNULL="true" SEQUENCE="false" COMMENT="IPv4 or IPv6"/>
+        <FIELD NAME="user_agent" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Browser user agent"/>
+        <FIELD NAME="country" TYPE="char" LENGTH="100" NOTNULL="false" SEQUENCE="false" COMMENT="Country from IP"/>
+        <FIELD NAME="city" TYPE="char" LENGTH="100" NOTNULL="false" SEQUENCE="false" COMMENT="City from IP"/>
+        <FIELD NAME="region" TYPE="char" LENGTH="100" NOTNULL="false" SEQUENCE="false" COMMENT="Region/State"/>
+        <FIELD NAME="isp" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="Internet Service Provider"/>
+        <FIELD NAME="latitude" TYPE="number" LENGTH="10" NOTNULL="false" DECIMALS="6" SEQUENCE="false"/>
+        <FIELD NAME="longitude" TYPE="number" LENGTH="10" NOTNULL="false" DECIMALS="6" SEQUENCE="false"/>
+        <FIELD NAME="is_suspicious" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Flagged as suspicious"/>
+        <FIELD NAME="risk_score" TYPE="int" LENGTH="3" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="0-100 risk score"/>
+        <FIELD NAME="fail_reason" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="Reason for failure"/>
+        <FIELD NAME="session_id" TYPE="char" LENGTH="100" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="userid" TYPE="foreign" FIELDS="userid" REFTABLE="user" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="success" UNIQUE="false" FIELDS="success"/>
+        <INDEX NAME="ip_address" UNIQUE="false" FIELDS="ip_address"/>
+        <INDEX NAME="timecreated" UNIQUE="false" FIELDS="timecreated"/>
+        <INDEX NAME="is_suspicious" UNIQUE="false" FIELDS="is_suspicious"/>
+        <INDEX NAME="userid_time" UNIQUE="false" FIELDS="userid,timecreated"/>
+        <INDEX NAME="ip_time" UNIQUE="false" FIELDS="ip_address,timecreated"/>
+      </INDEXES>
+    </TABLE>
+
+    <!-- Suspicious IP Blocklist -->
+    <TABLE NAME="local_security_ip_blocklist" COMMENT="Blocked/suspicious IP addresses">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="ip_address" TYPE="char" LENGTH="45" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="reason" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="block_type" TYPE="char" LENGTH="50" NOTNULL="true" SEQUENCE="false" COMMENT="manual, auto_brute_force, auto_suspicious"/>
+        <FIELD NAME="fail_count" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="first_seen" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="last_seen" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="blocked_by" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Admin who blocked"/>
+        <FIELD NAME="expires" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Expiry timestamp (null = permanent)"/>
+        <FIELD NAME="is_active" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="blocked_by" TYPE="foreign" FIELDS="blocked_by" REFTABLE="user" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="ip_address" UNIQUE="true" FIELDS="ip_address"/>
+        <INDEX NAME="is_active" UNIQUE="false" FIELDS="is_active"/>
+        <INDEX NAME="expires" UNIQUE="false" FIELDS="expires"/>
+      </INDEXES>
+    </TABLE>
+
+    <!-- User Login Sessions -->
+    <TABLE NAME="local_security_user_sessions" COMMENT="Active user sessions with geolocation">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="session_id" TYPE="char" LENGTH="100" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="ip_address" TYPE="char" LENGTH="45" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="country" TYPE="char" LENGTH="100" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="city" TYPE="char" LENGTH="100" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="user_agent" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="last_activity" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="is_active" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1" SEQUENCE="false"/>
+        <FIELD NAME="login_time" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="logout_time" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="userid" TYPE="foreign" FIELDS="userid" REFTABLE="user" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="session_id" UNIQUE="false" FIELDS="session_id"/>
+        <INDEX NAME="is_active" UNIQUE="false" FIELDS="is_active"/>
+        <INDEX NAME="userid_active" UNIQUE="false" FIELDS="userid,is_active"/>
+      </INDEXES>
+    </TABLE>
+  </TABLES>
+</XMLDB>
