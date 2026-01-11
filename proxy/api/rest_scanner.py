@@ -287,22 +287,46 @@ class RESTScanner:
                         
                         response = await self.client.post(url, data=data)
                         
-                        # Check for SQL error messages
-                        sql_errors = ['sql', 'mysql', 'postgresql', 'syntax error', 'database']
-                        if any(error in response.text.lower() for error in sql_errors):
+                        # Check for ACTUAL SQL error messages (not just keywords)
+                        # More specific patterns to reduce false positives
+                        sql_error_patterns = [
+                            'you have an error in your sql syntax',
+                            'warning: mysql',
+                            'unclosed quotation mark',
+                            'quoted string not properly terminated',
+                            'sql command not properly ended',
+                            'sqlexception',
+                            'pg_query()',
+                            'mysql_fetch',
+                            'ora-01756',  # Oracle error
+                            'microsoft sql server'
+                        ]
+                        
+                        response_lower = response.text.lower()
+                        sql_error_found = False
+                        matched_error = None
+                        
+                        for error_pattern in sql_error_patterns:
+                            if error_pattern in response_lower:
+                                sql_error_found = True
+                                matched_error = error_pattern
+                                break
+                        
+                        if sql_error_found:
                             result['vulnerabilities'].append({
                                 'endpoint': endpoint,
                                 'parameter': param,
                                 'payload': payload,
-                                'type': 'SQL Injection'
+                                'type': 'SQL Injection',
+                                'error': matched_error
                             })
                             result['status'] = 'fail'
                             
                             self._add_finding(
                                 severity='Critical',
                                 category='Input Validation',
-                                description=f'Potential SQL injection in API parameter',
-                                evidence=f'Endpoint: {endpoint}, Parameter: {param}, Payload: {payload[:50]}',
+                                description=f'SQL injection detected - database error exposed',
+                                evidence=f'Endpoint: {endpoint}, Parameter: {param}, Error: {matched_error}, Payload: {payload[:30]}',
                                 recommendation='Implement parameterized queries and input validation'
                             )
                             break
@@ -355,22 +379,27 @@ class RESTScanner:
                     if response.status_code != 405:
                         allowed_methods.add(method)
                         
-                        # Check for dangerous methods
+                        # Check for dangerous methods - but only flag if successful (200-299)
                         if method in ['DELETE', 'PUT', 'PATCH']:
-                            result['unexpected_methods'].append({
-                                'endpoint': endpoint,
-                                'method': method,
-                                'status_code': response.status_code
-                            })
-                            result['status'] = 'warning'
-                            
-                            self._add_finding(
-                                severity='Medium',
-                                category='API Security',
-                                description=f'Potentially dangerous HTTP method allowed',
-                                evidence=f'Endpoint: {endpoint}, Method: {method}',
-                                recommendation='Restrict HTTP methods to only those required'
-                            )
+                            # Only flag as issue if method returns success code
+                            if 200 <= response.status_code < 300:
+                                # Check if response contains error or requires auth
+                                response_lower = response.text.lower()
+                                if not any(keyword in response_lower for keyword in ['error', 'exception', 'invalid', 'access denied', 'unauthorized', 'forbidden']):
+                                    result['unexpected_methods'].append({
+                                        'endpoint': endpoint,
+                                        'method': method,
+                                        'status_code': response.status_code
+                                    })
+                                    result['status'] = 'warning'
+                                    
+                                    self._add_finding(
+                                        severity='Medium',
+                                        category='API Security',
+                                        description=f'Dangerous HTTP method allowed without authentication',
+                                        evidence=f'Endpoint: {endpoint}, Method: {method}, Status: {response.status_code}',
+                                        recommendation='Restrict HTTP methods to only those required and enforce authentication'
+                                    )
                 
                 except:
                     pass
