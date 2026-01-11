@@ -10,7 +10,6 @@ import httpx
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from api.phishing_scan_api import phishing_api, init_phishing_detector
 
 from config import MOODLE_URL, LISTEN_PORT, LOG_DIR, MAX_LOG_ENTRIES, SLACK_WEBHOOK_URL, SLACK_ENABLED
 from utils.logger import append_log, read_logs, ensure_log_directory
