@@ -182,11 +182,17 @@ echo $OUTPUT->header();
                     <li>✅ Cookie security (HttpOnly, Secure, SameSite)</li>
                     <li>✅ Session fixation detection</li>
                     <li>✅ CSRF token validation</li>
-                    <li>✅ Privilege escalation testing</li>
+                    <li>✅ Privilege escalation testing (75 test cases)</li>
                     <li>✅ IDOR vulnerability detection</li>
                     <li>✅ OAuth redirect URI validation</li>
                     <li>✅ Token leakage detection</li>
                     <li>✅ SSO/SAML configuration testing</li>
+                    <li>✅ <strong>RBAC: 26 admin endpoints tested</strong></li>
+                    <li style="margin-left: 20px; font-size: 12px; color: #10b981;">
+                        • Core Admin Pages: 11 endpoints (100%)<br>
+                        • User Management: 9 endpoints (100%)<br>
+                        • Role/Permissions: 6 endpoints (100%)
+                    </li>
                 </ul>
             </div>
 
