@@ -249,6 +249,7 @@ class SessionTester:
             # Check each form for CSRF token
             csrf_patterns = [
                 r'name=["\']sesskey["\']',
+                r'name=["\']logintoken["\']',  # Moodle login forms use logintoken
                 r'name=["\']csrf_token["\']',
                 r'name=["\']_token["\']',
                 r'name=["\']authenticity_token["\']'
