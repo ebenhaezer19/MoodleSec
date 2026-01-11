@@ -38,6 +38,21 @@ class MLManager:
         """
         self.enable_ml = enable_ml
         
+        # Critical categories that should NEVER be filtered as false positives
+        self.critical_categories = [
+            'CSRF',
+            'Cross-Site Request Forgery',
+            'Session Management',
+            'Session Security',
+            'Authentication',
+            'Authorization',
+            'Access Control',
+            'SQL Injection',
+            'Command Injection',
+            'Path Traversal',
+            'Remote Code Execution'
+        ]
+        
         # Initialize ML modules
         self.fp_reducer = FalsePositiveReducer() if enable_ml else None
         self.anomaly_detector = AnomalyDetector() if enable_ml else None
@@ -80,9 +95,19 @@ class MLManager:
             'confidence': fp_confidence
         }
         
+        # Check if this is a critical category that should NEVER be filtered
+        category = finding.get('category', '')
+        is_critical = any(crit_cat.lower() in category.lower() for crit_cat in self.critical_categories)
+        
+        if is_critical:
+            # NEVER filter critical security issues as false positives
+            enhanced_finding['filtered'] = False
+            enhanced_finding['critical_category'] = True
+            ml_metadata['filter_bypassed'] = f'Critical category: {category}'
+            print(f"[ML Manager] ⚠️  Preserving CRITICAL finding: {category} | {finding.get('severity')} | {finding.get('description', '')[:60]}...")
         # Filter out false positives with confidence > 70%
         # Also filter XSS findings with "dangerous tag" pattern (common FP)
-        if is_fp and fp_confidence > 0.7:
+        elif is_fp and fp_confidence > 0.7:
             enhanced_finding['filtered'] = True
             enhanced_finding['filter_reason'] = f'ML detected false positive ({fp_confidence:.2%})'
         elif finding.get('category') == 'Cross-Site Scripting (XSS)':
