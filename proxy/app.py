@@ -928,6 +928,7 @@ async def scan_authentication() -> Dict[str, Any]:
         print(f"[Auth Scan] BEFORE ENRICHMENT: {len(all_findings)} findings")
         if all_findings:
             print(f"[Auth Scan] Sample finding before: risk_score={all_findings[0].get('risk_score', 'NOT SET')}")
+            print(f"[Auth Scan] Finding details: category={all_findings[0].get('category')}, severity={all_findings[0].get('severity')}, description={all_findings[0].get('description')}")
         
         print(f"[Auth Scan] Enriching {len(all_findings)} findings with risk scores...")
         all_findings = risk_scorer.batch_enrich_findings(all_findings)
@@ -939,10 +940,20 @@ async def scan_authentication() -> Dict[str, Any]:
         
         # ML-Enhanced Processing
         print(f"[Auth Scan] ML Processing: Filtering false positives and adjusting severity...")
+        print(f"[Auth Scan] Before ML: {len(all_findings)} findings")
         ml_result = ml_manager.filter_findings(all_findings, context={'environment': 'production'})
+        
+        # Show what was filtered
+        if ml_result['filtered_count'] > 0:
+            print(f"[Auth Scan] ⚠️  WARNING: {ml_result['filtered_count']} findings marked as FALSE POSITIVE by ML:")
+            for i, finding in enumerate(all_findings):
+                if finding not in ml_result['findings']:
+                    print(f"[Auth Scan]   - Filtered #{i+1}: {finding.get('category')} | {finding.get('severity')} | {finding.get('description')[:60]}...")
+        
         all_findings = ml_result['findings']
         print(f"[Auth Scan] ML Results: {ml_result['filtered_count']} FPs filtered, {ml_result['severity_adjusted_count']} severities adjusted")
         print(f"[Auth Scan] Final count: {ml_result['final_count']} findings")
+        print(f"[Auth Scan] After ML: {len(all_findings)} findings remain")
         
         results['total_findings'] = len(all_findings)
         results['all_findings'] = all_findings

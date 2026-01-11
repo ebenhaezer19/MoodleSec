@@ -130,6 +130,8 @@ class RBACTester:
             'status': 'pass'
         }
         
+        print(f"[RBAC Tester] Testing {len(self.SENSITIVE_ENDPOINTS)} sensitive endpoints...")
+        
         for endpoint in self.SENSITIVE_ENDPOINTS:
             result['endpoints_tested'] += 1
             
@@ -191,6 +193,8 @@ class RBACTester:
             '/admin/roles/check.php',
             '/admin/roles/override.php'
         ]
+        
+        print(f"[RBAC Tester] Testing privilege escalation on {len(admin_endpoints)} endpoints with 5 HTTP methods...")
         
         for endpoint in admin_endpoints:
             try:
