@@ -31,10 +31,33 @@ class RBACTester:
     
     # Sensitive endpoints that should require authentication/authorization
     SENSITIVE_ENDPOINTS = [
+        # Core Admin Pages
         '/admin/',
         '/admin/index.php',
         '/admin/settings.php',
+        '/admin/search.php',
+        '/admin/plugins.php',
+        '/admin/environment.php',
+        '/admin/upgradesettings.php',
+        '/admin/category.php',
+        '/admin/courses.php',
+        '/admin/tool/phpunit/index.php',
+        '/admin/tool/behat/index.php',
+        # User Management
+        '/admin/user.php',
+        '/admin/user/profilefield.php',
+        '/admin/user/user_bulk_cohortadd.php',
+        '/admin/user/user_bulk_delete.php',
+        '/admin/user/user_bulk_forcepasswordchange.php',
+        '/admin/cohorts.php',
         '/user/edit.php',
+        '/user/editadvanced.php',
+        # Role & Permissions
+        '/admin/roles/define.php',
+        '/admin/roles/check.php',
+        '/admin/roles/override.php',
+        '/admin/roles/usersroles.php',
+        # Other Sensitive
         '/grade/edit/',
         '/course/edit.php',
         '/my/',
@@ -151,9 +174,22 @@ class RBACTester:
         
         # Test accessing admin endpoints with different methods
         admin_endpoints = [
+            # Core Admin Pages
             '/admin/index.php',
             '/admin/settings.php',
-            '/admin/user.php'
+            '/admin/plugins.php',
+            '/admin/environment.php',
+            '/admin/search.php',
+            '/admin/category.php',
+            '/admin/courses.php',
+            # User Management
+            '/admin/user.php',
+            '/admin/user/profilefield.php',
+            '/admin/cohorts.php',
+            # Role & Permissions
+            '/admin/roles/define.php',
+            '/admin/roles/check.php',
+            '/admin/roles/override.php'
         ]
         
         for endpoint in admin_endpoints:
@@ -252,11 +288,24 @@ class RBACTester:
         
         # Test common administrative functions
         admin_functions = [
+            # Core Admin Functions
             '/admin/tool/installaddon/index.php',
-            '/admin/roles/assign.php',
+            '/admin/upgradesettings.php',
+            '/admin/tool/phpunit/index.php',
+            '/admin/tool/behat/index.php',
+            # User Management Functions
             '/admin/user/user_bulk.php',
-            '/course/delete.php',
-            '/user/editadvanced.php'
+            '/admin/user/user_bulk_delete.php',
+            '/admin/user/user_bulk_cohortadd.php',
+            '/admin/user/user_bulk_forcepasswordchange.php',
+            '/user/editadvanced.php',
+            # Role & Permission Functions
+            '/admin/roles/assign.php',
+            '/admin/roles/define.php',
+            '/admin/roles/override.php',
+            '/admin/roles/usersroles.php',
+            # Course Management
+            '/course/delete.php'
         ]
         
         for function in admin_functions:
