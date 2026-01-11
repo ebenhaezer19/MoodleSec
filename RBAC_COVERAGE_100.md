@@ -137,33 +137,73 @@
 
 ## 🚀 How to Run Enhanced Tests
 
-### Method 1: Via Full Site Scan
-
-```bash
-# From Moodle dashboard
-Site Administration → Security Dashboard → Full Site Scan
-
-# This automatically includes RBAC tests
-```
-
-### Method 2: Via Auth & API Scan
+### Method 1: Via Moodle Dashboard (Full Auth Scan)
 
 ```bash
 # From Moodle dashboard
 Site Administration → Security Dashboard → Auth & API Scan
 
-# Select: RBAC Testing
+# This automatically includes RBAC tests + Session + OAuth testing
 ```
 
-### Method 3: Direct API Call
+### Method 2: Via Direct RBAC Test (Recommended)
 
 ```bash
-# Test RBAC via proxy API
+# Test RBAC only via dedicated endpoint
 curl -X POST http://localhost:8999/test/rbac \
   -H "Content-Type: application/json" \
   -d '{
     "base_url": "http://localhost/moodle"
   }'
+```
+
+**Response:**
+```json
+{
+  "scan_id": "rbac_test_20260111_123045",
+  "scan_type": "rbac",
+  "target_url": "http://localhost/moodle",
+  "timestamp": "2026-01-11T12:30:45Z",
+  "tests": {
+    "unauth_access": {
+      "status": "pass",
+      "endpoints_tested": 26,
+      "accessible_endpoints": []
+    },
+    "privilege_escalation": {
+      "status": "pass",
+      "vulnerabilities": []
+    },
+    "function_access": {
+      "status": "pass",
+      "exposed_functions": []
+    },
+    "idor": {
+      "status": "pass",
+      "vulnerable_endpoints": []
+    },
+    "role_enumeration": {
+      "status": "pass",
+      "enumerable": false
+    }
+  },
+  "total_findings": 0,
+  "summary": {
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "info": 0
+  }
+}
+```
+
+### Method 3: Via Full Auth Scan (Includes Session + OAuth)
+
+```bash
+# Test all authentication security (RBAC + Session + OAuth)
+curl -X POST http://localhost:8999/scan-auth \
+  -H "Content-Type: application/json"
 ```
 
 ### Method 4: Python Script
@@ -175,6 +215,7 @@ from proxy.auth.rbac_tester import RBACTester
 async def test_rbac():
     tester = RBACTester(base_url="http://localhost/moodle")
     results = await tester.test_all()
+    await tester.close()
     
     print(f"Total findings: {results['total_findings']}")
     print(f"Critical: {results['summary']['critical']}")

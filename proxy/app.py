@@ -991,6 +991,101 @@ async def scan_authentication() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Auth scan failed: {str(e)}")
 
 
+@app.post("/test/rbac")
+async def test_rbac(request: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Dedicated RBAC (Role-Based Access Control) security test endpoint.
+    
+    Tests:
+    - Unauthenticated access to admin endpoints
+    - Privilege escalation vulnerabilities
+    - IDOR (Insecure Direct Object References)
+    - Function-level access control
+    - Role enumeration
+    
+    Request body:
+        {
+            "base_url": "http://localhost/moodle"  # Optional, defaults to configured MOODLE_URL
+        }
+    
+    Returns:
+        Detailed RBAC test results with findings
+    """
+    from auth.rbac_tester import RBACTester
+    
+    # Get base URL from request or use default
+    base_url = request.get('base_url', MOODLE_URL)
+    
+    scan_id = f"rbac_test_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    timestamp = datetime.utcnow().isoformat() + "Z"
+    
+    print(f"[RBAC Test] Starting RBAC security test: {scan_id}")
+    print(f"[RBAC Test] Target: {base_url}")
+    
+    try:
+        # Run RBAC tests
+        rbac_tester = RBACTester(base_url)
+        results = await rbac_tester.test_all()
+        await rbac_tester.close()
+        
+        # Add metadata
+        results['scan_id'] = scan_id
+        results['scan_type'] = 'rbac'
+        results['target_url'] = base_url
+        results['timestamp'] = timestamp
+        
+        # Enrich findings with risk scores
+        findings = results.get('findings', [])
+        if findings:
+            print(f"[RBAC Test] Enriching {len(findings)} findings with risk scores...")
+            findings = risk_scorer.batch_enrich_findings(findings)
+            results['findings'] = findings
+            results['total_findings'] = len(findings)
+            results['summary'] = _generate_finding_summary(findings)
+        else:
+            results['total_findings'] = 0
+            results['summary'] = {
+                'critical': 0,
+                'high': 0,
+                'medium': 0,
+                'low': 0,
+                'info': 0
+            }
+        
+        # Save to database
+        scan_data = {
+            'scan_id': scan_id,
+            'scan_type': 'rbac',
+            'target_url': base_url,
+            'timestamp': timestamp,
+            'total_findings': results['total_findings'],
+            'summary': results['summary'],
+            'findings': findings
+        }
+        scan_history_db.save_scan(scan_data)
+        
+        print(f"[RBAC Test] Complete! Found {results['total_findings']} issues")
+        
+        # Send Slack notification if enabled
+        if slack_notifier and results['total_findings'] > 0:
+            try:
+                await slack_notifier.send_scan_complete({
+                    'scan_id': scan_id,
+                    'target_url': base_url,
+                    'endpoints_scanned': len(results.get('tests', {}).get('unauth_access', {}).get('accessible_endpoints', [])),
+                    'total_findings': results['total_findings'],
+                    'summary': results['summary']
+                })
+            except Exception as e:
+                print(f"[Slack] Notification failed: {str(e)}")
+        
+        return results
+    
+    except Exception as e:
+        print(f"[RBAC Test] Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"RBAC test failed: {str(e)}")
+
+
 @app.post("/scan-api")
 async def scan_api() -> Dict[str, Any]:
     """
