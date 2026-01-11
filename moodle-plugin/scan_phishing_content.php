@@ -357,6 +357,9 @@ $history = local_security_dashboard_get_phishing_findings($page, $perpage);
 // Output page
 echo $OUTPUT->header();
 
+// Declare global $DB for use in the output section
+global $DB;
+
 echo html_writer::tag('h2', 'Phishing Content Scanner');
 
 echo html_writer::div(

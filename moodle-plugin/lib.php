@@ -797,7 +797,7 @@ function local_security_dashboard_is_whitelisted($url, $userid = null) {
  * @return string URL to the content
  */
 function local_security_dashboard_get_content_url($content_type, $content_id, $user_id) {
-    global $CFG;
+    global $CFG, $DB;
     
     switch ($content_type) {
         case 'user_profile':
@@ -805,7 +805,6 @@ function local_security_dashboard_get_content_url($content_type, $content_id, $u
             
         case 'forum_post':
             // Get discussion ID from post
-            global $DB;
             $post = $DB->get_record('forum_posts', ['id' => $content_id], 'discussion');
             if ($post) {
                 return $CFG->wwwroot . '/mod/forum/discuss.php?d=' . $post->discussion . '#p' . $content_id;
