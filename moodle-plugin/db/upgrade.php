@@ -3,7 +3,7 @@
  * Upgrade script for Security Dashboard
  *
  * @package    local_security_dashboard
- * @copyright  2024 Your Name
+ * @copyright  Krisopras & Nathanael 2025
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -70,6 +70,44 @@ function xmldb_local_security_dashboard_upgrade($oldversion) {
 
         // Security_dashboard savepoint reached.
         upgrade_plugin_savepoint(true, 2026011100, 'local', 'security_dashboard');
+    }
+
+    // Add content_url field and whitelist table
+    if ($oldversion < 2026011101) {
+        
+        // Add content_url field to local_security_phishing
+        $table = new xmldb_table('local_security_phishing');
+        $field = new xmldb_field('content_url', XMLDB_TYPE_TEXT, null, null, null, null, null, 'content_id');
+        
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        
+        // Create whitelist table
+        $table = new xmldb_table('local_security_phishing_whitelist');
+        
+        // Adding fields
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('whitelist_type', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('whitelist_value', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+        $table->add_field('reason', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('source', XMLDB_TYPE_CHAR, '50', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('created_by', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        
+        // Adding keys
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('created_by', XMLDB_KEY_FOREIGN, ['created_by'], 'user', ['id']);
+        
+        // Adding indexes
+        $table->add_index('whitelist_type', XMLDB_INDEX_NOTUNIQUE, ['whitelist_type']);
+        
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+        
+        upgrade_plugin_savepoint(true, 2026011101, 'local', 'security_dashboard');
     }
 
     return true;

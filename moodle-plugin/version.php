@@ -10,7 +10,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_security_dashboard';
-$plugin->version = 2026011100;  // YYYYMMDDXX - Phishing detection with DB storage
+$plugin->version = 2026011101;  // YYYYMMDDXX - Auto-remediation & whitelist learning
 $plugin->requires = 2022041900; // Moodle 4.0+
 $plugin->maturity = MATURITY_BETA;
-$plugin->release = 'v1.2.0-beta';
+$plugin->release = 'v1.3.0-beta';

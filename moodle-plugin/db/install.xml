@@ -144,6 +144,7 @@
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
         <FIELD NAME="content_type" TYPE="char" LENGTH="50" NOTNULL="true" SEQUENCE="false" COMMENT="user_profile, forum_post, comment"/>
         <FIELD NAME="content_id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="ID of content (user_id, post_id, etc)"/>
+        <FIELD NAME="content_url" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Direct URL to the content"/>
         <FIELD NAME="user_id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="User who created the content"/>
         <FIELD NAME="risk_level" TYPE="char" LENGTH="20" NOTNULL="true" SEQUENCE="false" COMMENT="CRITICAL, HIGH, MEDIUM, LOW"/>
         <FIELD NAME="risk_score" TYPE="number" LENGTH="4" NOTNULL="true" DECIMALS="2" SEQUENCE="false" COMMENT="Risk score 0-10"/>
@@ -171,6 +172,28 @@
         <INDEX NAME="status" UNIQUE="false" FIELDS="status"/>
         <INDEX NAME="timecreated" UNIQUE="false" FIELDS="timecreated"/>
         <INDEX NAME="content_lookup" UNIQUE="false" FIELDS="content_type, content_id"/>
+      </INDEXES>
+    </TABLE>
+
+    <!-- Phishing Whitelist Table -->
+    <TABLE NAME="local_security_phishing_whitelist" COMMENT="Stores whitelisted domains and users for phishing detection">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="whitelist_type" TYPE="char" LENGTH="20" NOTNULL="true" SEQUENCE="false" COMMENT="domain, user, url_pattern"/>
+        <FIELD NAME="whitelist_value" TYPE="text" NOTNULL="true" SEQUENCE="false" COMMENT="Domain name, user ID, or URL pattern"/>
+        <FIELD NAME="reason" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Why this was whitelisted"/>
+        <FIELD NAME="source" TYPE="char" LENGTH="50" NOTNULL="true" SEQUENCE="false" COMMENT="manual, auto_from_false_positive"/>
+        <FIELD NAME="created_by" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Admin who whitelisted"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="created_by" TYPE="foreign" FIELDS="created_by" REFTABLE="user" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="whitelist_type" UNIQUE="false" FIELDS="whitelist_type"/>
+        <INDEX NAME="whitelist_lookup" UNIQUE="false" FIELDS="whitelist_type, whitelist_value(100)"/>
       </INDEXES>
     </TABLE>
   </TABLES>

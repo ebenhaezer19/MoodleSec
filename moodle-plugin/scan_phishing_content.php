@@ -31,12 +31,38 @@ $findingid = optional_param('findingid', 0, PARAM_INT);
 $page = optional_param('page', 0, PARAM_INT);
 $perpage = optional_param('perpage', 20, PARAM_INT);
 
-if ($action === 'resolve' && $findingid && confirm_sesskey()) {
-    $status = optional_param('status', 'resolved', PARAM_ALPHA);
-    if (local_security_dashboard_resolve_phishing_finding($findingid, $status)) {
-        redirect($PAGE->url, 'Finding marked as ' . $status, null, \core\output\notification::NOTIFY_SUCCESS);
-    } else {
-        redirect($PAGE->url, 'Failed to update finding', null, \core\output\notification::NOTIFY_ERROR);
+if ($action && $findingid && confirm_sesskey()) {
+    switch ($action) {
+        case 'resolve':
+            $status = optional_param('status', 'resolved', PARAM_ALPHA);
+            if (local_security_dashboard_resolve_phishing_finding($findingid, $status)) {
+                redirect($PAGE->url, 'Finding marked as ' . $status, null, \core\output\notification::NOTIFY_SUCCESS);
+            } else {
+                redirect($PAGE->url, 'Failed to update finding', null, \core\output\notification::NOTIFY_ERROR);
+            }
+            break;
+            
+        case 'delete':
+            $result = local_security_dashboard_delete_phishing_content($findingid);
+            if ($result['success']) {
+                // Also mark finding as resolved
+                local_security_dashboard_resolve_phishing_finding($findingid, 'resolved');
+                redirect($PAGE->url, $result['message'], null, \core\output\notification::NOTIFY_SUCCESS);
+            } else {
+                redirect($PAGE->url, $result['message'], null, \core\output\notification::NOTIFY_ERROR);
+            }
+            break;
+            
+        case 'quarantine':
+            $result = local_security_dashboard_quarantine_content($findingid);
+            if ($result['success']) {
+                // Mark as resolved
+                local_security_dashboard_resolve_phishing_finding($findingid, 'resolved');
+                redirect($PAGE->url, $result['message'], null, \core\output\notification::NOTIFY_SUCCESS);
+            } else {
+                redirect($PAGE->url, $result['message'], null, \core\output\notification::NOTIFY_ERROR);
+            }
+            break;
     }
 }
 
@@ -354,7 +380,7 @@ if (!empty($history['findings'])) {
     echo html_writer::tag('th', 'Type');
     echo html_writer::tag('th', 'User');
     echo html_writer::tag('th', 'Risk');
-    echo html_writer::tag('th', 'URL');
+    echo html_writer::tag('th', 'Location');
     echo html_writer::tag('th', 'Status');
     echo html_writer::tag('th', 'Actions');
     echo html_writer::end_tag('tr');
@@ -379,17 +405,48 @@ if (!empty($history['findings'])) {
         echo html_writer::tag('td', html_writer::span($finding->content_type, 'badge badge-light'));
         echo html_writer::tag('td', $user ? fullname($user) : 'Unknown');
         echo html_writer::tag('td', html_writer::span("{$finding->risk_level} ({$finding->risk_score})", "badge badge-{$risk_class}"));
-        echo html_writer::tag('td', html_writer::tag('small', substr($finding->suspicious_url, 0, 40) . '...', ['style' => 'font-family: monospace;']));
+        
+        // Location with direct link
+        $location_html = '';
+        if (!empty($finding->content_url)) {
+            $location_html = html_writer::link(
+                $finding->content_url,
+                html_writer::tag('i', '', ['class' => 'fa fa-external-link']) . ' View Content',
+                ['class' => 'btn btn-sm btn-info', 'target' => '_blank']
+            );
+        } else {
+            $location_html = html_writer::tag('small', substr($finding->suspicious_url, 0, 30) . '...', ['style' => 'font-family: monospace;']);
+        }
+        echo html_writer::tag('td', $location_html);
+        
         echo html_writer::tag('td', html_writer::span($finding->status, "badge badge-{$status_class}"));
         
         // Actions
         $actions = '';
         if ($finding->status === 'open') {
+            // Auto-remediation actions
+            $delete_url = new moodle_url($PAGE->url, ['action' => 'delete', 'findingid' => $finding->id, 'sesskey' => sesskey()]);
+            $quarantine_url = new moodle_url($PAGE->url, ['action' => 'quarantine', 'findingid' => $finding->id, 'sesskey' => sesskey()]);
             $resolve_url = new moodle_url($PAGE->url, ['action' => 'resolve', 'findingid' => $finding->id, 'status' => 'resolved', 'sesskey' => sesskey()]);
             $fp_url = new moodle_url($PAGE->url, ['action' => 'resolve', 'findingid' => $finding->id, 'status' => 'false_positive', 'sesskey' => sesskey()]);
             
-            $actions .= html_writer::link($resolve_url, html_writer::tag('i', '', ['class' => 'fa fa-check']) . ' Resolve', ['class' => 'btn btn-sm btn-success mr-1']);
-            $actions .= html_writer::link($fp_url, 'False Positive', ['class' => 'btn btn-sm btn-secondary']);
+            $actions .= html_writer::div(
+                html_writer::link($delete_url, 
+                    html_writer::tag('i', '', ['class' => 'fa fa-trash']) . ' Delete', 
+                    ['class' => 'btn btn-sm btn-danger mr-1', 'onclick' => 'return confirm("Delete this content permanently?");']
+                ) .
+                html_writer::link($quarantine_url, 
+                    html_writer::tag('i', '', ['class' => 'fa fa-ban']) . ' Quarantine', 
+                    ['class' => 'btn btn-sm btn-warning mr-1', 'onclick' => 'return confirm("Quarantine/hide this content?");']
+                ),
+                'mb-1'
+            );
+            
+            $actions .= html_writer::div(
+                html_writer::link($resolve_url, 'Mark Resolved', ['class' => 'btn btn-sm btn-success mr-1']) .
+                html_writer::link($fp_url, 'False Positive (Whitelist)', ['class' => 'btn btn-sm btn-secondary', 'onclick' => 'return confirm("Mark as false positive and whitelist this domain?");']),
+                ''
+            );
         }
         echo html_writer::tag('td', $actions);
         
@@ -398,11 +455,14 @@ if (!empty($history['findings'])) {
         // Expandable details row
         echo html_writer::start_tag('tr', ['class' => 'collapse', 'id' => 'detail-' . $finding->id]);
         echo html_writer::start_tag('td', ['colspan' => '7', 'class' => 'bg-light']);
+        echo html_writer::tag('strong', 'Suspicious URL: ');
+        echo html_writer::tag('code', $finding->suspicious_url);
+        echo html_writer::empty_tag('br');
         echo html_writer::tag('strong', 'Indicators: ');
         echo implode(', ', json_decode($finding->indicators, true));
         if ($finding->content_preview) {
             echo html_writer::empty_tag('br');
-            echo html_writer::tag('strong', 'Preview: ');
+            echo html_writer::tag('strong', 'Content Preview: ');
             echo html_writer::tag('em', $finding->content_preview);
         }
         echo html_writer::end_tag('td');

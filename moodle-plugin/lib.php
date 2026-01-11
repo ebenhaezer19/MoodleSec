@@ -458,6 +458,11 @@ function local_security_dashboard_save_phishing_finding($finding) {
     $record = new stdClass();
     $record->content_type = $finding['content_type'];
     $record->content_id = $finding['content_id'];
+    $record->content_url = local_security_dashboard_get_content_url(
+        $finding['content_type'],
+        $finding['content_id'],
+        $finding['user_id']
+    );
     $record->user_id = $finding['user_id'];
     $record->risk_level = local_security_dashboard_get_risk_level($finding['risk_score']);
     $record->risk_score = $finding['risk_score'];
@@ -470,6 +475,11 @@ function local_security_dashboard_save_phishing_finding($finding) {
     $record->detected_by = $USER->id;
     $record->timecreated = time();
     $record->timemodified = time();
+    
+    // Check if URL/user is whitelisted
+    if (local_security_dashboard_is_whitelisted($record->suspicious_url, $record->user_id)) {
+        return false; // Skip whitelisted items
+    }
     
     try {
         // Check if already exists (avoid duplicates)
@@ -646,9 +656,275 @@ function local_security_dashboard_resolve_phishing_finding($findingid, $status =
     
     try {
         $DB->update_record('local_security_phishing', $record);
+        
+        // If marking as false positive, auto-whitelist the domain
+        if ($status === 'false_positive') {
+            $finding = $DB->get_record('local_security_phishing', ['id' => $findingid]);
+            if ($finding) {
+                local_security_dashboard_auto_whitelist_from_finding($finding);
+            }
+        }
+        
         return true;
     } catch (Exception $e) {
         debugging('Failed to resolve phishing finding: ' . $e->getMessage(), DEBUG_DEVELOPER);
         return false;
+    }
+}
+
+/**
+ * Auto-whitelist domain from false positive finding
+ *
+ * @param stdClass $finding Phishing finding record
+ * @return bool Success
+ */
+function local_security_dashboard_auto_whitelist_from_finding($finding) {
+    global $CFG;
+    require_once($CFG->libdir . '/filelib.php');
+    
+    // Extract domain from suspicious URL
+    $parsed = parse_url($finding->suspicious_url);
+    if (!$parsed || !isset($parsed['host'])) {
+        return false;
+    }
+    
+    $domain = $parsed['host'];
+    
+    // Add to whitelist
+    return local_security_dashboard_add_to_whitelist(
+        'domain',
+        $domain,
+        'Auto-whitelisted from false positive finding #' . $finding->id,
+        'auto_from_false_positive'
+    );
+}
+
+/**
+ * Add entry to phishing whitelist
+ *
+ * @param string $type Type: domain, user, url_pattern
+ * @param string $value Domain name, user ID, or URL pattern
+ * @param string $reason Reason for whitelisting
+ * @param string $source Source: manual, auto_from_false_positive
+ * @return bool Success
+ */
+function local_security_dashboard_add_to_whitelist($type, $value, $reason = '', $source = 'manual') {
+    global $DB, $USER;
+    
+    $allowed_types = ['domain', 'user', 'url_pattern'];
+    if (!in_array($type, $allowed_types)) {
+        return false;
+    }
+    
+    // Check if already whitelisted
+    $existing = $DB->get_record('local_security_phishing_whitelist', [
+        'whitelist_type' => $type,
+        'whitelist_value' => $value
+    ]);
+    
+    if ($existing) {
+        return true; // Already whitelisted
+    }
+    
+    $record = new stdClass();
+    $record->whitelist_type = $type;
+    $record->whitelist_value = $value;
+    $record->reason = $reason;
+    $record->source = $source;
+    $record->created_by = $USER->id;
+    $record->timecreated = time();
+    $record->timemodified = time();
+    
+    try {
+        $DB->insert_record('local_security_phishing_whitelist', $record);
+        return true;
+    } catch (Exception $e) {
+        debugging('Failed to add whitelist entry: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        return false;
+    }
+}
+
+/**
+ * Check if URL or user is whitelisted
+ *
+ * @param string $url URL to check
+ * @param int $userid User ID to check (optional)
+ * @return bool True if whitelisted
+ */
+function local_security_dashboard_is_whitelisted($url, $userid = null) {
+    global $DB;
+    
+    // Check user whitelist
+    if ($userid) {
+        if ($DB->record_exists('local_security_phishing_whitelist', [
+            'whitelist_type' => 'user',
+            'whitelist_value' => (string)$userid
+        ])) {
+            return true;
+        }
+    }
+    
+    // Check domain whitelist
+    $parsed = parse_url($url);
+    if ($parsed && isset($parsed['host'])) {
+        $domain = $parsed['host'];
+        
+        if ($DB->record_exists('local_security_phishing_whitelist', [
+            'whitelist_type' => 'domain',
+            'whitelist_value' => $domain
+        ])) {
+            return true;
+        }
+    }
+    
+    // Check URL pattern whitelist
+    $patterns = $DB->get_records('local_security_phishing_whitelist', ['whitelist_type' => 'url_pattern']);
+    foreach ($patterns as $pattern) {
+        if (preg_match('/' . preg_quote($pattern->whitelist_value, '/') . '/', $url)) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * Get content URL for phishing finding
+ *
+ * @param string $content_type Type of content
+ * @param int $content_id Content ID
+ * @param int $user_id User ID
+ * @return string URL to the content
+ */
+function local_security_dashboard_get_content_url($content_type, $content_id, $user_id) {
+    global $CFG;
+    
+    switch ($content_type) {
+        case 'user_profile':
+            return $CFG->wwwroot . '/user/profile.php?id=' . $user_id;
+            
+        case 'forum_post':
+            // Get discussion ID from post
+            global $DB;
+            $post = $DB->get_record('forum_posts', ['id' => $content_id], 'discussion');
+            if ($post) {
+                return $CFG->wwwroot . '/mod/forum/discuss.php?d=' . $post->discussion . '#p' . $content_id;
+            }
+            return $CFG->wwwroot . '/mod/forum/';
+            
+        case 'comment':
+            // Get context for comment
+            $comment = $DB->get_record('comments', ['id' => $content_id], 'contextid, itemid');
+            if ($comment) {
+                $context = context::instance_by_id($comment->contextid, IGNORE_MISSING);
+                if ($context) {
+                    return $context->get_url() . '#comment-' . $content_id;
+                }
+            }
+            return $CFG->wwwroot;
+            
+        default:
+            return $CFG->wwwroot;
+    }
+}
+
+/**
+ * Delete phishing content (auto-remediation)
+ *
+ * @param int $findingid Finding ID
+ * @return array ['success' => bool, 'message' => string]
+ */
+function local_security_dashboard_delete_phishing_content($findingid) {
+    global $DB;
+    
+    $finding = $DB->get_record('local_security_phishing', ['id' => $findingid]);
+    if (!$finding) {
+        return ['success' => false, 'message' => 'Finding not found'];
+    }
+    
+    try {
+        switch ($finding->content_type) {
+            case 'user_profile':
+                // Clear user description
+                $user = $DB->get_record('user', ['id' => $finding->user_id]);
+                if ($user) {
+                    $user->description = '';
+                    $user->descriptionformat = FORMAT_HTML;
+                    $DB->update_record('user', $user);
+                    return ['success' => true, 'message' => 'User profile bio cleared'];
+                }
+                break;
+                
+            case 'forum_post':
+                // Delete forum post
+                require_once(dirname(__FILE__) . '/../../mod/forum/lib.php');
+                $post = $DB->get_record('forum_posts', ['id' => $finding->content_id]);
+                if ($post) {
+                    forum_delete_post($post, true);
+                    return ['success' => true, 'message' => 'Forum post deleted'];
+                }
+                break;
+                
+            case 'comment':
+                // Delete comment
+                require_once(dirname(__FILE__) . '/../../comment/lib.php');
+                $comment = $DB->get_record('comments', ['id' => $finding->content_id]);
+                if ($comment) {
+                    $DB->delete_records('comments', ['id' => $finding->content_id]);
+                    return ['success' => true, 'message' => 'Comment deleted'];
+                }
+                break;
+        }
+        
+        return ['success' => false, 'message' => 'Content not found or already deleted'];
+    } catch (Exception $e) {
+        return ['success' => false, 'message' => 'Error: ' . $e->getMessage()];
+    }
+}
+
+/**
+ * Quarantine phishing content (hide from public)
+ *
+ * @param int $findingid Finding ID
+ * @return array ['success' => bool, 'message' => string]
+ */
+function local_security_dashboard_quarantine_content($findingid) {
+    global $DB;
+    
+    $finding = $DB->get_record('local_security_phishing', ['id' => $findingid]);
+    if (!$finding) {
+        return ['success' => false, 'message' => 'Finding not found'];
+    }
+    
+    try {
+        switch ($finding->content_type) {
+            case 'user_profile':
+                // Suspend user
+                $user = $DB->get_record('user', ['id' => $finding->user_id]);
+                if ($user && !$user->suspended) {
+                    $user->suspended = 1;
+                    $DB->update_record('user', $user);
+                    return ['success' => true, 'message' => 'User account suspended (can be reactivated)'];
+                }
+                return ['success' => false, 'message' => 'User already suspended or not found'];
+                
+            case 'forum_post':
+                // Hide forum post (set deleted flag)
+                $post = $DB->get_record('forum_posts', ['id' => $finding->content_id]);
+                if ($post) {
+                    $DB->set_field('forum_posts', 'deleted', 1, ['id' => $finding->content_id]);
+                    return ['success' => true, 'message' => 'Forum post hidden (marked as deleted)'];
+                }
+                break;
+                
+            case 'comment':
+                // Comments don't have soft delete, so we replace content
+                $DB->set_field('comments', 'content', '[Content hidden by admin - potential phishing]', ['id' => $finding->content_id]);
+                return ['success' => true, 'message' => 'Comment content replaced with warning'];
+        }
+        
+        return ['success' => false, 'message' => 'Content not found'];
+    } catch (Exception $e) {
+        return ['success' => false, 'message' => 'Error: ' . $e->getMessage()];
     }
 }
