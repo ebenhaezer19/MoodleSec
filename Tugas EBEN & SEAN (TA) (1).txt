@@ -1781,6 +1781,45 @@ Operating Systems:
 - macOS (development only)
 
 
+Key Components:
+
+
+1. Presentation Layer:
+   - Moodle plugin interface (PHP)
+   - Responsive web UI
+   - AJAX untuk real-time updates
+
+
+2. Application Layer:
+   - Proxy Service: Main orchestration service
+   - CVSS Engine: CVSS calculation microservice
+
+
+3. Business Logic Layer:
+   - Scanner Manager: Multi-scanner coordination
+   - ML Engine: False positive reduction
+   - Risk Scorer: Contextual risk calculation
+   - Crawler: Endpoint discovery
+   - Reporter: PDF generation
+   - Notifier: Alert distribution
+
+
+4. Data Access Layer:
+   - SQLite: Scan history & findings
+   - Moodle DB: User data & config
+   - ML Models: Serialized classifiers
+
+
+5. External Services:
+   - OWASP ZAP: Report import (XML/JSON format)
+   - Acunetix: Report import (JSON format)
+   - Slack: Notifications (optional)
+
+
+
+
+
+
 Summary :
 Requirement
 	Target
@@ -1985,24 +2024,29 @@ Direktori / Modul
 	ml_endpoints.py
 	Endpoint prediksi dan evaluasi ML
 	scanners/
-	zap_scanner.py
+	sql_injction.py
 	Integrasi OWASP ZAP
 	
 
-	acunetix_scanner.py
+	xss_detector.py
 	Integrasi Acunetix
 	
 
-	sql_injection_scanner.py
+	csrf_validator.py
 	Deteksi SQL Injection
 	
 
-	xss_scanner.py
+	path_traversal.py
 	Deteksi Cross-Site Scripting
 	
 
-	base_scanner.py
+	phishing_detector.py
 	Abstract base class scanner
+	
+
+	scanner_engine.py
+	
+
 	ml/
 	false_positive_reducer.py
 	Reduksi false positive
@@ -2014,6 +2058,22 @@ Direktori / Modul
 
 	phishing_detector.py
 	Deteksi indikasi phishing
+	
+
+	anomaly_detector.py
+	Deteksi Pergerakan Krentanan secara Real Time(Opsional)
+	
+
+	rate_limiter.py
+	Pembatasan log system user
+	
+
+	model_trainer.py
+	Pelatihan Model ML
+	
+
+	ml_manager.py
+	Konfigurasi ML Model
 	risk/
 	risk_scorer.py
 	Penilaian dan normalisasi risiko
@@ -2142,7 +2202,7 @@ Method
 	Endpoint
 	Deskripsi
 	POST
-	/calculate
+	/score
 	Menghitung skor CVSS dari input terstruktur
 	POST
 	/score
@@ -2853,7 +2913,7 @@ Mockup :
  3.6.2 Functional Requirements Terpenuhi
 -  Multi-scanner integration (ZAP, Acunetix, Custom)
 -  Comprehensive vulnerability detection (Admin, User, API)
--  ML-based false positive reduction (97.6% accuracy)
+-  ML-based false positive reduction (>95% accuracy)
 -  Adaptive CVSS scoring dengan contextual multipliers
 -  Automated PDF reporting
 -  Optional real-time notifications
