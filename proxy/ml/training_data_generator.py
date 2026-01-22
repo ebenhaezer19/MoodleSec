@@ -138,23 +138,68 @@ class TrainingDataGenerator:
         training_data = []
         labels = []
         
-        # Generate mix of true positives and false positives
-        for i in range(num_samples):
-            if random.random() < 0.3:  # 30% false positives
-                pattern = random.choice(self.FALSE_POSITIVE_PATTERNS)
-                is_fp = True
-            else:  # 70% true positives
-                pattern = random.choice(self.MOODLE_CVES)
-                is_fp = pattern['is_fp']
+        # Calculate number of overlap samples (15% of each class)
+        num_fp = int(num_samples * 0.4)
+        num_tp = num_samples - num_fp
+        
+        num_fp_high_severity = int(num_fp * 0.15)  # 15% of FP are High/Critical
+        num_tp_low_severity = int(num_tp * 0.15)   # 15% of TP are Info/Low
+        
+        all_severities = ['Info', 'Low', 'Medium', 'High', 'Critical']
+        
+        # Generate FALSE POSITIVES
+        for i in range(num_fp):
+            is_fp = True
             
-            finding = self._create_finding(pattern)
+            # Force overlap for first 15% 
+            if i < num_fp_high_severity:
+                target_severity = random.choice(['Medium', 'High', 'Critical'])
+                base = random.choice(self.MOODLE_CVES).copy()
+                base['description'] = base['description'] + ' (false alarm - dev environment)'
+            else:
+                target_severity = random.choices(
+                    all_severities,
+                    weights=[45, 40, 8, 5, 2]
+                )[0]
+                if target_severity in ['High', 'Critical']:
+                    base = random.choice(self.MOODLE_CVES).copy()
+                    base['description'] = base['description'] + ' (scanner noise)'
+                else:
+                    base = random.choice(self.FALSE_POSITIVE_PATTERNS).copy()
+            
+            finding = self._create_finding(base)
+            finding['severity'] = target_severity
             context = self._create_context(finding, is_fp)
             
-            training_data.append({
-                'finding': finding,
-                'context': context
-            })
-            labels.append(1 if is_fp else 0)
+            training_data.append({'finding': finding, 'context': context})
+            labels.append(1)
+        
+        # Generate TRUE POSITIVES
+        for i in range(num_tp):
+            is_fp = False
+            
+            # Force overlap for first 15%
+            if i < num_tp_low_severity:
+                target_severity = random.choice(['Info', 'Low', 'Medium'])
+                base = random.choice(self.FALSE_POSITIVE_PATTERNS).copy()
+                base['description'] = base['description'] + ' (exploitable - verified)'
+            else:
+                target_severity = random.choices(
+                    all_severities,
+                    weights=[2, 5, 18, 35, 40]
+                )[0]
+                if target_severity in ['Info', 'Low']:
+                    base = random.choice(self.FALSE_POSITIVE_PATTERNS + self.MOODLE_CVES).copy()
+                    base['description'] = base['description'] + ' (confirmed low-impact vuln)'
+                else:
+                    base = random.choice(self.MOODLE_CVES).copy()
+            
+            finding = self._create_finding(base)
+            finding['severity'] = target_severity
+            context = self._create_context(finding, is_fp)
+            
+            training_data.append({'finding': finding, 'context': context})
+            labels.append(0)
         
         return training_data, labels
     
@@ -300,11 +345,33 @@ class TrainingDataGenerator:
         }
     
     def _create_context(self, finding: Dict, is_fp: bool) -> Dict[str, Any]:
-        """Create context for a finding."""
+        """Create context for a finding with realistic variability."""
+        # More realistic: FP and TP can have overlapping characteristics
+        # FP tends to have: normal status codes, faster response, more occurrences
+        # TP tends to have: error codes sometimes, slower response, fewer occurrences
+        # But there's significant overlap - no perfect correlation
+        
+        if is_fp:
+            # False positives: tend to be normal responses but not always
+            status_code = random.choices(
+                [200, 304, 403, 500],
+                weights=[60, 20, 15, 5]  # Mostly 200, but can be errors
+            )[0]
+            response_time = random.randint(50, 500)  # Generally faster
+            occurrence_count = random.randint(1, 15)  # Can appear multiple times
+        else:
+            # True positives: more likely to have errors but can be 200
+            status_code = random.choices(
+                [200, 403, 500, 400],
+                weights=[40, 25, 25, 10]  # More errors, but still can be 200
+            )[0]
+            response_time = random.randint(100, 5000)  # Generally slower, but overlap
+            occurrence_count = random.randint(1, 8)  # Usually fewer, but overlap
+        
         return {
-            'status_code': 200 if is_fp else random.choice([200, 500, 403]),
-            'response_time': random.randint(50, 200) if is_fp else random.randint(200, 5000),
-            'occurrence_count': 1 if not is_fp else random.randint(1, 10),
+            'status_code': status_code,
+            'response_time': response_time,
+            'occurrence_count': occurrence_count,
             'days_since_first_seen': random.randint(0, 30)
         }
     
