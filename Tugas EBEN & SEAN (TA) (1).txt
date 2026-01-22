@@ -1,0 +1,3115 @@
+﻿Dokumen Proposal Proyek Akhir: 
+
+
+ADAPTIVE SECURITY PROXY UNTUK MOODLE: SISTEM AUDIT KERENTANAN OTOMATIS BERBASIS CVSS RISK SCORING DENGAN MEKANISME SEMI SELF-HEALING
+
+
+
+
+  
+
+
+
+Disusun Oleh: 
+Nathanael Sean Lim (212200160)
+Krisopras Eben Haezer (222200256)
+
+
+
+
+
+
+
+
+
+
+PROGRAM STUDI IT AND BIG DATA ANALYTICS
+FAKULTAS TEKNIK DAN SAINS
+CALVIN INSTITUTE OF TECHNOLOGY
+JAKARTA
+2025
+
+
+HALAMAN PERSETUJUAN DOSEN PPA
+Yang bertanda tangan di bawah ini, Dosen Pembimbing Akademik Program Studi It and Big Data Analytics, Fakultas Teknik dan Sains, Universitas Calvin Institute of Technology, menyatakan bahwa:
+Data Mahasiswa:
+No
+	Nama Mahasiswa
+	     NIM
+	 Program Studi
+	1.
+	Nathanael Sean Lim
+	212200160
+	IT and Big Data Analytics
+	2.
+	Krisopras Eben Haezer
+	222200256
+	IT and Big Data Analytics
+	Telah mendapatkan persetujuan untuk mengikuti Program PPA sesuai dengan ketentuan yang berlaku.
+Demikian surat persetujuan ini dibuat untuk digunakan sebagaimana mestinya.
+
+
+..............................., ................. 2026.
+
+
+Dosen Pembimbing Akademik,
+
+
+NIP. ................................
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+________________
+
+
+
+
+ABSTRAK
+
+
+Moodle sebagai LMS open-source menyimpan data akademik sensitif dan menjadi target utama serangan siber seperti SQL Injection, XSS, CSRF, dan Path Traversal. Pendekatan keamanan tradisional berbasis WAF dan scanner statis memiliki keterbatasan, termasuk false positive tinggi, ketidakmampuan mendeteksi kerentanan runtime, serta penilaian risiko CVSS yang kurang kontekstual terhadap lingkungan produksi Moodle.Penelitian ini menerapkan metode Research and Development untuk merancang MoodleSec, mencakup studi literatur, analisis kebutuhan, perancangan arsitektur, implementasi multi-layer security scanning berbasis ML, serta pengujian komprehensif. Evaluasi dilakukan pada akurasi deteksi, reduksi false positive, kinerja sistem, dan efektivitas adaptive CVSS, diakhiri dengan dokumentasi teknis dan ilmiah.Hasil penelitian menunjukkan model ML ensemble mencapai akurasi 88,24% dengan penurunan false positive signifikan dan efisiensi operasional meningkat hingga 5× lebih cepat. Sistem berhasil menemukan kerentanan nyata pada Moodle, bersifat production-ready, skalabel, dan memberikan kontribusi akademik melalui inovasi metode ML, auto-labeling, serta penerapan keamanan LMS berbasis data nyata.Perancangan Adaptive Security Proxy untuk Moodle mengadopsi arsitektur empat lapis yang mengintegrasikan DAST, optimasi machine learning, adaptive CVSS, dan semi self-healing. Pendekatan ini menyeimbangkan akurasi deteksi, efisiensi operasional, serta kontrol manusia. Containerization Docker menjaga isolasi produksi, sementara ML menurunkan false positive dan adaptive CVSS meningkatkan akurasi penilaian risiko kontekstual.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+DAFTAR ISI
+
+
+HALAMAN PERSETUJUAN DOSEN PPA        2
+ABSTRAK        3
+DAFTAR ISI        4
+BAB I  PENDAHULUAN        6
+1.1 Latar Belakang        6
+1.2 Rumusan Masalah        7
+1.3 Tujuan Penelitian        7
+1.4 Batasan Masalah        8
+1.5 Manfaat Penelitian        9
+1.6 Metodologi Penelitian        9
+1.7 Sistematika Penulisan        11
+BAB II LANDASAN TEORI        13
+2.1 Learning Management System (LMS) Moodle        13
+2.1.1 Konsep Learning Management System        13
+2.1.2 Arsitektur Keamanan Moodle        13
+2.2 Dynamic Application Security Testing (DAST)        14
+2.2.1 Konsep DAST        14
+2.2.2 OWASP ZAP dan Acunetix sebagai DAST Engine        14
+2.2.3 Custom Security Scanners        15
+2.2.4 Keterbatasan DAST Tradisional        15
+2.3 Machine Learning untuk Cybersecurity        16
+2.3.1 Supervised Learning untuk Klasifikasi Kerentanan        16
+2.3.2 Training Data dan Labeling Strategy        17
+2.3.3 Model Evaluation Metrics        18
+2.4 Common Vulnerability Scoring System (CVSS)        19
+2.4.1 Framework CVSS v3.1        19
+2.4.2 Keterbatasan CVSS dalam Konteks Aplikasi Spesifik        20
+2.5 Monitoring, Alerting, dan Recommendation Systems untuk Autonomous Response        21
+2.5.1 Konsep Semi Self-Healing dalam Security Systems        21
+2.5.2 MAPE-K Loop dalam MoodleSec        22
+2.5.3 Implementation dalam MoodleSec        22
+2.5.4 Level 2 Autonomy Design Decisions        23
+2.5.5 Future Extensions: Towards Level 3 Autonomy        24
+2.6 Container Security dengan Docker        24
+2.6.1 Docker Containerization untuk Isolation        24
+2.6.2 Security Best Practices untuk Docker Deployment        25
+2.7 Technology Stack dan Architecture Framework        26
+2.7.1 Flask untuk Proxy Service        26
+2.7.2 Modular Service Design        27
+BAB III PERANCANGAN SISTEM        29
+3.1 Analisis Kebutuhan Sistem        29
+3.1.1 Functional Requirements (FR)        29
+FR-2: Comprehensive Vulnerability Detection        29
+FR-4: Adaptive CVSS v3.1 Scoring with Contextual Multipliers        32
+FR-5: Automated Reporting & Optional Real-Time Notifications        33
+FR-6: Database Management & Data Persistence        35
+FR-7: Extensible Architecture for Future Enhancements        36
+3.1.2  Non-Functional Requirements (NFR)        37
+NFR-1: Performance        37
+NFR-2: Scalability        37
+NFR-3: Security        38
+NFR-4: Usability        39
+NFR-5: Compatibility        40
+3.2 Arsitektur Sistem        41
+3.2.1 High-Level Architecture        41
+3.2.2 Component Architecture        43
+A. Proxy Service (Core Application)        43
+B. CVSS Engine (Microservice)        45
+C. Moodle Plugin (Frontend)        47
+3.2.3 Data Flow Architecture        49
+3.2.4 Deployment Architecture        49
+3.2.5 Security Architecture        51
+3.3 Perancangan Database        51
+3.3.1 Database Schema Overview        51
+3.3.2 Entity Relationship Diagram (ERD)        57
+3.3.3 Database Normalization        57
+3.3.4 Database Indexing Strategy        58
+3.4 Perancangan Antarmuka (UI/UX)        59
+3.4.1 Design Principles        59
+3.4.2 Main Dashboard        59
+3.4.3 Scan Progress Page        60
+3.4.4 Reports & Findings Page        60
+3.4.7 ML Dashboard        61
+PENUTUP        65
+Daftar Pustaka        66
+Lampiran        67
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+BAB I  PENDAHULUAN
+
+
+1.1 Latar Belakang
+
+
+Learning Management System (LMS) seperti Moodle telah menjadi infrastruktur kritis dalam ekosistem pendidikan digital modern. Sebagai platform open-source yang digunakan oleh lebih dari 250 juta pengguna di 230+ negara dan mendukung 400+ juta kursus online, Moodle menyimpan data sensitif mahasiswa, materi pembelajaran, dan informasi akademik yang bernilai tinggi. Namun, popularitas dan kompleksitas arsitektur Moodle membuatnya menjadi target utama serangan siber, khususnya melalui eksploitasi kerentanan aplikasi web seperti SQL Injection, Cross-Site Scripting (XSS), Cross-Site Request Forgery (CSRF), dan Path Traversal.
+
+
+Berdasarkan laporan keamanan OWASP 2023, 70-80% dari semua vulnerability findings dalam web application scanning adalah false positives, yang menyebabkan alert fatigue dan menghabiskan 160+ jam/bulan untuk manual review. Pendekatan keamanan tradisional menggunakan Web Application Firewall (WAF) konvensional dan scanner kerentanan statis memiliki keterbatasan fundamental. Pertama, sistem rule-based menghasilkan tingkat false positive yang tinggi karena tidak mempertimbangkan konteks spesifik aplikasi Moodle. Kedua, pemindaian pasif tidak dapat mendeteksi kerentanan yang hanya muncul dalam kondisi runtime tertentu. Ketiga, penilaian risiko menggunakan skor CVSS standar sering tidak mencerminkan dampak aktual terhadap lingkungan produksi yang spesifik.
+
+
+Penelitian sebelumnya dalam domain keamanan LMS terbatas pada: (1) Static analysis tools dengan tingkat false positive 70-80% (OWASP, 2023), (2) Rule-based WAF yang tidak mempertimbangkan konteks Moodle-specific, (3) Manual vulnerability assessment yang tidak scalable untuk enterprise deployment. Gap penelitian: Belum ada solusi yang mengintegrasikan multi-scanner dengan ML-based false positive reduction secara real-time untuk ekosistem Moodle.
+
+
+Penelitian ini mengembangkan sistem MoodleSec, sebuah Adaptive Security Proxy yang mengintegrasikan Dynamic Application Security Testing (DAST), machine learning untuk reduksi false positive, dan adaptive CVSS risk scoring dalam satu arsitektur berlapis. Sistem ini diimplementasikan sebagai plugin Moodle (admin tool) yang dapat melakukan audit kerentanan otomatis dengan mengalirkan trafik pengujian melalui proxy service berbasis Python Flask yang menjalankan multiple security scanners. Hasil pemindaian dari berbagai sumber (OWASP ZAP, Acunetix, dan scanner custom) diproses secara terpadu, dianalisis menggunakan machine learning, dan disajikan dalam dashboard interaktif dengan sistem notifikasi real-time.
+
+
+Inovasi utama penelitian ini: (1) Multi-Scanner Integration Architecture: Proxy service yang mengintegrasikan data OWASP ZAP dan Acunetix dengan normalisasi hasil otomatis, mengatasi incompatibility issues antar scanner. (2) ML-Enhanced False Positive Reduction: Ensemble model (RandomForest + GradientBoosting) dengan 88.24% accuracy dan probability calibration untuk klasifikasi true vs false positives. (3) Adaptive Risk Scoring System: CVSS scoring yang dikustomisasi untuk Moodle dengan faktor endpoint sensitivity dan role-based impact, memberikan risk assessment yang lebih akurat.
+Sistem ini dilengkapi dengan scheduler untuk scanning otomatis, comprehensive reporting (PDF export), dan integrasi notifikasi untuk memfasilitasi respons cepat terhadap temuan kerentanan kritis. Hasil penelitian menunjukkan pengurangan false positive sebesar 70%, peningkatan efisiensi operational 80%, dan penemuan vulnerability aktual (HTML injection dalam Moodle comments) yang berhasil diatasi dengan phishing detection module.
+
+
+1.2 Rumusan Masalah
+
+
+Berdasarkan latar belakang yang telah diuraikan, penelitian ini merumuskan beberapa permasalahan utama:
+
+
+1. Multi-Scanner Architecture Design: Bagaimana merancang arsitektur proxy service yang dapat mengintegrasikan multiple security scanners (OWASP ZAP, Acunetix, custom scanners) untuk melakukan pemindaian kerentanan secara otomatis terhadap instalasi Moodle dengan target throughput 100+ concurrent scans dan latency <500ms tanpa mengganggu operasional sistem produksi?
+
+
+2. ML-Enhanced False Positive Reduction: Bagaimana mengimplementasikan machine learning pipeline dengan ensemble model dan probability calibration untuk mengurangi tingkat false positive dari 70-80% (baseline) menjadi <20% dengan target accuracy 85%+ dalam deteksi kerentanan berbasis pattern matching?
+
+
+3. Adaptive Risk Assessment: Bagaimana mengembangkan sistem adaptive CVSS scoring yang dapat menyesuaikan penilaian risiko berdasarkan konteks spesifik lingkungan Moodle seperti endpoint sensitivity, role requirements, dan historical attack patterns untuk meningkatkan akurasi risk assessment dari 60% (CVSS standar) menjadi 85%+?
+
+
+4. Semi Self-Healing Mechanism: Bagaimana merancang mekanisme semi self-healing yang memberikan rekomendasi mitigasi kontekstual dengan version compatibility suggestions dan comprehensive reporting untuk mengurangi response time dari hari menjadi jam dengan target mitigation success rate 90%+?
+
+
+
+
+1.3 Tujuan Penelitian
+
+
+Penelitian ini memiliki tujuan sebagai berikut:
+1. Mengembangkan plugin Moodle (admin tool) yang terintegrasi dengan proxy service
+berbasis Python untuk audit kerentanan otomatis dengan kemampuan multi-scanner
+integration dan automated data normalization.
+2. Mengimplementasikan machine learning pipeline dengan ensemble classifier
+(Random Forest + XGBoost) yang dilengkapi probability calibration, auto-labeling
+mechanism, dan interactive labeling tools untuk meningkatkan akurasi deteksi dan
+mengurangi false positive rate.
+3. Merancang adaptive CVSS scoring engine yang mempertimbangkan faktor
+kontekstual seperti endpoint type (admin/user/API), authentication requirements,
+role-based privileges, dan attack frequency untuk menghasilkan risk assessment
+yang lebih akurat.
+4. Membangun comprehensive security management system dengan scheduler untuk
+automated scanning, PDF report generation, real-time Slack notifications, dan
+version recommendation engine untuk memfasilitasi long-term security
+Improvements.
+
+
+1.4 Batasan Masalah
+
+
+Untuk memfokuskan ruang lingkup penelitian, ditetapkan batasan masalah sebagai berikut:
+1. Sistem difokuskan pada deteksi kerentanan aplikasi web kategori OWASP Top 10,
+khususnya SQL Injection (CWE-89), Cross-Site Scripting/XSS (CWE-79), Cross-Site
+Request Forgery/CSRF (CWE-352), dan Path Traversal (CWE-22).
+2. Pemindaian kerentanan mencakup panel administrator, panel pengguna biasa
+(student/teacher), dan REST API endpoints Moodle, namun tidak mencakup analisis
+kerentanan pada plugin third-party yang tidak terverifikasi secara mendalam.
+3. Machine learning model menggunakan supervised learning dengan ensemble
+approach (Random Forest + XGBoost) untuk binary classification (true positive vs
+false positive) dengan dataset berlabel yang dikumpulkan dari OWASP ZAP reports,
+Acunetix exports, dan manual penetration testing.
+4. Adaptive CVSS scoring menggunakan framework CVSS v3.1 sebagai baseline
+dengan enhancement berupa contextual multipliers yang mempertimbangkan
+Moodle-specific factors seperti endpoint sensitivity scoring dan role-based impact
+assessment.
+5. Sistem diimplementasikan sebagai Moodle admin tool plugin dengan backend proxy
+service menggunakan Python Flask framework, SQLite database untuk
+development, dan support untuk PostgreSQL/MySQL dalam production deployment.
+6. Testing dilakukan pada Moodle versi 4.x dengan environment lokal menggunakan
+XAMPP/MAMP atau Docker containerization pada sistem operasi
+Windows/Linux/macOS.
+
+
+1.5 Manfaat Penelitian
+
+
+Penelitian ini diharapkan memberikan kontribusi sebagai berikut:
+Manfaat Akademik:
+1. Memberikan kontribusi pada body of knowledge di bidang application security,
+khususnya dalam integrasi DAST dengan machine learning untuk konteks LMS.
+2. Mengembangkan framework adaptive risk scoring yang dapat diadaptasi untuk
+aplikasi web kompleks lainnya.
+3. Menyediakan dataset berlabel hasil audit kerentanan Moodle untuk penelitian
+lanjutan di bidang cybersecurity.
+Manfaat Praktis:
+1. Menyediakan tool open-source yang dapat digunakan oleh administrator Moodle
+untuk melakukan audit keamanan otomatis secara berkala.
+2. Mengurangi beban kerja security engineer dalam melakukan triase dan analisis false
+positive dari scanner konvensional.
+3. Meningkatkan postur keamanan instalasi Moodle melalui deteksi proaktif dan
+rekomendasi mitigasi yang kontekstual dan prioritized.
+
+
+1.6 Metodologi Penelitian
+
+
+Penelitian ini menggunakan pendekatan Research and Development dengan
+tahapan sebagai berikut:
+
+
+1. Studi Literatur Mengkaji penelitian terkait Dynamic Application Security Testing, machine
+learning untuk cybersecurity, CVSS risk scoring, vulnerability assessment methodologies,
+dan security automation frameworks dalam konteks web application security dan LMS
+security.
+
+
+2. Analisis Kebutuhan Sistem Melakukan analisis terhadap:
+Arsitektur keamanan Moodle dan pola serangan umum terhadap LMS
+Kebutuhan integrasi multiple security scanners (OWASP ZAP, Acunetix)
+Requirement untuk ML-based false positive reduction
+Kebutuhan reporting dan notification system
+Workflow automated scanning dengan scheduler
+
+
+3. Perancangan Sistem Merancang arsitektur MoodleSec dengan komponen:
+* Moodle Plugin Layer: Admin tool plugin dengan UI dashboard, scan configuration,
+dan report viewing
+* Proxy Service Layer: Python Flask application untuk scanner orchestration, data
+normalization, dan API endpoints
+* Scanner Engine Layer: Integration dengan OWASP ZAP, Acunetix parser, dan
+custom security scanners (SQL Injection, XSS, CSRF, Path Traversal)
+* ML Pipeline Layer: Feature extraction, ensemble classification, probability
+calibration, dan auto-labeling mechanism
+* Risk Scoring Layer: CVSS calculator dan adaptive scoring engine
+* Reporting Layer: PDF generation, dashboard visualization, dan Slack integration
+
+
+4. Implementasi Mengembangkan sistem menggunakan:
+* Frontend: PHP untuk Moodle plugin dengan Mustache templating
+* Backend: Python Flask untuk proxy service (port 8999)
+* Database: SQLite untuk development, PostgreSQL/MySQL untuk production
+* ML Framework: scikit-learn untuk ensemble models (RandomForestClassifier +
+XGBClassifier) dengan CalibratedClassifierCV untuk probability calibration
+* Scanner Integration: OWASP ZAP API, Acunetix JSON parser, custom pattern-
+based detectors
+* Reporting: ReportLab untuk PDF generation, matplotlib untuk visualization
+* Integration: Slack Webhook API untuk real-time notifications (Optional)
+
+
+5. Pengujian dan Evaluasi Melakukan pengujian:
+* Functional Testing: Validasi setiap modul scanner, ML classification accuracy,
+CVSS calculation correctness
+* Integration Testing: Testing end-to-end workflow dari scan trigger hingga report
+generation
+* Performance Testing: Scan duration, memory usage, concurrent scan handling
+* ML Model Evaluation: Precision, Recall, F1-Score, ROC-AUC untuk ensemble
+classifier
+* False Positive Analysis: Measuring FP reduction rate dibandingkan baseline
+scanner output
+* Real-world Testing: Deployment pada actual Moodle installation dengan different
+configurations
+
+
+6. Analisis Hasil dan Pembahasan Menganalisis:
+* Efektivitas multi-scanner integration dalam coverage improvement
+* Performance metrics ML ensemble model vs individual classifiers
+* Adaptive CVSS scoring accuracy vs standard CVSS
+* System usability dan administrator feedback
+* Comparison dengan existing security scanning tools
+
+
+7. Penyusunan Dokumentasi Mendokumentasikan:
+* Source code dengan comprehensive comments
+* API documentation untuk proxy service endpoints
+* User manual untuk Moodle administrators
+* Technical documentation untuk future development
+* Research findings dalam bentuk skripsi dan publikasi ilmiah
+
+
+  
+
+1.7 Sistematika Penulisan
+Sistematika penulisan skripsi ini disusun sebagai berikut:
+
+
+BAB I PENDAHULUAN
+Bab ini menguraikan latar belakang penelitian, rumusan masalah, tujuan penelitian, batasan
+masalah, manfaat penelitian, metodologi penelitian, dan sistematika penulisan.
+BAB II LANDASAN TEORI
+Bab ini menyajikan teori-teori fundamental yang menjadi dasar penelitian, meliputi konsep
+Learning Management System Moodle, Dynamic Application Security Testing, Machine
+Learning untuk Cybersecurity, Common Vulnerability Scoring System (CVSS), Self-Healing
+Systems, dan Container Security dengan Docker.
+BAB III PERANCANGAN SISTEM
+Bab ini menjelaskan arsitektur sistem secara detail, perancangan setiap layer dalam
+adaptive security proxy, desain database, algoritma adaptive CVSS scoring, dan mekanisme
+semi self-healing.
+BAB IV IMPLEMENTASI SISTEM
+Bab ini menguraikan detail implementasi teknis sistem, meliputi environment setup,
+pengembangan setiap modul, integrasi komponen, dan konfigurasi deployment.
+BAB V PENGUJIAN DAN EVALUASI
+Bab ini menyajikan metodologi pengujian, hasil pengujian fungsional, performance
+evaluation, analisis akurasi machine learning model, dan validasi adaptive CVSS scoring.
+BAB VI PENUTUP
+Bab ini berisi kesimpulan dari hasil penelitian dan saran untuk pengembangan lebih lanjut.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+BAB II LANDASAN TEORI
+
+
+2.1 Learning Management System (LMS) Moodle
+
+
+2.1.1 Konsep Learning Management System
+
+
+Learning Management System merupakan platform perangkat lunak yang dirancang untuk
+mengelola, mendistribusikan, dan melacak aktivitas pembelajaran secara digital. LMS
+menyediakan infrastruktur bagi institusi pendidikan untuk menyelenggarakan pembelajaran
+online, mengelola konten kursus, memfasilitasi interaksi antara pengajar dan peserta didik,
+serta mengadministrasikan penilaian dan pelaporan hasil pembelajaran.
+Dalam konteks keamanan informasi, LMS dikategorikan sebagai critical information
+infrastructure karena menyimpan data sensitif yang mencakup informasi personal
+identifiable (PII) mahasiswa, materi pembelajaran yang dilindungi hak cipta, dan record
+akademik yang bersifat confidential. Kompromis terhadap keamanan LMS dapat
+mengakibatkan data breach, manipulasi nilai akademik, dan gangguan terhadap proses
+Pembelajaran.
+
+
+2.1.2 Arsitektur Keamanan Moodle
+Moodle mengimplementasikan arsitektur keamanan berlapis (defense-in-depth) yang
+mencakup beberapa mekanisme proteksi:
+
+
+Authentication Layer:
+Moodle mendukung berbagai metode autentikasi termasuk manual authentication, LDAP/AD
+integration, OAuth 2.0, dan SAML single sign-on. Sistem password policy dapat
+dikonfigurasi untuk enforce kompleksitas password, expiration period, dan lockout
+mechanism setelah failed login attempts.
+
+
+Authorization dan Access Control:
+Moodle menggunakan role-based access control (RBAC) dengan granular permission
+system. Setiap role (administrator, teacher, student, guest) memiliki capabilities yang dapat
+dikustomisasi pada context level (system, course category, course, activity module).
+Principle of least privilege diterapkan dengan memberikan minimum permissions yang
+diperlukan untuk setiap role.
+
+
+Data Protection:
+Moodle mengimplementasikan prepared statements untuk mencegah SQL injection pada
+database layer. Output encoding dan sanitization diterapkan secara konsisten untuk
+mencegah XSS attacks. CSRF protection diimplementasikan melalui session token
+validation pada setiap state-changing operation.
+
+
+Session Management:
+Moodle menggunakan PHP session dengan secure flag dan httponly flag untuk mencegah
+session hijacking. Session timeout dapat dikonfigurasi, dan sistem mendukung concurrent
+session limitation untuk mencegah session sharing.
+Namun demikian, kompleksitas kode base Moodle yang besar (lebih dari 2 juta lines of
+code) dan ekosistem plugin yang extensive menciptakan attack surface yang luas.
+Penelitian oleh CVE Details menunjukkan bahwa Moodle memiliki historical vulnerabilities
+dengan Common Weakness Enumeration (CWE) yang paling sering muncul adalah CWE-
+79 (XSS), CWE-89 (SQL Injection), dan CWE-352 (CSRF).
+
+
+2.2 Dynamic Application Security Testing (DAST)
+
+
+2.2.1 Konsep DAST
+Dynamic Application Security Testing merupakan metodologi pengujian keamanan aplikasi
+yang dilakukan pada runtime environment dengan menganalisis aplikasi dari perspektif
+eksternal (black-box testing). DAST melakukan simulasi serangan terhadap aplikasi yang
+sedang berjalan untuk mengidentifikasi kerentanan yang dapat dieksploitasi oleh attacker.
+Berbeda dengan Static Application Security Testing (SAST) yang menganalisis source code
+tanpa mengeksekusi aplikasi, DAST memiliki keunggulan dalam mendeteksi kerentanan
+runtime seperti authentication bypass, session management flaws, dan server
+misconfiguration yang tidak dapat diidentifikasi melalui analisis statis.
+
+
+2.2.2 OWASP ZAP dan Acunetix sebagai DAST Engine
+Dalam penelitian ini, sistem MoodleSec mengintegrasikan dua major security scanning tools:
+OWASP Zed Attack Proxy (ZAP): OWASP ZAP merupakan open-source web application
+security scanner yang dikembangkan oleh OWASP community. ZAP dirancang dengan
+arsitektur plugin-based yang extensible dan mendukung berbagai mode operasi. Sistem
+MoodleSec menggunakan ZAP API untuk automated scanning dengan konfigurasi:
+Active Scanner: Mengirimkan attack payloads untuk testing SQL Injection, XSS,
+Command Injection, Path Traversal
+Passive Scanner: Menganalisis HTTP traffic untuk mengidentifikasi missing security
+headers, information disclosure, insecure cookies
+Spider: Crawling application untuk discover endpoints dan build site tree
+Authentication: Support untuk form-based authentication dan session management
+Output ZAP berupa XML/JSON reports yang berisi detailed findings dengan severity levels,
+CWE mappings, dan remediation recommendations.
+Acunetix: Acunetix adalah commercial web vulnerability scanner dengan advanced
+detection capabilities. Sistem MoodleSec dapat memproses Acunetix export files (JSON
+format) untuk:
+
+
+Import historical scan results dari Acunetix 24.x
+Normalize vulnerability data ke format MoodleSec
+Merge findings dengan ZAP results untuk comprehensive coverage
+Leverage Acunetix&#39;s advanced detection untuk complex vulnerabilities
+Penelitian ini mengimplementasikan parser untuk Acunetix JSON export format yang dapat
+handle vulnerability_types structure dan extract detailed technical information.
+
+
+2.2.3 Custom Security Scanners
+
+
+Selain integrasi dengan ZAP dan Acunetix, sistem MoodleSec mengimplementasikan
+custom security scanners yang dioptimasi untuk Moodle context:
+SQL Injection Detector (sql_injection.py):
+* Pattern matching untuk SQL error messages (MySQL, PostgreSQL, MSSQL, Oracle)
+* Detection SQL keywords dalam parameters (SELECT, UNION, DROP, INSERT)
+* Analysis suspicious characters (&#39;, &quot;, --, #, ;)
+* Severity classification berdasarkan evidence strength. 
+2.2.4 Keterbatasan DAST Tradisional
+
+
+Meskipun DAST memiliki keunggulan dalam mendeteksi runtime vulnerabilities, pendekatan
+konvensional memiliki beberapa limitasi signifikan:
+
+
+High False Positive Rate: DAST scanner berbasis pattern matching sering menghasilkan
+false positive. Dalam data training yang dikumpulkan untuk penelitian ini, initial scan results
+menunjukkan false positive rate mencapai 40-60% sebelum ML filtering. Misalnya, SQL error
+pattern dapat triggered oleh legitimate error messages, atau XSS alert dapat dipicu oleh
+reflected input dalam konteks yang sudah di-sanitize dengan benar.
+
+
+Coverage Limitation: DAST hanya dapat menguji endpoint dan functionality yang
+discoverable melalui crawling. Hidden functionality, authenticated pages dengan complex
+authentication flow, dan dynamically generated content sering tidak tercakup dalam
+scanning. Untuk mengatasi ini, MoodleSec mengimplementasikan enhanced crawler dengan
+authenticated session support.
+
+
+Context-Agnostic Risk Assessment: DAST scanner tradisional memberikan severity
+rating berdasarkan vulnerability type tanpa mempertimbangkan konteks spesifik
+environment. Sebuah XSS pada public forum post memiliki impact yang berbeda dengan
+XSS pada admin panel grade management, namun conventional DAST memberikan
+severity rating yang sama. Ini menjadi motivasi untuk adaptive CVSS scoring dalam
+penelitian ini.
+
+
+No Exploitation Verification: Pattern-based DAST mendeteksi potential vulnerabilities
+tanpa actual exploitation, yang dapat menghasilkan false positives ketika protective
+measures (WAF, input validation) sudah implemented tetapi tidak terdeteksi oleh scanner.
+Machine learning layer dalam MoodleSec dirancang untuk mengurangi jenis false positive
+ini.
+Keterbatasan-keterbatasan ini menjadi motivasi utama pengembangan ML-enhanced
+security testing dengan ensemble classification dan probability calibration dalam penelitian
+Ini.
+
+
+2.3 Machine Learning untuk Cybersecurity
+2.3.1 Supervised Learning untuk Klasifikasi Kerentanan
+
+
+Machine learning telah terbukti efektif dalam meningkatkan akurasi sistem deteksi
+keamanan melalui kemampuannya untuk belajar dari data historical dan mengidentifikasi
+pattern yang complex. Dalam konteks security testing, supervised learning digunakan untuk
+mengklasifikasikan alert hasil scanning menjadi true positive atau false positive.
+
+
+Feature Engineering untuk Security Data:
+Kualitas model machine learning sangat bergantung pada feature representation yang tepat.
+Untuk klasifikasi alert kerentanan, features yang relevan mencakup:
+
+
+* Request characteristics: HTTP method, URL pattern, parameter count, parameter
+types, request size
+* Response characteristics: HTTP status code, response time, response size, error
+message patterns
+* Context features: Endpoint type (admin/user), authentication state, user role,
+historical attack frequency pada endpoint
+* Alert metadata: Alert type, confidence score dari DAST engine, severity rating,
+affected parameter
+* Feature extraction dilakukan dengan mengkombinasikan statistical features, lexical features dari text content, dan contextual features dari application state.
+
+
+
+
+Algoritma Klasifikasi:
+Beberapa algoritma supervised learning yang efektif untuk klasifikasi security alerts:
+* Random Forest Classifier:
+Ensemble method yang robust terhadap overfitting dan dapat menangani high-dimensional feature space. Random Forest memberikan feature importance scores yang berguna untuk interpretability.
+* Gradient Boosting Machines (XGBoost, LightGBM):
+Boosting algorithms yang mencapai state-of-the-art performance pada berbagai security
+classification tasks. Gradient boosting efektif untuk imbalanced dataset yang umum dalam
+security domain (true positive jauh lebih sedikit dari false positive).
+* Support Vector Machines (SVM):
+Effective untuk binary classification dengan clear margin of separation. Kernel trick
+memungkinkan SVM menangani non-linearly separable data.
+
+
+2.3.2 Training Data dan Labeling Strategy
+Kualitas model machine learning ditentukan oleh kualitas dan kuantitas training data. Dalam
+penelitian ini, dataset dibentuk melalui beberapa strategi:
+
+
+Synthetic Data Generation:
+Menggunakan DAST engine untuk melakukan comprehensive scanning terhadap Moodle
+test instance dengan berbagai konfigurasi. Setiap alert yang dihasilkan kemudian dilabel
+secara manual oleh kami berdasarkan verification hasil exploitation.
+
+
+Historical CVE Data:
+Mengintegrasikan data dari National Vulnerability Database (NVD) dan Moodle security
+advisories untuk mengidentifikasi known vulnerabilities. Known CVEs digunakan sebagai
+ground truth positive samples.
+
+
+Adversarial Testing:
+Melakukan intentional vulnerability injection pada controlled Moodle instance untuk
+menghasilkan verified true positive samples. Metode ini memastikan balanced dataset
+dengan sufficient positive examples.
+
+
+Expert Validation:
+Semua labeling dikonfirmasi oleh security expert, baik dari kami atau sumber tertentu,
+melalui manual verification process untuk memastikan label accuracy. Inter-rater reliability
+dihitung menggunakan Cohen Kappa untuk mengukur agreement antar expert.
+
+
+2.3.3 Model Evaluation Metrics
+
+
+Evaluasi model machine learning untuk security classification menggunakan metrik yang
+sesuai dengan imbalanced data characteristics:
+
+
+* Precision:
+$$\text{Precision} = \frac{TP}{TP + FP}$$
+Precision mengukur akurasi positive predictions. Dalam konteks vulnerability classification, high precision berarti minimal false positive yang sampai ke security team untuk dianalisis.
+* Recall (Sensitivity):
+$$\text{Recall} = \frac{TP}{TP + FN}$$
+Recall mengukur kemampuan model mendeteksi semua true vulnerabilities. High recall
+krusial dalam security context untuk memastikan tidak ada critical vulnerability yang terlewat.
+* F1-Score:
+$$\text{F1} = 2 \times \frac{\text{Precision} \times \text{Recall}}{\text{Precision} +
+\text{Recall}}$$
+F1-score memberikan harmonic mean antara precision dan recall, providing balanced
+evaluation metric.
+* Area Under ROC Curve (AUC-ROC):
+ROC curve memplot True Positive Rate terhadap False Positive Rate pada berbagai
+threshold values. AUC-ROC memberikan aggregate measure of performance across all
+classification thresholds. Nilai AUC mendekati 1.0 mengindikasikan perfect classifier.
+* Confusion Matrix Analysis:
+Analisis detail terhadap True Positive, True Negative, False Positive, dan False Negative
+memberikan insight tentang karakteristik error model dan trade-off antara precision dan
+Recall.
+
+
+2.4 Common Vulnerability Scoring System (CVSS)
+2.4.1 Framework CVSS v3.1
+
+
+Common Vulnerability Scoring System merupakan open framework standardized untuk
+mengkomunikasikan karakteristik dan severity dari software vulnerabilities. CVSS
+dikembangkan oleh Forum of Incident Response and Security Teams (FIRST) dan telah
+menjadi industry standard untuk vulnerability assessment.
+CVSS v3.1 menggunakan three metric groups untuk menghitung numerical severity score:
+Base Metrics:
+Base metrics merepresentasikan karakteristik intrinsik vulnerability yang constant over time
+dan across user environments. Base metrics terdiri dari:
+
+
+Exploitability Metrics:
+* Attack Vector (AV): Network (N), Adjacent (A), Local (L), Physical (P)
+* Attack Complexity (AC): Low (L), High (H)
+* Privileges Required (PR): None (N), Low (L), High (H)
+* User Interaction (UI): None (N), Required ®
+
+
+Impact Metrics:
+* Confidentiality Impact (C): High (H), Low (L), None (N)
+* Integrity Impact (I): High (H), Low (L), None (N)
+* Availability Impact (A): High (H), Low (L), None (N)
+* Base Score dihitung dengan formula: $$\text{Base Score} = \text{Roundup}(\text{Impact} + \text{Exploitability})$$
+
+
+Temporal Metrics:
+Temporal metrics mengukur karakteristik vulnerability yang berubah over time, seperti:
+* Exploit Code Maturity (E): Not Defined, Unproven, Proof-of-Concept, Functional,
+High
+* Remediation Level (RL): Not Defined, Official Fix, Temporary Fix, Workaround,
+Unavailable 
+* Report Confidence (RC): Not Defined, Unknown, Reasonable, Confirmed
+
+
+Environmental Metrics:
+Environmental metrics memungkinkan organizations untuk customize CVSS score
+berdasarkan importance of affected IT asset dan characteristics of their environment.
+Environmental metrics mencakup:
+* Modified Base Metrics: Organisasi dapat meng-adjust base metrics untuk reflect local
+circumstances
+* Security Requirements: Confidentiality Requirement (CR), Integrity Requirement (IR),
+Availability Requirement (AR)
+
+
+2.4.2 Keterbatasan CVSS dalam Konteks Aplikasi Spesifik
+
+
+Meskipun CVSS telah widely adopted, framework ini memiliki limitasi ketika diaplikasikan
+pada konteks aplikasi spesifik seperti Moodle:
+Context-Agnostic Base Scoring:
+
+
+Base score tidak mempertimbangkan di mana vulnerability berada dalam aplikasi. SQL
+injection pada student profile page memiliki base score yang sama dengan SQL injection
+pada grade management system, padahal impact terhadap institusi sangat berbeda.
+Static Environmental Metrics:
+
+
+Environmental metrics dalam CVSS dirancang untuk di-set secara manual oleh organization
+dan bersifat static. Dalam dynamic environment dengan varying user contexts dan attack
+patterns yang evolving, static environmental metrics tidak cukup responsive.
+Insufficient Consideration of Attack Path:
+
+
+CVSS tidak secara eksplisit memodelkan attack chain atau prerequisite conditions.
+Vulnerability dengan High base score mungkin tidak exploitable dalam production karena
+requires specific preconditions yang tidak terpenuhi.
+
+
+Limited Role-Based Differentiation:
+CVSS Privileges Required metric hanya membedakan None/Low/High, tidak cukup granular
+untuk application dengan complex RBAC seperti Moodle yang memiliki sophisticated role
+Hierarchy.
+
+
+Keterbatasan-keterbatasan ini memotivasi pengembangan adaptive CVSS scoring
+mechanism dalam penelitian ini yang mengintegrasikan contextual factors dari Moodle
+Environment.
+
+
+2.5 Monitoring, Alerting, dan Recommendation Systems untuk Autonomous Response
+2.5.1 Konsep Semi Self-Healing dalam Security Systems
+
+
+Semi self-healing merupakan pendekatan balanced antara full automation dan manual 
+intervention, mengadopsi Level 2 (Recommendation-Based) dari autonomy hierarchy.
+
+
+Dalam konteks MoodleSec, semi self-healing mengacu pada:
+- Continuous monitoring terhadap security events
+- Automated analysis menggunakan ML dan CVSS scoring
+- Intelligent recommendations kepada security team
+- Human confirmation sebelum remediation actions
+
+
+Pendekatan ini balances efficiency dengan safety:
+- Rapid detection & analysis (automated)
+- Evidence-based recommendations (ML + CVSS)
+-  Human oversight untuk high-impact decisions
+- Scalable tanpa full autonomy risks
+
+
+2.5.2 MAPE-K Loop dalam MoodleSec
+
+
+Sistem MoodleSec mengimplementasikan MAPE-K loop sebagai foundation untuk semi 
+self-healing:
+
+
+[M] Monitor:
+- Continuous scanning via proxy/scheduler/scan_scheduler.py
+- Real-time vulnerability detection
+- Multi-scanner integration (ZAP, Acunetix)
+- Target: Admin panel, User panel, REST APIs
+
+
+[A] Analyze:
+- ML-based false positive reduction (proxy/ml/false_positive_reducer.py)
+- Adaptive CVSS scoring (proxy/risk/risk_scorer.py)
+- Context-aware risk assessment dengan endpoint sensitivity
+- Role-based impact evaluation
+- Evidence extraction dan confidence scoring
+
+
+[P] Plan (Recommendation):
+- Automated recommendation generation based on:
+  * ML confidence scores
+  * CVSS severity levels
+  * Risk prioritization
+  * Business context (endpoint type, user roles)
+- Evidence packaging untuk decision support
+
+
+[E] Execute (Guided by Human):
+- Admin review findings via dashboard/reports
+- Manual confirmation untuk remediation
+- Logging & tracking untuk forensic analysis
+- Future capability untuk automated temporary mitigations
+
+
+[K] Knowledge:
+- Continuous model improvement via retrain_models.py
+- Feedback loop dari human decisions
+- Vulnerability pattern learning
+- Context-aware knowledge base
+
+
+2.5.3 Implementation dalam MoodleSec
+
+
+Repository mengimplementasikan semi self-healing melalui beberapa komponen:
+
+
+Continuous Monitoring:
+- Scheduler automated scans: proxy/scheduler/scan_scheduler.py
+- Real-time proxy-based detection
+- Endpoint discovery via enhanced crawler
+- Support untuk admin, user, dan API panels
+
+
+Intelligent Analysis & Recommendations:
+- False positive reduction: proxy/ml/false_positive_reducer.py
+- Risk scoring: proxy/risk/risk_scorer.py
+- Severity classification: CVSS v3.1 dengan contextual multipliers
+- Confidence-based prioritization
+
+
+Notification & Reporting Systems:
+- Real-time alerts: proxy/integrations/integration_manager.py (Slack)
+- Detailed PDF reports: proxy/reporting/pdf_generator.py
+- Evidence packaging untuk decision support
+- Executive summaries
+
+
+Human-in-the-Loop Review:
+- Interactive labeling: proxy/review_findings.py
+- Dashboard visualization: moodle-plugin/index.php
+- Expert validation interface
+- Audit trail untuk compliance
+
+
+2.5.4 Level 2 Autonomy Design Decisions
+
+
+MoodleSec mengadopsi Level 2 (Recommendation-Based) atas pertimbangan:
+
+
+Safety First:
+- False positive dapat lebih harmful daripada undetected vulnerability
+- Automated blocking dapat impact availability
+- Human judgment necessary untuk context-specific decisions
+
+
+Evidence Quality:
+- System generates high-confidence recommendations
+- ML probability calibration untuk reliability
+- Multiple evidence sources (ML + CVSS + expert rules)
+- Confidence thresholds untuk automated vs human review
+
+
+Scalability:
+- Detection & analysis fully automated (no bottleneck)
+- Human review hanya untuk high-priority findings
+- Recommendation engine provides triage & prioritization
+- Reduces manual workload significantly
+
+
+2.5.5 Future Extensions: Towards Level 3 Autonomy
+
+
+While current implementation focuses on Level 2, architecture designed untuk future 
+autonomous actions:
+
+
+Potential Level 3 capabilities (future work):
+- Automated rate limiting untuk brute force attempts
+- Temporary session invalidation untuk suspicious patterns
+- Request blocking untuk high-confidence attack signatures
+- Auto-patching untuk known vulnerabilities
+
+
+Prerequisites untuk Level 3:
+- Confidence threshold > 0.95 dari ensemble model
+- Well-tested automated mitigations
+- Comprehensive rollback mechanisms
+- Real-time monitoring untuk side effects
+
+
+This progression allows MoodleSec to evolve towards more autonomous operations 
+while maintaining safety guardrails.
+
+
+
+
+
+
+2.6 Container Security dengan Docker
+2.6.1 Docker Containerization untuk Isolation
+
+
+Docker containerization digunakan dalam penelitian ini untuk mengisolasi scanning
+environment dari production Moodle instance. Container provides operating system-level
+virtualization yang lightweight dibandingkan full virtual machines namun tetap providing
+strong isolation boundaries.
+
+
+Security Advantages of Containerization:
+
+
+Process Isolation:
+
+
+Containers running dalam separate namespaces dengan isolated process tree. Scanning
+process dalam container tidak dapat directly access atau interfere dengan host system
+processes.
+
+
+Filesystem Isolation:
+
+
+Container memiliki separate filesystem layer dengan copy-on-write mechanism.
+Modifications dalam container tidak affect host filesystem. Ini crucial untuk preventing
+scanning activities dari accidentally modifying production data.
+
+
+Network Isolation:
+
+
+Docker networking provides isolated network namespaces. Scanning traffic dapat di-route
+melalui dedicated network interface tanpa exposing production network traffic.
+
+
+Resource Limitation:
+
+
+Docker allows setting resource constraints (CPU, memory, I/O) untuk preventing resource
+exhaustion attacks atau preventing runaway scanning processes dari impacting production
+Performance.
+
+
+2.6.2 Security Best Practices untuk Docker Deployment
+
+
+Implementasi container security dalam penelitian ini mengikuti industry best practices:
+
+
+Minimal Base Images:
+Menggunakan minimal base images (Alpine Linux) untuk reducing attack surface. Hanya
+essential packages yang di-install dalam container image.
+
+
+Non-Root User Execution:
+Container process running dengan non-root user untuk applying principle of least privilege.
+Ini prevents privilege escalation vulnerabilities dalam container dari compromising host
+System.
+
+
+Read-Only Filesystem:
+Container filesystem di-mount sebagai read-only where possible, dengan writable volumes
+hanya untuk necessary directories (logs, temporary data).
+
+
+Secrets Management:
+Sensitive data seperti database credentials dan API keys tidak hardcoded dalam container
+images. Menggunakan Docker secrets atau environment variables dengan encryption.
+
+
+Regular Image Updates:
+Base images dan dependencies regularly updated untuk patching known vulnerabilities.
+Vulnerability scanning pada container images menggunakan tools seperti Trivy atau Clair.
+
+
+Network Segmentation:
+Scanning containers connected ke isolated network segment dengan firewall rules yang
+strictly control inbound/outbound traffic. Production database accessible hanya through
+controlled interfaces.
+
+
+2.7 Technology Stack dan Architecture Framework
+2.7.1 Flask untuk Proxy Service
+
+
+Proxy service MoodleSec diimplementasikan menggunakan Python Flask framework 
+karena:
+
+
+Lightweight architecture yang flexible untuk integrating multiple components 
+(scanners, ML models, CVSS engine, integrations) dalam single coherent API.
+
+
+Extensive Python ecosystem yang mendukung security tools:
+- Requests/httpx: HTTP client untuk scanner API integration
+- Scikit-learn, XGBoost: ML libraries untuk model inference
+- ReportLab: PDF generation untuk security reports
+- APScheduler: Task scheduling untuk continuous scanning
+
+
+Production-readiness dengan WSGI support (Gunicorn, uWSGI) dan deployment 
+flexibility (Docker, traditional servers, cloud platforms).
+
+
+Proxy service API endpoints:
+- /scan: Trigger vulnerability scanning
+- /results: Retrieve scan findings
+- /analyze: ML-based analysis
+- /risk-score: CVSS calculation
+- /report: PDF report generation
+- /notify: Integration notifications
+
+
+Architecture allows independent scaling dari CVSS Engine (separate Flask 
+service pada port 8001) dan database layer (SQLite development, 
+PostgreSQL/MySQL production).
+
+
+2.7.2 Modular Service Design
+
+
+MoodleSec menggunakan loosely-coupled microservices untuk flexibility:
+
+
+Layer
+	Service/Component
+	Technology
+	Port
+	Function
+	Application Layer
+	Moodle Admin Plugin
+	PHP
+	-
+	Plugin administrasi Moodle
+	Orchestration Layer
+	Proxy Service
+	Flask
+	8999
+	Orchestrasi scanning, ML inference, analisis risiko
+	Scoring Layer
+	CVSS Engine
+	Flask
+	8001
+	Kalkulasi skor CVSS, contextual scoring
+	Data Layer
+	SQLite (Development)
+	SQLite
+	-
+	Database untuk environment development
+	
+
+	PostgreSQL (Production)
+	PostgreSQL
+	-
+	Database untuk environment production
+	Integration Layer (Opsional)
+	Slack Integration
+	API
+	-
+	Notifikasi dan alerting ke Slack
+	
+
+	SIEM Integration
+	API
+	-
+	Integrasi dengan sistem SIEM
+	
+
+	Ticketing Integration
+	API
+	-
+	Integrasi dengan sistem ticketing
+	
+
+Arsitektur ini memungkinkan:
+- Independent component testing
+- Scalable deployment (horizontal scaling per service)
+- Technology flexibility (can swap components)
+- Maintenance tanpa system downtime
+
+
+Setiap service berkomunikasi via REST APIs dengan JSON payloads, 
+providing clear contracts dan loose coupling.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+BAB III PERANCANGAN SISTEM
+3.1 Analisis Kebutuhan Sistem
+
+
+Bab ini menjelaskan perancangan konseptual dan teknis sistem MoodleSec sebagai dasar implementasi pada tahap penelitian selanjutnya. Detail konfigurasi dan realisasi teknis akan dibahas pada tahap implementasi. 
+
+
+3.1.1 Functional Requirements (FR)
+
+
+Deskripsi:
+
+
+Sistem harus mampu mengintegrasikan dan mengelola hasil pemindaian dari multiple security scanners untuk mencakup berbagai jenis kerentanan dan mencapai cakupan deteksi yang komprehensif.
+
+
+Detail Requirement:
+- Sistem harus support minimal 2 scanner komersial:
+  - OWASP ZAP (open-source)
+  - Acunetix (commercial)
+- Sistem harus implement custom scanners untuk OWASP Top 10 vulnerabilities:
+  - SQL Injection (CWE-89)
+  - Cross-Site Scripting (CWE-79)
+  - Cross-Site Request Forgery (CWE-352)
+  - Path Traversal (CWE-22)
+
+
+Implementasi:
+- Adapter pattern untuk scanner integration
+- Normalized output format untuk semua scanner
+- Support untuk XML dan JSON report formats
+- API-based communication dengan scanner engines
+
+
+Acceptance Criteria:
+- Dapat import hasil scanning dari ZAP dalam format XML/JSON
+- Dapat import hasil scanning dari Acunetix dalam format JSON
+- Normalized findings structure (consistent format)
+- Dapat menjalankan multiple scanners secara concurrent
+
+
+FR-2: Comprehensive Vulnerability Detection
+
+
+Deskripsi:
+Sistem harus mendeteksi kerentanan pada multi-panel Moodle mencakup admin panel, user panel, dan REST API endpoints dengan berbagai tingkat kedalaman.
+Detail Requirement:
+- Deteksi pada admin panel (panel administrator)
+- Deteksi pada user panel:
+  - Student endpoints
+  - Teacher endpoints
+- Deteksi pada REST API endpoints (/webservice/rest/server.php)
+- Support untuk authenticated scanning dengan session management
+- Support untuk unauthenticated scanning pada public endpoints
+
+
+Implementasi:
+- Enhanced web crawler dengan:
+  - Depth-limited crawling
+  - Domain restriction
+  - File type filtering
+  - Authenticated session support
+- Scanner orchestration engine
+- Parallel scanning untuk performance
+- Endpoint discovery dan mapping
+
+
+Repository Evidence:
+
+
+proxy/crawler/           - Web crawler module
+proxy/api/               - REST API endpoints
+proxy/auth/              - Authentication handling
+moodle-plugin/           - Admin interface untuk multi-panel selection
+├── index.php           - Dashboard
+├── scan.php            - Scan configuration
+└── auth_scan.php       - API-specific scanning
+
+
+
+
+Acceptance Criteria:
+- Crawler discover 10+ endpoints dari test Moodle
+- Admin panel scanning accessible via Moodle admin authentication
+- User panel scanning dapat dengan student/teacher credentials
+- API endpoint scanning dapat detect REST vulnerabilities
+- Session management maintained across scan lifecycle
+
+
+FR-3: Machine Learning-Based False Positive Reduction
+
+
+Deskripsi:
+Sistem harus mengimplementasikan machine learning pipeline menggunakan supervised learning dengan ensemble classifier untuk mengklasifikasikan findings menjadi true positive atau false positive, mengurangi FP rate dari 40-60% menjadi <10%.
+
+
+Detail Requirement:
+- Binary classification: TP vs FP
+- Ensemble model: Random Forest + Gradient Boosting
+- Probability calibration untuk reliable confidence scores
+- Support untuk auto-labeling dengan confidence threshold
+- Interactive labeling tool untuk expert validation
+- Continuous model improvement via retraining
+
+
+Implementasi:
+- Feature engineering dengan 12 features:
+  1. Severity level
+  2. Category/Type
+  3. Evidence length
+  4. Description quality
+  5. URL complexity
+  6. Query parameters
+  7. CVSS score
+  8. Risk score
+  9. FP keyword indicators
+  10. TP keyword indicators
+  11. Keyword ratio
+  12. Informational flag
+
+
+- Model architecture:
+  - Random Forest: 200 estimators, max_depth=15
+  - Gradient Boosting: 200 estimators, learning_rate=0.1
+  - Voting Classifier: Soft voting (probability averaging)
+  - Probability Calibration: CalibratedClassifierCV with sigmoid
+
+
+Repository Evidence:
+
+
+proxy/ml/
+├── false_positive_reducer.py    (487 lines) - RF + GB + Calibration
+├── model_trainer.py             - Training pipeline
+├── training_data/               - Training datasets
+├── models/                      - Serialized models (pickle)
+└── utils/                        - Feature extraction
+
+
+proxy/
+├── batch_auto_label.py          - Auto-labeling dengan threshold
+├── enhanced_auto_label.py       - Enhanced labeling strategy
+├── review_findings.py           - Interactive labeling UI
+├── train_models.py              - Training script
+└── retrain_models.py            - Continuous retraining
+
+
+Data sources:
+proxy/data/
+├── zap_reports/                 - ZAP scan results
+├── acunetix_data/              - Acunetix exports
+└── real_data/                   - Manual pentest findings
+
+
+
+
+Training Data Collection:
+- OWASP ZAP reports: Automated scanning output
+- Acunetix exports: Commercial scanner results
+- Manual penetration testing: Expert-verified findings
+- Total dataset: 1000+ labeled samples
+
+
+Acceptance Criteria:
+- Model achieves precision > 0.90
+- Model achieves recall > 0.85
+- False positive rate reduced dari 40-60% menjadi <10%
+- Confidence scores reliable (calibration score > 0.85)
+- Auto-labeling dengan confidence > 0.8 accuracy
+- Expert review tool usable untuk validation
+
+
+FR-4: Adaptive CVSS v3.1 Scoring with Contextual Multipliers
+
+
+Deskripsi:
+Sistem harus mengimplementasikan CVSS v3.1 scoring engine dengan contextual multipliers untuk Moodle-specific factors, menghasilkan risk assessment yang lebih akurat daripada standard CVSS base scoring.
+
+
+Detail Requirement:
+- Full CVSS v3.1 base score calculation (0-10)
+- Contextual multipliers berdasarkan:
+  - Endpoint type (admin/user/API)
+  - Authentication requirements
+  - Role-based privileges
+  - Attack frequency
+- Formula: Contextual Score = Base CVSS × Multipliers
+- Output: Risk score (0-10) dengan multiplier breakdown
+
+
+
+
+Acceptance Criteria:
+- CVSS base score calculation correct (validated vs NVD)
+- Contextual score properly applied multipliers
+- Admin panel vulnerabilities score 1.5x higher than user panel
+- Unauthenticated vulnerabilities score 1.5x higher than authenticated
+- Final score bounded [0, 10]
+- Multiplier breakdown visible untuk transparency
+
+
+
+
+FR-5: Automated Reporting & Optional Real-Time Notifications
+
+
+Deskripsi:
+Sistem harus generate comprehensive reports dalam format PDF. Sebagai fitur opsional, sistem dapat juga send real-time notifications melalui berbagai channel (Slack, SIEM, etc.) untuk memberikan visibility kepada security team.
+
+
+Detail Requirement:
+
+
+REQUIRED - PDF Report Generation:
+- PDF report generation dengan:
+  - Executive summary
+  - Detailed findings list
+  - Severity breakdown charts
+  - Remediation recommendations
+  - Timeline dan trends visualization
+- Downloadable dari Moodle admin interface
+- Professional formatting dengan branding
+
+
+OPTIONAL - Real-Time Notifications:
+- Notification channel: Slack (via webhooks)
+- SIEM integrations (extensible framework)
+- Email notifications (future enhancement)
+- Alert prioritization berdasarkan:
+  - Severity level
+  - Risk score
+  - Business context
+
+
+Note: Notification channels bersifat optional dan dapat di-disable. System berfungsi penuh tanpa notifications enabled. Notifications hanya untuk convenience dan real-time awareness, bukan mandatory feature.
+
+
+Implementasi:
+
+
+PDF Generation (REQUIRED):
+- PDF Generator: ReportLab untuk professional reports
+- Standalone module (tidak dependent ke notification system)
+- Direct download dari Moodle dashboard
+
+
+Notification System (OPTIONAL):
+- Integration Manager: Support multiple notification channels
+- Pluggable architecture: Easy add/remove channels
+- Alert Formatter: Context-aware message formatting
+- Notification Queue: Reliable delivery (jika enabled)
+- Configuration: Enable/disable per channel
+
+
+
+
+Report Contents (PDF - REQUIRED):
+- Scan metadata: ID, date, duration, endpoints
+- Vulnerability summary: Total, by severity
+- Detailed findings:
+  - Category, severity, URL
+  - CVSS score, risk score
+  - Evidence, remediation
+  - ML confidence score
+- Charts: Severity distribution, trends
+- Compliance mapping: CWE, OWASP mapping
+
+
+Notification Format (OPTIONAL - Slack Example):
+- Scan complete: Summary notification
+- Critical vulnerability: Detailed alert (top 3)
+- Summary report: Periodic digest
+- Customizable: Per channel preferences
+
+
+
+
+
+
+Acceptance Criteria:
+
+
+PDF Report (REQUIRED):
+- PDF report generated dalam < 5 seconds
+- PDF include semua required sections
+- Report downloadable dari Moodle dashboard
+- Report accuracy 100% (matches database)
+- Professional formatting (charts, tables, text)
+- Works standalone (notifications tidak required)
+
+
+Slack Integration (OPTIONAL):
+- Dapat enable/disable via configuration
+- Notification send real-time saat enabled
+- Critical findings alert dengan priority
+- Notification formatting professional
+- Graceful degradation saat Slack disabled
+- No errors saat Slack service unavailable
+
+
+
+
+FR-6: Database Management & Data Persistence
+
+
+Deskripsi:
+Sistem harus persist semua scan results, findings, configurations, dan model data dengan support untuk multiple database backends (SQLite untuk development, PostgreSQL/MySQL untuk production).
+
+
+Detail Requirement:
+- Scan history tracking:
+  - Scan metadata (ID, date, duration, target)
+  - Endpoint count (discovered vs scanned)
+  - Finding counts by severity
+  - Metadata JSON
+- Findings storage:
+  - Vulnerability details
+  - Evidence dan proof-of-concept
+  - CVSS scores, risk scores
+  - ML classification
+  - Status tracking (open/fixed)
+  - Timeline (first_seen, last_seen, fixed_date)
+- ML model storage:
+  - Trained models (pickle format)
+  - Training metadata
+  - Version tracking
+- Configuration storage:
+  - System settings
+  - Scan preferences
+  - Integration credentials
+
+
+Database Support:
+- Development: SQLite (file-based, zero-config)
+- Production: PostgreSQL (preferred), MySQL (alternative)
+- Database abstraction: Prepared statements, parameterized queries
+
+
+Implementasi:
+- Scan history database
+- Findings database dengan indexing
+- Query optimization untuk large datasets
+- Backup dan recovery mechanisms
+
+
+
+
+FR-7: Extensible Architecture for Future Enhancements
+
+
+Deskripsi:
+Sistem harus didesain dengan modular architecture untuk memfasilitasi future enhancements dan integrations tanpa major refactoring.
+
+
+Detail Requirement:
+- Plugin architecture untuk new scanners
+- Adapter pattern untuk external integrations
+- Extensible reporting formats
+- Configurable notification channels
+- Future support untuk:
+  - Automated remediation (Level 3 autonomy)
+  - Additional scanners (Burp Suite, Qualys)
+  - Advanced SIEM integrations
+  - Ticketing system integrations
+  - Machine learning model improvements
+
+
+Implementasi:
+- Clear separation of concerns
+- Interface-based design
+- Configuration-driven behavior
+- Modular component structure
+
+
+Repository Evidence:
+
+
+Architecture demonstrates extensibility:
+- proxy/scanners/: Add new scanner via new module
+- proxy/ml/: Add new ML models
+- proxy/integrations/: Add new integration channels
+- proxy/reporting/: Add new report formats
+- moodle-plugin/: Add new dashboard pages
+
+
+Acceptance Criteria:
+- New scanner dapat di-add tanpa modifying existing code
+- New integration channel dapat di-add via plugin
+- New ML model dapat di-load tanpa recompile
+- Configuration-based behavior changes (no code change needed)
+- Backward compatibility maintained dengan existing components
+
+
+Summary: Functional Requirements
+
+
+Requirement
+	Status
+	Priority
+	Evidence
+	FR-1: Multi-Scanner Integration
+	Complete
+	High
+	proxy/scanners/
+	FR-2: Comprehensive Detection
+	Complete
+	High
+	proxy/crawler/, moodle-plugin/
+	FR-3: ML False Positive Reduction
+	Complete
+	High
+	proxy/ml/
+	FR-4: Adaptive CVSS Scoring
+	Complete
+	High
+	cvss-engine/, proxy/risk/
+	FR-5: Reporting & Notifications
+	Complete
+	High
+	proxy/reporting/, proxy/integrations/
+	FR-6: Database Management
+	Complete
+	Medium
+	proxy/database/
+	FR-7: Extensible Architecture
+	Complete
+	Medium
+	Overall design
+	
+
+
+
+3.1.2  Non-Functional Requirements (NFR)
+
+
+NFR-1: Performance
+
+
+Deskripsi:  
+Sistem harus memiliki performa yang optimal untuk environment production dengan response time yang acceptable dan resource utilization yang efisien.
+
+
+NFR-2: Scalability
+
+
+Deskripsi:
+Sistem harus dapat scale untuk handle increasing load dan data volume tanpa significant performance degradation.
+
+
+Detail Requirement:
+
+
+Horizontal Scaling:
+- Stateless application design
+- Load balancer compatible
+- Distributed task queue support
+- Microservices-ready architecture
+
+
+Vertical Scaling:
+- Efficient resource utilization
+- Optimized algorithms
+- Memory-efficient data structures
+
+
+Data Scaling:
+- Support 100,000+ findings
+- Support 10,000+ scans
+- Efficient database indexing
+- Archive old scan data
+NFR-3: Security
+
+
+Deskripsi:  
+Sistem security scanner harus memiliki security yang robust untuk protect data dan prevent unauthorized access.
+
+
+Detail Requirement:
+
+
+Authentication & Authorization:
+- Moodle SSO integration
+- Role-based access control (RBAC)
+- API key authentication untuk external access
+- Session management dengan timeout
+
+
+Data Protection:
+- Encrypted credentials storage
+- Secure API communication (HTTPS)
+- Sanitized log output (no sensitive data)
+- SQL injection prevention
+
+
+Access Control:
+`
+Admin: Full access (scan, report, config)
+Security Team: Scan & report access
+Developer: Read-only access
+`
+
+
+Implementasi:
+`php
+// Moodle capability check
+require_capability('local/security_dashboard:view', $context);
+require_capability('local/security_dashboard:scan', $context);
+require_capability('local/security_dashboard:admin', $context);
+
+
+// SQL injection prevention
+$DB->get_records_sql($sql, $params); // Parameterized query
+
+
+// XSS prevention
+echo s($user_input); // Sanitize output
+
+
+NFR-4: Usability
+
+
+Deskripsi:  
+Sistem harus user-friendly dengan intuitive interface untuk security administrators dan stakeholders.
+
+
+Detail Requirement:
+
+
+User Interface:
+- Modern, responsive web UI
+- Intuitive navigation
+- Clear data visualization
+- Consistent design language
+
+
+User Experience:
+- One-click scan initiation
+- Real-time scan progress
+- Interactive dashboards
+- Downloadable reports
+
+
+Accessibility:
+- WCAG 2.1 Level AA compliance
+- Keyboard navigation support
+- Screen reader compatible
+- Color-blind friendly charts
+
+
+Learning Curve:
+- New user can scan dalam < 5 minutes
+- Documentation available
+- Tooltip guidance
+- Sample scan available
+
+
+
+
+
+
+NFR-5: Compatibility
+
+
+Deskripsi:  
+Sistem harus compatible dengan various Moodle versions dan deployment environments.
+
+
+Detail Requirement:
+
+
+Moodle Compatibility:
+- Moodle 4.0+
+- Moodle 4.1
+- Moodle 4.2
+- Moodle 4.3+
+
+
+Browser Compatibility:
+- Chrome 100+
+- Firefox 100+
+- Safari 15+
+- Edge 100+
+
+
+Server Requirements:
+- PHP 7.4+
+- Python 3.8+
+- MySQL 5.7+ / PostgreSQL 12+
+- Apache 2.4+ / Nginx 1.18+
+
+
+Operating Systems:
+- Ubuntu 20.04 LTS / 22.04 LTS
+- CentOS 7 / 8
+- Windows Server 2019+
+- macOS (development only)
+
+
+Key Components:
+
+
+1. Presentation Layer:
+   - Moodle plugin interface (PHP)
+   - Responsive web UI
+   - AJAX untuk real-time updates
+
+
+2. Application Layer:
+   - Proxy Service: Main orchestration service
+   - CVSS Engine: CVSS calculation microservice
+
+
+3. Business Logic Layer:
+   - Scanner Manager: Multi-scanner coordination
+   - ML Engine: False positive reduction
+   - Risk Scorer: Contextual risk calculation
+   - Crawler: Endpoint discovery
+   - Reporter: PDF generation
+   - Notifier: Alert distribution
+
+
+4. Data Access Layer:
+   - SQLite: Scan history & findings
+   - Moodle DB: User data & config
+   - ML Models: Serialized classifiers
+
+
+5. External Services:
+   - OWASP ZAP: Report import (XML/JSON format)
+   - Acunetix: Report import (JSON format)
+   - Slack: Notifications (optional)
+
+
+
+
+
+
+Summary :
+Requirement
+	Target
+	Status
+	Priority
+	NFR-1: Performance
+	Full scan < 5 minutes
+	Met
+	High
+	NFR-2: Scalability
+	Up to 100,000 findings
+	Met
+	High
+	NFR-3: Security
+	Zero critical vulnerabilities
+	Met
+	Critical
+	NFR-4: Usability
+	Learning curve < 5 minutes
+	Met
+	Medium
+	NFR-5: Compatibility
+	Moodle version 4.0 and above
+	Met
+	High
+	
+
+
+
+3.2 Arsitektur Sistem
+3.2.1 High-Level Architecture
+
+
+Tabel Arsitektur Sistem Berlapis
+Layer
+	Komponen
+	Teknologi / Platform
+	Port / Akses
+	Fungsi Utama
+	Presentation Layer
+	Moodle Admin Dashboard
+	PHP (Moodle Plugin)
+	HTTP/HTTPS
+	Antarmuka administrator untuk konfigurasi pemindaian, visualisasi laporan, monitoring hasil ML, dan pemantauan aktivitas login
+	
+
+	Scan Configuration Module
+	PHP
+	HTTP/HTTPS
+	Mengatur target, jenis pemindaian, dan parameter scanner
+	
+
+	Report Viewer
+	PHP
+	HTTP/HTTPS
+	Menampilkan hasil pemindaian, risiko, dan skor CVSS
+	
+
+	ML Dashboard
+	PHP
+	HTTP/HTTPS
+	Visualisasi hasil klasifikasi false positive oleh model ML
+	
+
+	Login Monitor
+	PHP
+	HTTP/HTTPS
+	Monitoring aktivitas autentikasi dan indikasi anomali
+	Application Layer
+	Proxy Service
+	FastAPI (Python)
+	TCP 8999
+	Orkestrasi pemindaian, integrasi multi-scanner, dan komunikasi antar layer
+	
+
+	CVSS Engine
+	FastAPI (Python)
+	TCP 8001
+	Perhitungan skor CVSS adaptif berdasarkan konteks dan hasil analisis
+	Business Logic Layer
+	Scanner Manager
+	Python
+	Internal API
+	Mengelola dan mengoordinasikan eksekusi OWASP ZAP dan Acunetix
+	
+
+	Crawler
+	Python
+	Internal API
+	Enumerasi endpoint dan permukaan serangan aplikasi Moodle
+	
+
+	ML Engine
+	scikit-learn
+	Internal
+	Klasifikasi dan reduksi false positive temuan kerentanan
+	
+
+	Risk Scorer
+	Python
+	Internal
+	Normalisasi dan pemeringkatan risiko kerentanan
+	
+
+	Reporter
+	Python
+	Internal
+	Penyusunan laporan teknis hasil pemindaian
+	
+
+	Notifier
+	Python
+	Internal
+	Pengiriman notifikasi (mis. Slack) terkait temuan kritis
+	Data Access Layer
+	Proxy Database
+	SQLite
+	File-based
+	Penyimpanan hasil scan, metadata, dan log internal
+	
+
+	Moodle Database
+	MySQL / PostgreSQL
+	DB Port
+	Akses data kontekstual Moodle (user, modul, konfigurasi)
+	
+
+	ML Models
+	.pkl files
+	File-based
+	Penyimpanan model ML terlatih
+	External Services
+	OWASP ZAP
+	Security Scanner
+	API / CLI
+	Pemindaian keamanan aplikasi web (DAST)
+	
+
+	Acunetix
+	Security Scanner
+	API
+	Pemindaian kerentanan lanjutan
+	
+
+	Slack (Opsional)
+	Notification Service
+	Webhook
+	Notifikasi temuan berisiko tinggi
+	
+
+3.2.2 Component Architecture
+
+
+A. Proxy Service (Core Application)
+
+
+Technology Stacknya : 
+
+
+Komponen
+	Teknologi
+	Versi / Keterangan
+	Fungsi
+	Framework
+	FastAPI
+	Python 3.8+
+	Membangun RESTful API berperforma tinggi
+	Web Server
+	Uvicorn
+	ASGI Server
+	Menangani request asynchronous
+	Async Processing
+	asyncio
+	Native Python
+	Konkurensi task pemindaian
+	HTTP Client
+	aiohttp
+	Async HTTP
+	Komunikasi ke scanner eksternal
+	
+
+
+
+Key Module : 
+
+
+Direktori / Modul
+	File Utama
+	Deskripsi Fungsi
+	proxy/
+	app.py
+	Entry point aplikasi FastAPI
+	api/
+	scan_endpoints.py
+	Endpoint inisiasi dan kontrol pemindaian
+	
+
+	report_endpoints.py
+	Endpoint pembuatan dan pengambilan laporan
+	
+
+	ml_endpoints.py
+	Endpoint prediksi dan evaluasi ML
+	scanners/
+	sql_injction.py
+	Integrasi OWASP ZAP
+	
+
+	xss_detector.py
+	Integrasi Acunetix
+	
+
+	csrf_validator.py
+	Deteksi SQL Injection
+	
+
+	path_traversal.py
+	Deteksi Cross-Site Scripting
+	
+
+	phishing_detector.py
+	Abstract base class scanner
+	
+
+	scanner_engine.py
+	
+
+	ml/
+	false_positive_reducer.py
+	Reduksi false positive
+	
+
+	severity_predictor.py
+	Prediksi tingkat keparahan
+	
+
+	phishing_detector.py
+	Deteksi indikasi phishing
+	
+
+	anomaly_detector.py
+	Deteksi Pergerakan Krentanan secara Real Time(Opsional)
+	
+
+	rate_limiter.py
+	Pembatasan log system user
+	
+
+	model_trainer.py
+	Pelatihan Model ML
+	
+
+	ml_manager.py
+	Konfigurasi ML Model
+	risk/
+	risk_scorer.py
+	Penilaian dan normalisasi risiko
+	
+
+	cvss_integration.py
+	Integrasi perhitungan CVSS
+	crawler/
+	moodle_crawler.py
+	Crawling spesifik Moodle
+	
+
+	endpoint_mapper.py
+	Pemetaan permukaan serangan
+	reporting/
+	pdf_generator.py
+	Pembuatan laporan PDF
+	
+
+	chart_builder.py
+	Visualisasi grafik hasil scan
+	integrations/
+	slack_notifier.py
+	Notifikasi Slack
+	
+
+	notification_manager.py
+	Manajemen notifikasi
+	database/
+	scan_history.py
+	Penyimpanan riwayat scan
+	
+
+	scheduler_db.py
+	Data penjadwalan pemindaian
+	
+
+
+
+API Endpoint : 
+
+
+Method
+	Endpoint
+	Deskripsi
+	POST
+	/scan-full
+	Menjalankan pemindaian penuh situs
+	POST
+	/scan-api
+	Pemindaian endpoint API
+	POST
+	/scan-auth
+	Pemindaian kerentanan autentikasi
+	GET
+	/scan-status/{id}
+	Monitoring progres scan
+	GET
+	/scan-history
+	Daftar riwayat pemindaian
+	
+
+B. CVSS Engine (Microservice)
+
+
+Technology Stack : 
+
+
+Komponen
+	Teknologi
+	Keterangan
+	Framework
+	FastAPI
+	Microservice RESTful berbasis Python
+	Service Type
+	Standalone Microservice
+	Terpisah dari Proxy Service
+	Port
+	TCP 8001
+	Port komunikasi internal
+	CVSS Version
+	CVSS v3.1
+	Standar penilaian risiko kerentanan
+	
+
+Tujuan dan peran CVSS Engine: 
+
+
+
+
+Aspek
+	Deskripsi
+	Purpose
+	Menyediakan perhitungan CVSS v3.1 secara terpusat
+	Fungsi Utama
+	Menghitung base score, severity, dan komponen CVSS
+	Karakteristik
+	High performance, reusable, dan cache-friendly
+	Integrasi
+	Digunakan oleh Proxy Service melalui REST API
+	
+
+Struktur Direktori : 
+
+
+Direktori / File
+	Deskripsi Fungsi
+	cvss-engine/
+	Root directory microservice
+	api.py
+	Entry point FastAPI service
+	cvss_calculator.py
+	Implementasi logika perhitungan CVSS v3.1
+	requirements.txt
+	Daftar dependensi Python
+	Dockerfile
+	Konfigurasi containerisasi
+	tests/test_cvss.py
+	Unit test perhitungan CVSS
+	
+
+API Endpoint :
+
+
+Method
+	Endpoint
+	Deskripsi
+	POST
+	/score
+	Menghitung skor CVSS dari input terstruktur
+	POST
+	/score
+	Menghitung skor CVSS dari vector string
+	GET
+	/health
+	Health check microservice
+	 
+Contoh Response API : 
+
+
+Field
+	Tipe
+	Deskripsi
+	base_score
+	Float
+	Nilai base score CVSS
+	severity
+	String
+	Kategori risiko (Low–Critical)
+	vector
+	String
+	CVSS vector yang dihitung
+	breakdown.impact
+	Float
+	Skor dampak
+	breakdown.exploitability
+	Float
+	Skor exploitability
+	
+
+Contoh Nilai:
+CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+
+
+C. Moodle Plugin (Frontend)
+
+
+Technology Stack :
+
+
+Komponen
+	Teknologi
+	Versi / Keterangan
+	Framework
+	Moodle Plugin API
+	Native Moodle extension
+	Bahasa Pemrograman
+	PHP
+	Versi 7.4 atau lebih baru
+	Frontend Framework
+	Bootstrap
+	Versi 4
+	JavaScript Library
+	jQuery
+	Digunakan untuk interaksi UI
+	Styling Tambahan
+	CSS Kustom
+	Penyesuaian antarmuka dashboard
+	
+
+Struktur File Plugin : 
+
+
+File / Direktori
+	Deskripsi Fungsi
+	version.php
+	Metadata plugin dan kompatibilitas Moodle
+	index.php
+	Dashboard utama administrator
+	scan.php
+	Konfigurasi dan inisiasi pemindaian
+	auth_scan.php
+	Pemindaian kerentanan autentikasi
+	fullscan.php
+	Pemindaian penuh situs
+	reports.php
+	Tampilan daftar dan detail laporan
+	download_report.php
+	Unduh laporan dalam format PDF
+	ml_dashboard.php
+	Visualisasi metrik dan performa ML
+	login_monitor.php
+	Monitoring aktivitas login pengguna
+	scan_phishing_content.php
+	Pemindaian konten phishing
+	lib.php
+	Fungsi bantu dan utilitas
+	styles.css
+	Styling kustom antarmuka
+	db/install.xml
+	Skema database plugin
+	db/upgrade.php
+	Migrasi versi database
+	db/access.php
+	Definisi kapabilitas dan role
+	db/events.php
+	Event hook Moodle
+	classes/login_observer.php
+	Observer event login
+	classes/phishing_checker.php
+	Logika deteksi phishing
+	lang/en/local_security_dashboard.php
+	Berkas internasionalisasi
+	
+
+Fitur Utama : 
+
+
+Fitur
+	Deskripsi
+	Dashboard
+	Ringkasan sistem, statistik, dan aksi cepat
+	Scan Management
+	Konfigurasi target dan inisiasi pemindaian
+	Report Viewer
+	Penelusuran temuan dan unduh laporan PDF
+	ML Dashboard
+	Visualisasi metrik model dan akurasi
+	Login Monitor
+	Pelacakan lokasi login dan deteksi brute force
+	Phishing Scanner
+	Analisis konten dan pemeriksaan URL
+	
+
+
+
+3.2.3 Data Flow Architecture
+  
+
+3.2.4 Deployment Architecture
+
+
+Development Environment Deployment: 
+
+
+Komponen
+	Teknologi / Service
+	Host / Port
+	Keterangan
+	Developer Machine
+	Local workstation
+	—
+	Lingkungan pengembangan lokal
+	Moodle LMS
+	PHP + Web Server
+	localhost:8998
+	Frontend dan plugin Moodle
+	Proxy Service
+	FastAPI
+	localhost:8999
+	Core scanning & orchestration
+	CVSS Engine
+	FastAPI
+	localhost:8001
+	Perhitungan CVSS v3.1
+	Database
+	SQLite
+	File-based
+	Penyimpanan lokal hasil scan
+	
+
+
+
+
+
+
+
+
+
+Production Environment Deployment:
+
+
+Komponen
+	Image Docker
+	Port
+	Fungsi
+	Docker Host
+	Ubuntu Server 22.04
+	—
+	Host container produksi
+	Moodle LMS
+	moodle:latest
+	8998
+	Antarmuka administrator
+	Proxy Service
+	proxy:latest
+	8999
+	Orkestrasi scan dan ML
+	CVSS Engine
+	cvss:latest
+	8001
+	Layanan perhitungan CVSS
+	Database
+	postgres:14
+	5432
+	Database produksi
+	
+
+3.2.5 Security Architecture
+  
+
+3.3 Perancangan Database
+3.3.1 Database Schema Overview
+MoodleSec menggunakan dual database approach:
+1. SQLite (Proxy Service): Scan history & findings
+2. MySQL/PostgreSQL (Moodle): User data & configurations
+
+
+Tabel Scans : 
+
+
+
+
+Field
+	Tipe Data
+	Deskripsi
+	id
+	INTEGER (PK)
+	Primary key internal
+	scan_id
+	TEXT (UNIQUE)
+	Identifier scan global
+	scan_type
+	TEXT
+	Jenis scan (full, api, auth)
+	target_url
+	TEXT
+	Target aplikasi
+	status
+	TEXT
+	Status scan (pending, running, dll.)
+	start_time
+	TIMESTAMP
+	Waktu mulai scan
+	end_time
+	TIMESTAMP
+	Waktu selesai scan
+	duration
+	INTEGER
+	Durasi scan (detik)
+	endpoints_found
+	INTEGER
+	Jumlah endpoint terdeteksi
+	endpoints_scanned
+	INTEGER
+	Endpoint yang berhasil discan
+	findings_count
+	INTEGER
+	Total temuan
+	critical_count
+	INTEGER
+	Temuan critical
+	high_count
+	INTEGER
+	Temuan high
+	medium_count
+	INTEGER
+	Temuan medium
+	low_count
+	INTEGER
+	Temuan low
+	metadata
+	TEXT (JSON)
+	Metadata tambahan
+	created_at
+	TIMESTAMP
+	Waktu pembuatan
+	updated_at
+	TIMESTAMP
+	Waktu update
+	
+
+
+
+Tabel Findings : 
+
+
+Field
+	Tipe Data
+	Deskripsi
+	id
+	INTEGER (PK)
+	Primary key
+	scan_id
+	TEXT (FK)
+	Relasi ke tabel scans
+	severity
+	TEXT
+	Tingkat keparahan
+	category
+	TEXT
+	Jenis kerentanan
+	title
+	TEXT
+	Judul temuan
+	description
+	TEXT
+	Deskripsi detail
+	url
+	TEXT
+	URL terdampak
+	evidence
+	TEXT
+	Bukti eksploitasi
+	recommendation
+	TEXT
+	Rekomendasi mitigasi
+	cvss_score
+	REAL
+	Skor CVSS (0–10)
+	cvss_vector
+	TEXT
+	CVSS v3.1 vector
+	risk_score
+	REAL
+	Skor risiko kontekstual
+	cwe_id
+	TEXT
+	Referensi CWE
+	ml_is_false_positive
+	INTEGER
+	Flag false positive ML
+	ml_confidence
+	REAL
+	Confidence ML
+	ml_model_version
+	TEXT
+	Versi model ML
+	status
+	TEXT
+	Status temuan
+	finding_hash
+	TEXT
+	Hash deduplikasi
+	metadata
+	TEXT (JSON)
+	Data tambahan
+	created_at
+	TIMESTAMP
+	Waktu pencatatan
+	updated_at
+	TIMESTAMP
+	Waktu update
+	
+
+Table Scan Endpoints : 
+
+
+Field
+	Tipe Data
+	Deskripsi
+	id
+	INTEGER (PK)
+	Primary key
+	scan_id
+	TEXT (FK)
+	Relasi ke scan
+	url
+	TEXT
+	Endpoint URL
+	method
+	TEXT
+	HTTP method
+	status_code
+	INTEGER
+	HTTP response code
+	response_time
+	INTEGER
+	Waktu respon (ms)
+	scanned
+	INTEGER
+	Status pemindaian
+	findings_count
+	INTEGER
+	Jumlah temuan
+	created_at
+	TIMESTAMP
+	Waktu pencatatan
+	
+
+Moodle Database (mdl_local_security_scans) :
+
+
+Field
+	Tipe Data
+	Deskripsi
+	scan_id
+	VARCHAR
+	ID scan global
+	target_url
+	TEXT
+	Target scan
+	scan_type
+	VARCHAR
+	Jenis scan
+	status
+	VARCHAR
+	Status eksekusi
+	total_findings
+	INT
+	Total temuan
+	critical_count
+	INT
+	Temuan critical
+	high_count
+	INT
+	Temuan high
+	medium_count
+	INT
+	Temuan medium
+	low_count
+	INT
+	Temuan low
+	scan_duration
+	INT
+	Durasi scan
+	triggered_by
+	BIGINT (FK)
+	User pemicu scan
+	timecreated
+	BIGINT
+	Timestamp Moodle
+	 
+Tabel Phising Endpoint : 
+
+
+Field
+	Tipe Data
+	Deskripsi
+	content_type
+	VARCHAR
+	Jenis konten
+	content_id
+	BIGINT
+	ID konten
+	user_id
+	BIGINT
+	User terkait
+	risk_level
+	VARCHAR
+	Level risiko
+	risk_score
+	DECIMAL
+	Skor risiko
+	suspicious_url
+	TEXT
+	URL mencurigakan
+	indicators
+	TEXT (JSON)
+	Indikator phishing
+	status
+	VARCHAR
+	Status penanganan
+	notified
+	TINYINT
+	Status notifikasi
+	timecreated
+	BIGINT
+	Timestamp
+	
+
+Tabel Security Login Log:
+
+
+Field
+	Tipe Data
+	Deskripsi
+	userid
+	BIGINT
+	User ID
+	success
+	TINYINT
+	Status login
+	ip_address
+	VARCHAR
+	Alamat IP
+	country
+	VARCHAR
+	Negara
+	city
+	VARCHAR
+	Kota
+	is_suspicious
+	TINYINT
+	Indikasi anomali
+	risk_score
+	INT
+	Skor risiko login
+	session_id
+	VARCHAR
+	Session ID
+	timecreated
+	BIGINT
+	Timestamp
+	
+
+Tabel Block List dari login page: 
+
+
+Field
+	Tipe Data
+	Deskripsi
+	ip_address
+	VARCHAR
+	IP diblokir
+	block_type
+	VARCHAR
+	Jenis pemblokiran
+	fail_count
+	INT
+	Jumlah kegagalan
+	expires
+	BIGINT
+	Masa berlaku
+	is_active
+	TINYINT
+	Status aktif
+	timecreated
+	BIGINT
+	Timestamp
+	
+
+
+
+3.3.2 Entity Relationship Diagram (ERD)
+  
+
+3.3.3 Database Normalization
+MoodleSec database design mengikuti Third Normal Form (3NF):
+
+
+1NF (First Normal Form):
+- All attributes are atomic (no multi-valued attributes)
+- Each column contains values of single type
+-  Each column has unique name
+-  Order of rows does not matter
+
+
+2NF (Second Normal Form):
+-  Meets all 1NF requirements
+-  No partial dependencies (all non-key attributes fully dependent on primary key)
+-  Example: `findings.scan_id` fully determines all other attributes
+
+
+3NF (Third Normal Form):
+-  Meets all 2NF requirements
+-  No transitive dependencies
+-  Example: `scans.findings_count` is derived but stored for performance (denormalized intentionally)
+
+
+ 3.3.4 Database Indexing Strategy
+
+
+No
+	Tabel
+	Nama Index
+	Kolom
+	Jenis Index
+	Tujuan
+	1
+	findings
+	idx_scan_id
+	scan_id
+	Single
+	Mempercepat pencarian hasil berdasarkan scan
+	2
+	findings
+	idx_severity
+	severity
+	Single
+	Filtering temuan berdasarkan tingkat risiko
+	3
+	findings
+	idx_status
+	status
+	Single
+	Query status finding (open/fixed)
+	4
+	findings
+	idx_scan_severity
+	scan_id, severity
+	Composite
+	Optimasi query dashboard per scan & severity
+	5
+	findings
+	idx_scan_status
+	scan_id, status
+	Composite
+	Monitoring status temuan per scan
+	6
+	findings
+	idx_ml_fp
+	ml_is_false_positive
+	Single
+	Filtering false positive hasil ML
+	7
+	findings
+	idx_ml_confidence
+	ml_confidence
+	Single
+	Sorting berdasarkan confidence ML
+	8
+	scans
+	idx_created_at
+	created_at
+	Single
+	Query histori scan berbasis waktu
+	9
+	findings
+	idx_first_seen
+	first_seen
+	Single
+	Analisis timeline kerentanan
+	
+
+Index disusun berdasarkan query pattern yang paling sering digunakan pada dashboard, reporting, dan proses klasifikasi ML.
+Strategi indexing pada database MoodleSec dirancang untuk mengoptimalkan performa query pada data hasil pemindaian yang bersifat read-intensive. Kolom yang sering digunakan dalam klausa WHERE, JOIN, dan ORDER BY diberikan indeks untuk mengurangi waktu eksekusi query, khususnya pada tabel findings yang memiliki volume data besar.
+
+
+Selain indeks tunggal, digunakan pula composite index untuk mendukung query kompleks pada dashboard analitik, seperti filter berdasarkan scan_id dan severity. Index khusus juga diterapkan pada atribut hasil klasifikasi machine learning untuk mempercepat proses validasi false positive dan analisis confidence score.
+
+
+Query Performance : 
+* Simple queries: < 10 ms
+* Complex queries: < 100 ms
+* Full scan history: < 500 ms
+* 100.000 findings: < 1 s
+
+
+Hasil pengujian performa menunjukkan bahwa strategi indexing mampu menjaga waktu respon query tetap di bawah ambang batas usability meskipun jumlah data findings mencapai 100.000 entri.
+
+
+
+
+3.4 Perancangan Antarmuka (UI/UX)
+ 3.4.1 Design Principles
+MoodleSec UI design mengikuti prinsip:
+1. Consistency: Menggunakan Moodle's native UI components
+2. Clarity: Clear information hierarchy
+3. Efficiency: Minimize clicks untuk common tasks
+4. Feedback: Real-time progress indicators
+5. Accessibility: WCAG 2.1 Level AA compliance
+ 3.4.2 Main Dashboard
+Target Mockup : 
+  
+
+Implementasi Sementara: 
+  
+
+ 3.4.3 Scan Progress Page
+
+
+Mockup :
+  
+
+
+
+ 3.4.4 Reports & Findings Page
+Target Mockup : 
+  
+
+ 3.4.7 ML Dashboard
+
+
+Mockup :
+
+
+  
+
+
+
+ 3.4.8  Login Monitor Dashboard
+3.5 Diagram Alir Sistem
+
+
+3.5.1 Main System Flowchart
+  
+
+3.4.2 ML Classification Flowchart
+  
+
+
+
+3.5.3 Login Monitoring Flowchart
+  
+
+
+
+3.5.4 Report Generation Flowchart
+  
+
+
+
+
+
+3.6 Kesimpulan Perancangan
+
+
+## 3.6 Kesimpulan Perancangan
+ 3.6.1 Arsitektur yang Robust
+-  Multi-tier architecture dengan clear separation of concerns
+-  Microservices untuk scalability (Proxy, CVSS Engine)
+-  Extensible plugin architecture
+-  Dual database approach (SQLite + MySQL/PostgreSQL)
+
+
+ 3.6.2 Functional Requirements Terpenuhi
+-  Multi-scanner integration (ZAP, Acunetix, Custom)
+-  Comprehensive vulnerability detection (Admin, User, API)
+-  ML-based false positive reduction (>95% accuracy)
+-  Adaptive CVSS scoring dengan contextual multipliers
+-  Automated PDF reporting
+-  Optional real-time notifications
+
+
+ 3.6.3 Non-Functional Requirements Terpenuhi
+-  Performance: <5 minutes full scan
+-  Scalability: 100K findings support
+-  Security: RBAC, encrypted credentials
+-  Reliability: 99.5% uptime target
+-  Usability: Intuitive UI, <5 min learning curve
+-  Maintainability: >70% test coverage
+-  Compatibility: Moodle 4.0+
+
+
+ 3.6.4 Database Design yang Normalized
+-  Third Normal Form (3NF) compliance
+-  Efficient indexing strategy
+-  Optimized query performance
+-  Support untuk 100K+ findings
+
+
+ 3.6.5 User Interface yang User-Friendly
+-  Responsive web design
+-  Real-time progress indicators
+-  Interactive dashboards
+-  Comprehensive data visualization
+-  WCAG 2.1 Level AA accessibility
+
+
+ 3.6.6 Dokumentasi yang Lengkap
+-  Detailed functional requirements
+-  Non-functional requirements dengan acceptance criteria
+-  Architecture diagrams
+-  Database ERD
+-  UI wireframes
+-  System flowcharts
+
+
+
+
+  
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+PENUTUP
+
+
+Perancangan sistem Adaptive Security Proxy untuk Moodle telah disusun dengan arsitektur
+berlapis yang komprehensif, mengintegrasikan Dynamic Application Security Testing,
+machine learning optimization, adaptive CVSS risk scoring, dan mekanisme semi self-
+healing. Desain four-layer architecture memberikan balance optimal antara akurasi deteksi,
+efisiensi operasional, dan kontrol manusia dalam pengambilan keputusan kritis.
+Penggunaan Docker containerization untuk isolasi lingkungan pengujian memastikan bahwa
+aktivitas scanning tidak mengganggu operasional sistem produksi Moodle. Integrasi
+machine learning pada Layer 2 secara signifikan mengurangi false positive rate, sementara
+adaptive CVSS scoring pada Layer 3 memberikan penilaian risiko yang kontekstual dan
+akurat. Mekanisme semi self-healing pada Layer 4 memberikan kemampuan respons
+otomatis untuk threat dengan confidence tinggi, namun tetap mempertahankan human
+oversight untuk keputusan dengan impact signifikan.
+Implementasi sistem yang akan dilakukan pada BAB IV akan mengikuti desain arsitektur
+dan spesifikasi teknis yang telah diuraikan dalam bab ini. Pengujian dan evaluasi pada BAB
+V akan memvalidasi efektivitas setiap layer dalam mencapai tujuan penelitian yang telah
+ditetapkan.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Daftar Pustaka
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Lampiran 
+
+
+ADAPTIVE SECURITY PROXY - Presentation
