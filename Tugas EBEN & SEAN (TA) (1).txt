@@ -21,19 +21,17 @@ Krisopras Eben Haezer (222200256)
 
 
 
-
-
 PROGRAM STUDI IT AND BIG DATA ANALYTICS
 FAKULTAS TEKNIK DAN SAINS
 CALVIN INSTITUTE OF TECHNOLOGY
 JAKARTA
-2025
-
-
+2026
 HALAMAN PERSETUJUAN DOSEN PPA
 
 
 Yang bertanda tangan di bawah ini, Dosen Pembimbing Akademik Program Studi It and Big Data Analytics, Fakultas Teknik dan Sains, Universitas Calvin Institute of Technology, menyatakan bahwa:
+
+
 Data Mahasiswa:
 No
 	Nama Mahasiswa
@@ -54,28 +52,18 @@ Demikian surat persetujuan ini dibuat untuk digunakan sebagaimana mestinya.
 ..............................., ................. 2026.
 
 
-Dosen Pembimbing Akademik,
 
 
-NIP. ................................
-
-
-
+Menyetujui Dosen 
+Pembimbing
 
 
 
 
 
 
-
-
-
-
-
-
-
-
-
+____________________________
+NIP :
 
 
 
@@ -85,29 +73,16 @@ NIP. ................................
 
 
 ABSTRAK
+Nathanael Sean Lim (212200160)
+Krisopras Eben Haezer (222200256)
+Program Studi IT and Big Data Analytics, Fakultas Sains dan Teknik 
+Calvin Institute of Technology
 
 
 Moodle sebagai LMS open-source menyimpan data akademik sensitif dan menjadi target utama serangan siber seperti SQL Injection, XSS, CSRF, dan Path Traversal. Pendekatan keamanan tradisional berbasis WAF dan scanner statis memiliki keterbatasan, termasuk false positive tinggi, ketidakmampuan mendeteksi kerentanan runtime, serta penilaian risiko CVSS yang kurang kontekstual terhadap lingkungan produksi Moodle.Penelitian ini menerapkan metode Research and Development untuk merancang MoodleSec, mencakup studi literatur, analisis kebutuhan, perancangan arsitektur, implementasi multi-layer security scanning berbasis ML, serta pengujian komprehensif. Evaluasi dilakukan pada akurasi deteksi, reduksi false positive, kinerja sistem, dan efektivitas adaptive CVSS, diakhiri dengan dokumentasi teknis dan ilmiah.Hasil penelitian menunjukkan model ML ensemble mencapai akurasi 88,24% dengan penurunan false positive signifikan dan efisiensi operasional meningkat hingga 5× lebih cepat. Sistem berhasil menemukan kerentanan nyata pada Moodle, bersifat production-ready, skalabel, dan memberikan kontribusi akademik melalui inovasi metode ML, auto-labeling, serta penerapan keamanan LMS berbasis data nyata.Perancangan Adaptive Security Proxy untuk Moodle mengadopsi arsitektur empat lapis yang mengintegrasikan DAST, optimasi machine learning, adaptive CVSS, dan semi self-healing. Pendekatan ini menyeimbangkan akurasi deteksi, efisiensi operasional, serta kontrol manusia. Containerization Docker menjaga isolasi produksi, sementara ML menurunkan false positive dan adaptive CVSS meningkatkan akurasi penilaian risiko kontekstual.
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+Kata kunci :  Moodle, Learning Management System (LMS), Keamanan Aplikasi Web, Adaptive Security Proxy, Machine Learning Ensemble, False Positive Reduction, Dynamic Application Security Testing (DAST), Adaptive CVSS, Web Vulnerability Detection, Containerization Docker.
 
 
 
@@ -123,56 +98,57 @@ Moodle sebagai LMS open-source menyimpan data akademik sensitif dan menjadi targ
 DAFTAR ISI
 
 
-HALAMAN PERSETUJUAN DOSEN PPA        2
-ABSTRAK        3
-DAFTAR ISI        4
-BAB I  PENDAHULUAN        7
-1.1 Latar Belakang        7
-1.2 Rumusan Masalah        8
-1.3 Tujuan Penelitian        8
-1.4 Batasan Masalah        9
-1.5 Manfaat Penelitian        10
-1.6 Metodologi Penelitian        10
-1.7 Sistematika Penulisan        12
-BAB II LANDASAN TEORI        14
-2.1 Learning Management System (LMS) Moodle        14
-2.1.1 Konsep Learning Management System        14
-2.1.2 Arsitektur Keamanan Moodle        14
-2.2 Dynamic Application Security Testing (DAST)        15
-2.2.1 Konsep DAST        15
-2.2.2 OWASP ZAP dan Acunetix sebagai DAST Engine        15
-2.2.3 Custom Security Scanners        16
-2.2.4 Keterbatasan DAST Tradisional        16
-2.3 Machine Learning untuk Cybersecurity        17
-2.3.1 Supervised Learning untuk Klasifikasi Kerentanan        17
+HALAMAN PERSETUJUAN DOSEN PPA        1
+ABSTRAK        2
+DAFTAR ISI        3
+BAB I  PENDAHULUAN        5
+1.1 Latar Belakang        6
+1.2 Rumusan Masalah        7
+1.3 Tujuan Penelitian        7
+1.4 Batasan Masalah        8
+1.5 Manfaat Penelitian        9
+1.6 Metodologi Penelitian        9
+1.7 Sistematika Penulisan        11
+BAB II LANDASAN TEORI        13
+2.1 Learning Management System (LMS) Moodle        13
+2.1.1 Konsep Learning Management System        13
+2.1.2 Arsitektur Keamanan Moodle        13
+2.2 Dynamic Application Security Testing (DAST)        14
+2.2.1 Konsep DAST        14
+2.2.2 OWASP ZAP dan Acunetix sebagai DAST Engine        14
+2.2.3 Custom Security Scanners        15
+2.2.4 Keterbatasan DAST Tradisional        15
+2.3 Machine Learning untuk Cybersecurity        16
+2.3.1 Supervised Learning untuk Klasifikasi Kerentanan        16
 2.3.2 Training Data dan Labeling Strategy        18
-2.3.3 Model Evaluation Metrics        19
-2.4 Common Vulnerability Scoring System (CVSS)        20
-2.4.1 Framework CVSS v3.1        20
-2.4.2 Keterbatasan CVSS dalam Konteks Aplikasi Spesifik        21
-2.5 Monitoring, Alerting, dan Recommendation Systems untuk Autonomous Response        22
-2.5.1 Konsep Semi Self-Healing dalam Security Systems        22
-2.5.2 MAPE-K Loop dalam MoodleSec        23
+2.3.3 Model Evaluation Metrics        18
+2.4 Common Vulnerability Scoring System (CVSS)        19
+2.4.1 Framework CVSS v3.1        19
+2.4.2 Keterbatasan CVSS dalam Konteks Aplikasi Spesifik        20
+2.5 Monitoring, Alerting, dan Recommendation Systems untuk Autonomous Response        21
+2.5.1 Konsep Semi Self-Healing dalam Security Systems        21
+2.5.2 MAPE-K Loop dalam MoodleSec        22
 2.5.3 Implementation dalam MoodleSec        23
-2.5.4 Level 2 Autonomy Design Decisions        24
-2.5.5 Future Extensions: Towards Level 3 Autonomy        25
-2.6 Container Security dengan Docker        25
-2.6.1 Docker Containerization untuk Isolation        25
-2.6.2 Security Best Practices untuk Docker Deployment        26
-2.7 Technology Stack dan Architecture Framework        27
-2.7.1 FastAPI untuk Proxy Service 27
-2.7.2 Modular Service Design        28
+2.5.4 Level 2 Autonomy Design Decisions        23
+2.5.5 Future Extensions: Towards Level 3 Autonomy        24
+2.6 Container Security dengan Docker        24
+2.6.1 Docker Containerization untuk Isolation        24
+2.6.2 Security Best Practices untuk Docker Deployment        25
+2.7 Technology Stack dan Architecture Framework        26
+2.7.1 FastAPI untuk Proxy Service        26
+2.7.2 Modular Service Design        29
 BAB III PERANCANGAN SISTEM        30
 3.1 Analisis Kebutuhan Sistem        30
 3.1.1 Functional Requirements (FR)        30
-FR-2: Comprehensive Vulnerability Detection        30
+FR-2: Comprehensive Vulnerability Detection        31
+FR-3: Machine Learning Pipeline for Adaptive Security        32
 FR-4: Adaptive CVSS v3.1 Scoring with Contextual Multipliers        33
 FR-5: Automated Reporting & Optional Real-Time Notifications        34
 FR-6: Database Management & Data Persistence        36
 FR-7: Extensible Architecture for Future Enhancements        37
 3.1.2  Non-Functional Requirements (NFR)        38
 NFR-1: Performance        38
-NFR-2: Scalability        38
+NFR-2: Scalability        39
 NFR-3: Security        39
 NFR-4: Usability        40
 NFR-5: Compatibility        41
@@ -182,91 +158,31 @@ NFR-5: Compatibility        41
 A. Proxy Service (Core Application)        45
 B. CVSS Engine (Microservice)        47
 C. Moodle Plugin (Frontend)        49
-3.2.3 Data Flow Architecture        51
-3.2.4 Deployment Architecture        51
-3.2.5 Security Architecture        53
-3.3 Perancangan Database        53
-3.3.1 Database Schema Overview        53
-3.3.2 Entity Relationship Diagram (ERD)        59
-3.3.3 Database Normalization        59
-3.3.4 Database Indexing Strategy        60
-3.4 Perancangan Antarmuka (UI/UX)        61
-3.4.1 Design Principles        61
-3.4.2 Main Dashboard        61
-3.4.3 Scan Progress Page        62
-3.4.4 Reports & Findings Page        62
-3.4.7 ML Dashboard        63
-3.4.8  Login Monitor Dashboard        63
-3.6 Kesimpulan Perancangan        67
-3.6.1 Arsitektur yang Robust        67
-3.6.2 Functional Requirements Terpenuhi        69
-PENUTUP        76
-Daftar Pustaka        77
+3.2.3 Data Flow Architecture        52
+3.2.4 Deployment Architecture        52
+3.2.5 Security Architecture        54
+3.3 Perancangan Database        54
+3.3.1 Database Schema Overview        54
+3.3.2 Entity Relationship Diagram (ERD)        60
+3.3.3 Database Normalization        60
+3.3.4 Database Indexing Strategy        61
+3.4 Perancangan Antarmuka (UI/UX)        62
+3.4.1 Design Principles        62
+3.4.2 Main Dashboard        62
+3.4.3 Scan Progress Page        63
+3.4.4 Reports & Findings Page        63
+3.4.7 ML Dashboard        64
+3.4.8  Login Monitor Dashboard        64
+3.5 Diagram Alir Sistem        65
+3.5.1 Main System Flowchart        65
+3.5.2 ML Classification Flowchart        67
+3.5.3 Login Monitoring Flowchart        68
+3.5.4 Report Generation Flowchart        69
+3.6 Kesimpulan Perancangan        69
+PENUTUP        74
+Daftar Pustaka        75
 Lampiran        78
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+________________
 BAB I  PENDAHULUAN
 
 
@@ -290,8 +206,6 @@ Sistem ini dilengkapi dengan scheduler untuk scanning otomatis, comprehensive re
 
 
 1.2 Rumusan Masalah
-
-
 Berdasarkan latar belakang yang telah diuraikan, penelitian ini merumuskan beberapa permasalahan utama:
 
 
@@ -520,12 +434,6 @@ Bab ini berisi kesimpulan dari hasil penelitian dan saran untuk pengembangan leb
 
 
 
-
-
-
-
-
-
 BAB II LANDASAN TEORI
 
 
@@ -624,7 +532,7 @@ Normalize vulnerability data ke format MoodleSec
 Merge findings dengan ZAP results untuk comprehensive coverage
 Leverage Acunetix&#39;s advanced detection untuk complex vulnerabilities
 Penelitian ini mengimplementasikan parser untuk Acunetix JSON export format yang dapat
-handle vulnerability_types[a] structure dan extract detailed technical information.
+handle vulnerability_types[a][b][c] structure dan extract detailed technical information.
 
 
 2.2.3 Custom Security Scanners
@@ -718,6 +626,12 @@ memungkinkan SVM menangani non-linearly separable data.
 
 
 2.3.2 Training Data dan Labeling Strategy
+
+
+
+
+
+
 Kualitas model machine learning ditentukan oleh kualitas dan kuantitas training data. Dalam
 penelitian ini, dataset dibentuk melalui beberapa strategi:
 
@@ -1010,10 +924,6 @@ This progression allows MoodleSec to evolve towards more autonomous operations
 while maintaining safety guardrails.
 
 
-
-
-
-
 2.6 Container Security dengan Docker
 2.6.1 Docker Containerization untuk Isolation
 
@@ -1242,44 +1152,8 @@ Arsitektur ini memungkinkan:
 - Scalable deployment (horizontal scaling per service)
 - Technology flexibility (can swap components)
 - Maintenance tanpa system downtime
-
-
 Setiap service berkomunikasi via REST APIs dengan JSON payloads, 
 providing clear contracts dan loose coupling.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 BAB III PERANCANGAN SISTEM
@@ -1843,13 +1717,7 @@ Learning Curve:
 - Sample scan available
 
 
-
-
-
-
 NFR-5: Compatibility
-
-
 Deskripsi:  
 Sistem harus compatible dengan various Moodle versions dan deployment environments.
 
@@ -2115,10 +1983,10 @@ Direktori / Modul
 	Deskripsi Fungsi
 	proxy/
 	app.py
-	Entry point aplikasi FastAPI
+	Entry point aplikasi dan definisi REST API endpoints
 	api/
 	scan_endpoints.py
-	Endpoint inisiasi dan kontrol pemindaian
+	Endpoint untuk inisiasi dan kontrol pemindaian
 	
 
 	report_endpoints.py
@@ -2129,34 +1997,34 @@ Direktori / Modul
 	Endpoint prediksi dan evaluasi ML
 	scanners/
 	sql_injection.py
-	Deteksi kerentanan SQL Injection menggunakan pattern matching untuk SQL error messages (MySQL, PostgreSQL, MSSQL, Oracle) dan analisis SQL keywords dalam parameter request.
+	Deteksi SQL Injection menggunakan pattern matching
 	
 
 	xss_detector.py
-	Deteksi kerentanan Cross-Site Scripting (XSS) termasuk Reflected XSS, DOM-based XSS, dan Stored XSS melalui analisis dangerous HTML tags dan event handlers
+	Deteksi kerentanan Cross-Site Scripting (XSS).
 	
 
 	csrf_validator.py
-	Validasi proteksi CSRF dengan pengecekan keberadaan CSRF token dalam forms, analisis SameSite cookie attribute, dan validasi state-changing requests
+	Validasi proteksi CSRF pada forms dan cookies
 	
 
 	path_traversal.py
-	Deteksi kerentanan Path Traversal/Directory Traversal melalui pattern matching (.. /, .. \, URL-encoded variants) dan pengecekan akses file sensitif
+	Deteksi kerentanan Path Traversal
 	
 
 	phishing_detector.py
-	Deteksi link dan konten phishing dalam user-generated content (bio, comments, forum posts) menggunakan analisis URL, domain spoofing detection, dan keyword analysisr
+	Deteksi link phishing dalam user content
 	
 
 	scanner_engine.py
-	Orchestrator utama yang mengkoordinasikan eksekusi semua scanner, agregasi hasil, deduplikasi findings, dan sorting berdasarkan severity
+	Orchestrator eksekusi semua scanner
 	ml/
 	false_positive_reducer.py
-	Reduksi false positive
+	Klasifikasi false positive dengan Random Forest
 	
 
 	severity_predictor.py
-	Prediksi tingkat keparahan
+	Prediksi severity dengan Gradient Boosting
 	
 
 	phishing_detector.py
@@ -2237,6 +2105,9 @@ Method
 	GET
 	/scan-history
 	Daftar riwayat pemindaian
+	GET
+	/health
+	Health check service
 	
 
 B. CVSS Engine (Microservice)
@@ -2979,7 +2850,7 @@ Mockup :
 
 
  3.4.8  Login Monitor Dashboard
-Mockup: 
+Implementasi Sementara : 
 
 
   
@@ -2987,12 +2858,37 @@ Mockup:
 
 
 3.5 Diagram Alir Sistem
-
-
 3.5.1 Main System Flowchart
+
+
+ 1. FastAPI Reverse Proxy
+- Port: 8999 (MoodleSec Proxy)
+- Backend: 8998 (Moodle LMS)
+- Technology: FastAPI + httpx async client
+- Function: Intercept semua traffic, transparently forward to
+
+
+ 2. Scanner Engine
+- Passive Scanners: 6+ custom modules (SQL, XSS, CSRF, Headers, etc.)
+- Active Scanner: OWASP ZAP integration (background)
+- Speed: Passive < 50ms, Active 2-30 seconds
+
+
+ 3. CVSS Risk Scorer
+- Standard: CVSS v3.1
+- Input: Vulnerability characteristics (AV, AC, PR, UI, S, CIA)
+- Output: Score 0.0-10.0 + severity label
+- Use: Trigger adaptive mitigation
+
+
+ 4. ML Pipeline
+- 4 Models: FP Reducer, Severity Predictor, Anomaly Detector, Rate Limiter
+- Purpose: Reduce false positives from 60% to <10%
+- Performance: 95% accuracy (ensemble RF+GB)
+- Features: 16 features for FP Reducer (keyword ratio, CVSS, severity, etc.) 
   
 
-3.4.2 ML Classification Flowchart
+3.5.2 ML Classification Flowchart
   
 
 
@@ -3004,10 +2900,6 @@ Mockup:
 
 3.5.4 Report Generation Flowchart
   
-
-
-
-
 
 3.6 Kesimpulan Perancangan
 
@@ -3136,22 +3028,6 @@ System Flowcharts menggambarkan alur proses utama meliputi Main Scanning Flow, M
 
 
 
-  
-
-
-
-
-
-
-
-  
-
-
-
-
-
-  
-
 
 
 
@@ -3226,20 +3102,56 @@ ditetapkan.
 Daftar Pustaka
 
 
+Platt, John C. 1999. "Probabilistic Outputs for Support Vector Machines and Comparisons to Regularized Likelihood Methods." In Advances in Large Margin Classifiers, edited by A. J. Smola, P. Bartlett, B. Schölkopf, and D. Schuurmans, 61-74. Cambridge, MA: MIT Press
 
 
+Huang, Yao-Wen, Fang Yu, Christian Hang, Chung-Hung Tsai, Der-Tsai Lee, and Sy-Yen Kuo. 2004. "Securing Web Application Code by Static Analysis and Runtime Protection." In Proceedings of the 13th International Conference on World Wide Web (WWW '04), 40-52. New York, NY: ACM. https://doi.org/10.1145/988672.988679.
 
 
+Wichers, Dave, and Jeff Williams. 2017. "OWASP Top 10 - 2017: The Ten Most Critical Web Application Security Risks." OWASP Foundation. https://owasp.org/www-project-top-ten/.
 
 
+OWASP Foundation. 2021. "OWASP Zed Attack Proxy (ZAP) - Getting Started." OWASP ZAP Documentation. https://www.zaproxy.org/getting-started/.
 
 
+Stuttard, Dafydd, and Marcus Pinto. 2011. The Web Application Hacker's Handbook: Finding and Exploiting Security Flaws. 2nd ed. Indianapolis, IN: Wiley Publishing.
 
 
+FIRST.org. 2019. "Common Vulnerability Scoring System Version 3.1: Specification Document." Forum of Incident Response and Security Teams. https://www.first.org/cvss/specification-document.
 
 
+Mell, Peter, Karen Scarfone, and Sasha Romanosky. 2007. "A Complete Guide to the Common Vulnerability Scoring System Version 2.0." FIRST - Forum of Incident Response and Security Teams. Published June 2007. https://www.first.org/cvss/v2/guide.
+Spring, Jonathan M., Eric Hatleback, Allen D. Householder, Art Manion, and Deana Shick. 2021. "Time to Change the CVSS? IEEE Security & Privacy 19 (2): 74-78. https://doi.org/10.1109/MSEC.2020.3044475.
 
 
+Sommer, Robin, and Vern Paxson. 2010. "Outside the Closed World: On Using Machine Learning for Network Intrusion Detection." In 2010 IEEE Symposium on Security and Privacy, 305-316. Oakland, CA: IEEE. https://doi.org/10.1109/SP.2010.25.
+
+
+Alazab, Mamoun, Sitalakshmi Venkatraman, Paul Watters, and Moutaz Alazab. 2011. "Zero-Day Malware Detection Based on Supervised Learning Algorithms of API Call Signatures." In Proceedings of the Ninth Australasian Data Mining Conference (AusDM 2011), 171-182. Ballarat, Australia: Australian Computer Society.
+
+
+Alazab, Mamoun, Sitalakshmi Venkatraman, Paul Watters, and Moutaz Alazab. 2011. "Zero-Day Malware Detection Based on Supervised Learning Algorithms of API Call Signatures." In Proceedings of the Ninth Australasian Data Mining Conference (AusDM 2011), 171-182. Ballarat, Australia: Australian Computer Society.
+
+
+Moodle Pty Ltd. 2023. "Security." Moodle Documentation. https://docs.moodle.org/en/Security.
+
+
+Moodle Plugins Directory. 2024. "NIS2 and GDPR Security Audit Report." Moodle.org Plugins. https://moodle.org/plugins/report_security.
+
+
+Kirda, Engin, Christopher Kruegel, Giovanni Vigna, and Nenad Jovanovic. 2006. "Noxes: A Client-Side Solution for Mitigating Cross-Site Scripting Attacks." In Proceedings of the 2006 ACM Symposium on Applied Computing (SAC '06), 330-337. Dijon, France: ACM. https://doi.org/10.1145/1141277.1141357.
+
+
+Barua, Abir, Mohamed Shaaban, and Panos Papadimitratos. 2018. "Self-Healing Proxy: Recovering from Web Application Attacks." arXiv preprint arXiv:1803.08725. https://arxiv.org/abs/1803.08725.
+
+
+Fielding, Roy T., and Richard N. Taylor. 2002. "Principled Design of the Modern Web Architecture." ACM Transactions on Internet Technology (TOIT) 2 (2): 115-150. https://doi.org/10.1145/514183.514185.
+
+
+OWASP Foundation. 2019. "OWASP API Security Top 10 - 2019." OWASP API Security Project. https://owasp.org/www-project-api-security/.        
+
+
+Hevner et al. (2004); Peffers et al. (2007); Venable et al. (2016) 
 
 
 
@@ -3291,7 +3203,14 @@ Daftar Pustaka
 
 
 Lampiran 
+Source Code utama : 
+ebenhaezer19/Moodlehttps://github.com/ebenhaezer19/MoodleSecSec: Ini Project Plugin TA
 
 
-ADAPTIVE SECURITY PROXY - Presentation
+
+
+
+
 [a]Ini typo kah yang _
+[b]harusnya
+[c]yoik typho thanks
