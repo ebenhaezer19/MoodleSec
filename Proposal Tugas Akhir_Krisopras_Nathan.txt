@@ -1,0 +1,336 @@
+IBDA4912 - Seminar Proposal
+ADAPTIVE SECURITY PROXY UNTUK MOODLE:
+SISTEM AUDIT KERENTANAN OTOMATIS
+BERBASIS CVSS RISK SCORING DENGAN
+MEKANISME SEMI SELF-HEALING
+
+Krisopras Eben Haezer (222200256)
+Nathanael Sean Lim (212200160)
+
+Latar Belakang
+Learning Management System (LMS) seperti Moodle telah
+menjadi infrastruktur kritis dalam ekosistem pendidikan
+digital modern. Sebagai platform open-source yang
+digunakan oleh lebih dari 250 juta pengguna di 230+
+negara dan mendukung 400+ juta kursus online, Moodle
+menyimpan data sensitif mahasiswa, materi pembelajaran,
+dan informasi akademik yang bernilai tinggi. Namun,
+popularitas
+
+dan
+
+kompleksitas
+
+membuatnya
+
+menjadi
+
+target
+
+arsitektur
+
+utama
+
+Moodle
+
+serangan
+
+siber,
+
+khususnya melalui eksploitasi kerentanan aplikasi web
+seperti SQL Injection, Cross-Site Scripting (XSS), CrossSite Request Forgery (CSRF), dan Path Traversal.
+
+https://moodle.org/
+
+Latar Belakang
+Berdasarkan laporan keamanan OWASP 2023, 70-80% dari semua
+vulnerability findings dalam web application scanning adalah false
+positives, yang menyebabkan alert fatigue dan menghabiskan 160+
+jam/bulan untuk manual review. Penelitian sebelumnya dalam
+domain keamanan LMS terbatas pada: (1) Static analysis tools
+dengan tingkat false positive 70-80% (OWASP, 2023), (2) Rule-based
+WAF yang tidak mempertimbangkan konteks Moodle-specific, (3)
+Manual
+
+vulnerability
+
+assessment
+
+yang
+
+tidak
+
+scalable
+
+untuk
+
+enterprise deployment. Gap penelitian: Belum ada solusi yang
+mengintegrasikan multi-scanner dengan ML-based false positive
+reduction secara real-time untuk ekosistem Moodle.
+
+Rumusan Masalah
+1.Bagaimana merancang arsitektur proxy service yang dapat
+mengintegrasikan multiple security scanners (OWASP ZAP,
+Acunetix, custom scanners) untuk melakukan pemindaian
+kerentanan secara otomatis terhadap instalasi Moodle.
+2.Bagaimana mengimplementasikan machine learning pipeline
+dengan ensemble model dan probability calibration untuk
+mengurangi tingkat false positive dari 70-80%
+3.Bagaimana mengembangkan sistem adaptive CVSS scoring yang
+dapat menyesuaikan penilaian risiko berdasarkan konteks spesifik
+lingkungan Moodle seperti endpoint sensitivity, role requirements,
+dan historical attack patterns
+
+Rumusan Masalah
+4. Bagaimana merancang mekanisme semi self-healing yang
+memberikan rekomendasi mitigasi kontekstual dengan version
+compatibility suggestions dan comprehensive reporting
+
+Tujuan
+1.Mengembangkan plugin Moodle (admin tool) yang terintegrasi
+dengan proxy service
+2.Mengimplementasikan machine learning pipeline dengan ensemble
+classifier (Random Forest + XGBoost) yang dilengkapi probability
+calibration, auto-labeling mechanism, dan interactive labeling tools
+untuk meningkatkan akurasi deteksi dan mengurangi false positive
+rate.
+3.Merancang adaptive CVSS scoring engine yang mempertimbangkan
+faktor kontekstual seperti endpoint type (admin/user/API),
+authentication requirements, role-based privileges, dan attack
+frequency untuk menghasilkan risk assessment yang lebih akurat.
+
+Tujuan
+
+4. Membangun comprehensive security management system dengan
+scheduler untuk automated scanning, PDF report generation, realtime Slack notifications (Opsional), dan version recommendation
+engine untuk memfasilitasi long-term security Improvements.
+
+Tantangan
+1. Tantangan Data Leakage pada Training Data Sintetis
+Pada tahap awal development, training data yang dihasilkan
+mengalami data leakage - yaitu kondisi dimana label target (True
+Positive vs False Positive) dapat diprediksi secara sempurna dari satu
+fitur saja (severity level).
+
+Tantangan
+2. Pentingnya Continuous Learning dengan Real Data
+Meskipun synthetic data berguna untuk proof-of-concept, model
+production yang sesungguhnya memerlukan:
+* Real-world findings dari actual security scans
+* Manual labeling oleh security expert untuk memverifikasi TP vs FP
+* Periodic retraining saat pattern vulnerability scanner berubah
+(update signature, new detection rules)
+* A/B testing untuk membandingkan performa model lama vs baru
+
+Metode Penelitian
+1. Studi Literatur
+2. Analisis Kebutuhan Sistem Moodle
+3. Prapemrosesan Data
+4. Pelatihan Model
+5. Evaluasi Pemilihan Model dan penyesuaiaan dengan sistem
+Moodle
+6. Pengembangan Sistem
+7. Pengujian Sistem
+
+Studi Literatur
+Studi Literatur Mengkaji penelitian terkait Dynamic Application Security
+Testing, machine learning untuk cybersecurity, CVSS risk scoring,
+vulnerability assessment methodologies, dan security automation
+frameworks dalam konteks web application security dan LMS security.
+Di sini kami banyak mengambil referensi dari security standards &
+frameworks seperti OWASP Top 10 (2017, 2021), CVSS v3.1 untuk risk
+scoring, CWE (Common Weakness Enumeration) untuk klasifikasi standar
+keamanan, dan opsional terkadang kami melihat NIST Framework untuk
+best practice assestment
+
+Studi Literatur
+Untuk Machine learning sendiri kami juga mengkaji banyak paper mengenai
+FP Reduction. Terutama Mengenai Ensamble Methods (Random Forest,
+Gradient Boosting) untuk classification.
+Karena adanya imbalanced Data Handling, kami juga mencari beberapa
+jurnal seperti “Machine Learning Vulnarabilty Detection”, “Reducing FP in
+Intrusion Detection System with ML”
+Dan yang paling penting kami juga membaca dokumentasi System LMS itu
+sendiri di dokumentasi official moodle.org agar dapat menyesuaikan
+kebutuhan sistem environtment alat yang kita buat.
+
+Diagram Alur
+Pengembangan
+Model ML
+
+Diagram Alur
+Pengembangan
+Model
+Klasifikasi ML
+
+Diagram Alur
+Pengembangan
+Security
+Architecture
+
+Diagram Alur
+Pengembangan
+Sistem Scanner
+
+Pengumpulan Data
+Di sini ekspetasi kami ML yang kami buat akan menggunakan beberapa
+fitur penting yang sudah kami klasifikasikan secara terperingkat. Dan Kami
+merencanakan data awal berasal dari hasil scan vulnerabilty scanner
+(OWASP ZAP, Accunetix, Manual Pentesting)
+
+Prapemrosesan Data
+• Dari data RAW tersebut kami akan mengekstrak 16 Fitur numerical
+yang bisa dipahami ML Model. Fitur-fitur ini dipilih berdasarkan
+domain knowledge security dan pattern analysis. Menggunakan
+ordinal encoding untuk severity (karena ada urutan: Info < Low <
+Medium < High < Critical). sedangkan untuk keyword 0 dan 1 (One Hot
+Encoding)
+
+Prapemrosesan Data
+• Lalu untuk data training kami akan split 80% untuk training dan 20%
+untuk Testing menggunakan stratifield split untuk maintain ratio
+TP:FP di kedua set. Lalu setelah itu kita Min-Max Normalization
+• Di sini kami karena memilih model RF dan GB maka feature scaling
+tidak diperlukan selama tree based models tidak sensitif terhadap
+scale alasannya :
+
+Model utama yang Digunakan
+False Positive Reducer
+"False Positive Reducer adalah model ML utama yang mengurangi beban
+manual verification. Scanner mentah menghasilkan 60% false positives.
+Model kami menggunakan ensemble approach - kombinasi Random
+Forest 200 trees dan Gradient Boosting 200 estimators - ekspetasi kami
+yaitu berhasil menurunkan FP rate menjadi hanya 8%, menghasilkan 87%
+reduction dalam manual work."
+
+Model Pendukung Lainnya
+Severity Predictor
+Severity Predictor menggunakan Gradient Boosting Classifier untuk
+adjust severity berdasarkan konteks dengan ekspetasi 85% accuracy.
+
+Model Pendukung Lainnya
+Anomaly Detector
+menggunakan Isolation Forest - algoritma unsupervised - untuk deteksi
+zero-day attacks berdasarkan pola tidak normal.
+
+Model Pendukung Lainnya
+Ml Rate Limiter
+ML Rate Limiter menggunakan Gradient Boosting Regressor untuk
+intelligent DoS prevention dengan risk scoring.
+
+Pelatihan Model
+False Positive Reducer
+Berikut adalah konfigurasi yang akan ditetapkan pada data yang sintetik
+dan real data sehingga menghasilkan 16 fitur utama :
+• Algoritma: Random Forest + Gradient Boosting Ensemble dengan
+Probability Calibration.
+• Task: Binary Classification (True Positive vs False Positive) / Min-Max
+Classification
+• Target: Reduce FP rate dari 60% → <10%
+• Current Performance Expectation: 95% test accuracy
+• Kita sediakan data leakage preventation supaya model bukan hanya
+belajar dari severity saja tapi juga kombinasi
+
+Pelatihan Model
+False Positive Reducer
+Adanya calibration setelah ensamble menggunakan Platt scaling dengan
+3-fold cross-validation untuk ensure confidence scores yang reliable - ini
+penting untuk auto-labeling threshold. Evaluasi comprehensive dengan
+accuracy, precision, recall, F1-score, dan feature importance analysis.
+model persistence dengan pickle serialization termasuk trained model,
+fitted scaler, dan metadata.
+Harapannya False Positive Reducer mencapai 95% test accuracy dengan
+top feature importance pada keyword_ratio 18.42% dan CVSS score
+15.23%, menunjukkan model belajar dari pattern kombinasi text dan risk
+metrics, bukan single feature dominan.
+
+Pelatihan Model
+Severity Predictor
+Berikut adalah konfigurasi yang akan ditetapkan:
+• Extract 8 Fitur dalam array lalu encode dalam bentuk labels khusus.
+• Train-Test Split
+• Scale Features
+• Train Gradient Boosting Classifier (n_estimators=150, max_depth=10,
+learning_rate=0.1, random_state=42)
+• Sifatnya hanya untuk peningkatan adaptasi severity
+• Save Model
+
+Pelatihan Model
+Anomaly Detector
+Berikut adalah metode pembuatan model Dlib:
+• Extract 10 Fitur dari pattern yang tidak ada label sama sekali.
+• Latih dengan Isolation Forrest Unsupervised (n_estimators=100,
+contamination=contamination, max_samples=256, random_state=42)
+• Buat baseline statistic
+• Save Model
+
+Pelatihan Model
+ML Rate Limiter
+Berikut adalah metode pembuatan model dengan Train GB Regressor
+untuk risk score prediction:
+• Extract 12 Fitur dari pattern yang tidak ada label sama sekali.
+• Train-Test Split
+• Scale Features
+• Train
+GB
+Regressor
+(n_estimators=200,max_depth=8,
+learning_rate=0.05, loss='squared_error', random_state=42)
+• Evaluasi dengan R^2 Score
+• Save Model
+
+Evaluasi dan Pemilihan Model
+Model dievaluasi berdasarkan metrik berikut:
+1. Untuk Model Klasifikasi (FP Reducer, Severity Predictor):
+• Accuracy: Persentase prediksi yang benar dari keseluruhan data
+• Precision dan Recall: Mengukur keakuratan prediksi positif dan
+sensitivitas model
+• F1-Score: Kombinasi precision dan recall untuk memberikan gambaran
+kinerja secara menyeluruh
+• Confusion Matrix: Memberikan analisis mendalam tentang prediksi benar
+dan salah
+• Feature Importance: Mengidentifikasi fitur yang paling berkontribusi
+terhadap prediksi
+
+Evaluasi dan Pemilihan Model
+2. Untuk Model Regresi (Rate Limiter):
+• R² Score: Mengukur seberapa baik model memprediksi nilai kontinu
+• MAE (Mean Absolute Error): Rata-rata kesalahan absolut prediksi
+3. Untuk Model Unsupervised (Anomaly Detector):
+• Anomaly Detection Rate: Persentase anomali yang terdeteksi
+• False Positive Rate: Tingkat kesalahan deteksi anomali
+Secara kesiapan data FP Reducer dan Severity Predictor lebih siap untuk train
+karena sudah memiliki sample yang cukup baik, sementara Untuk RL dan AD
+perlu baseline implementation, perlu production data dan juga traffic pattern
+lebih baik di masa pengembangan yang akan datang.
+
+Pengembangan Sistem Plugin: Web Keamanan Moodle
+Desain Basis Data
+
+Pengembangan Sistem: Aplikasi Web Manajemen Pengguna
+Desain Antarmuka Pengguna: Halaman Dashboard
+
+Pengembangan Sistem: Aplikasi Web Manajemen Pengguna
+Desain Antarmuka Pengguna: Scan Progress Site
+
+Pengembangan Sistem: Aplikasi Web Manajemen Pengguna
+Desain Antarmuka Pengguna: Report Site Dashboard
+
+Pengembangan Sistem: Aplikasi Web Manajemen Pengguna
+Desain Antarmuka Pengguna: ML Dashboard
+
+Pengembangan Sistem: Implementasi pada Portal Aplikasi Web
+Perancangan sistem Adaptive Security Proxy untuk Moodle telah disusun
+dengan arsitektur berlapis yang komprehensif, mengintegrasikan
+Dynamic Application Security Testing, machine learning optimization,
+adaptive CVSS risk scoring, dan mekanisme semi self-healing. Desain
+four-layer architecture memberikan balance optimal antara akurasi
+deteksi,efisiensi operasional, dan kontrol manusia dalam pengambilan
+keputusan kritis. namun tetap mempertahankan human oversight untuk
+keputusan dengan impact signifikan.
+
+Demo Live Proxy Plugin Scanner Moodle
+
+Terima Kasih
+
+
