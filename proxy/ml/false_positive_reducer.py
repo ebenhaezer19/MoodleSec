@@ -270,9 +270,10 @@ class FalsePositiveReducer:
         X = np.array(X)
         y = np.array(labels)
         
-        # Split data
+        # Split data (80/20 train/test with stratification)
+        # Using larger test set for better evaluation of generalization
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y if len(np.unique(y)) > 1 else None
+            X, y, test_size=0.25, random_state=42, stratify=y if len(np.unique(y)) > 1 else None
         )
         
         # Scale features
@@ -287,21 +288,29 @@ class FalsePositiveReducer:
         from sklearn.svm import SVC
         from sklearn.metrics import precision_score, recall_score, f1_score, classification_report
 
-        # Model 1: Random Forest
+        # Model 1: Random Forest (Anti-Overfitting Configuration)
+        # Reduced complexity to prevent overfitting on small datasets
+        # Changes: n_estimators 150→100, max_depth 12→8, added max_features
+        # min_samples_split 4→6, min_samples_leaf 2→3 for better generalization
         rf_model = RandomForestClassifier(
-            n_estimators=150,
-            max_depth=12,
-            min_samples_split=4,
-            min_samples_leaf=2,
+            n_estimators=100,        # Reduced from 150
+            max_depth=8,             # Reduced from 12 to prevent memorization
+            min_samples_split=6,     # Increased from 4
+            min_samples_leaf=3,      # Increased from 2
+            max_features='sqrt',     # Added: limit features per tree
             random_state=42,
             class_weight='balanced'
         )
 
-        # Model 2: Gradient Boosting
+        # Model 2: Gradient Boosting (Regularized)
+        # Reduced complexity for better generalization
         gb_model = GradientBoostingClassifier(
-            n_estimators=100,
-            max_depth=5,
-            learning_rate=0.1,
+            n_estimators=75,         # Reduced from 100
+            max_depth=4,             # Reduced from 5
+            learning_rate=0.05,      # Reduced from 0.1 for smoother learning
+            min_samples_split=6,     # Added regularization
+            min_samples_leaf=3,      # Added regularization
+            subsample=0.8,           # Added: use 80% of samples per tree
             random_state=42
         )
 
