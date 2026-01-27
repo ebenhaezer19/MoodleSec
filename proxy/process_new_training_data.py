@@ -179,8 +179,8 @@ def normalize_acunetix_finding(raw_finding: Dict[str, Any], scan_id: str) -> Dic
 def process_all_data():
     """Process all data from OWASP and Acunetix folders."""
     base_path = Path('ml/training_data')
-    owasp_path = base_path / 'OWASP_ZAP_Data'
-    acunetix_path = base_path / 'Acunnetix_Data'
+    owasp_path = base_path / 'real_data' / 'OWASP_ZAP_Data'
+    acunetix_path = base_path / 'real_data' / 'Acunnetix_Data'
     
     all_findings = []
     seen_hashes: Set[str] = set()
