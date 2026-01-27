@@ -121,8 +121,41 @@ def retrain_fp_reducer(training_data, labels):
             for i, (feature, importance) in enumerate(sorted_features[:5], 1):
                 print(f"   {i}. {feature:20s}: {importance:.8f}")
     
+    # ✅ Save feature importance to JSON file
+    if 'feature_importance' in results and results['feature_importance']:
+        feature_importance_path = Path('ml/models/feature_importance.json')
+        feature_importance = results['feature_importance']
+        
+        # Sort features by importance
+        sorted_features = sorted(
+            feature_importance.items(), 
+            key=lambda x: x[1], 
+            reverse=True
+        )
+        
+        # Prepare JSON data
+        feature_importance_data = {
+            "features": feature_importance,
+            "top_5": [
+                {
+                    "name": feature,
+                    "importance": float(importance),
+                    "percentage": float(importance * 100)
+                }
+                for feature, importance in sorted_features[:5]
+            ],
+            "timestamp": results.get('timestamp', ''),
+            "accuracy": results.get('accuracy', 0)
+        }
+        
+        # Save to file
+        with open(feature_importance_path, 'w') as f:
+            json.dump(feature_importance_data, f, indent=2)
+        
+        print(f"\n💾 Feature importance saved to: {feature_importance_path}")
+    
     # Save model
-    print(f"\n💾 Model saved to: {fp_reducer.model_path}")
+    print(f"💾 Model saved to: {fp_reducer.model_path}")
     
     # Check if training was successful
     if results.get('accuracy', 0) < 0.60:
