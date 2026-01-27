@@ -7,6 +7,11 @@ __pycache__/
 venv/
 env/
 ENV/
+__pycache__/
+*.pyc
+
+proxy/ml/training_data/
+proxy/ml/data/
 
 # Database files
 *.db
