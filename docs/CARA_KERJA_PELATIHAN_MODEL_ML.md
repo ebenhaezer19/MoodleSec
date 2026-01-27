@@ -1100,7 +1100,7 @@ def train(self, normal_data: List[Dict], contamination: float = 0.1) -> Dict:
 
 ---
 
-## 🚦 MODEL #4: RATE LIMITER (Overview)
+## 🚦 MODEL #4: ML RATE LIMITER (Overview)
 
 ### **Training Process (Simplified)**
 

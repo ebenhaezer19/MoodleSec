@@ -567,6 +567,180 @@ def create_metrics_comparison():
     print("✓ Generated: ML_Diagram_7_Metrics_Comparison.png")
 
 
+def create_ml_complete_flow():
+    """Create complete ML flow diagram - NO DUPLICATES in feature extraction"""
+    fig, ax = plt.subplots(figsize=(10, 14))
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 14)
+    ax.axis('off')
+    
+    # Title
+    title_box = FancyBboxPatch((0.5, 13), 9, 0.7, boxstyle="round,pad=0.1", 
+                               edgecolor='#2E86AB', facecolor='#2E86AB', linewidth=2)
+    ax.add_patch(title_box)
+    ax.text(5, 13.35, 'MACHINE LEARNING FALSE POSITIVE REDUCER - COMPLETE FLOW', 
+            ha='center', va='center', fontsize=13, fontweight='bold', color='white')
+    
+    y_pos = 11.8
+    
+    # STEP 1: RAW SECURITY SCAN RESULTS
+    ax.text(0.8, y_pos, 'RAW SECURITY', fontsize=10, fontweight='bold', color='#2E86AB')
+    ax.text(0.8, y_pos-0.3, 'SCAN RESULTS', fontsize=10, fontweight='bold', color='#2E86AB')
+    
+    input_box = FancyBboxPatch((2.5, y_pos-1.2), 5, 1.5, boxstyle="round,pad=0.1", 
+                               edgecolor='#2E86AB', facecolor='#E5F2FF', linewidth=2)
+    ax.add_patch(input_box)
+    ax.text(5, y_pos-0.2, 'HASIL SCAN KEAMANAN (RAW)', ha='center', va='center', 
+            fontsize=11, fontweight='bold')
+    ax.text(5, y_pos-0.5, '• Output dari OWASP ZAP / Acunetix', ha='center', va='center', fontsize=9)
+    ax.text(5, y_pos-0.7, '• SQL Injection', ha='center', va='center', fontsize=9)
+    ax.text(5, y_pos-0.9, '• XSS', ha='center', va='center', fontsize=9)
+    ax.text(5, y_pos-1.1, '• Auth Issues', ha='center', va='center', fontsize=9)
+    
+    y_pos -= 1.6
+    arrow = FancyArrowPatch((5, y_pos+0.3), (5, y_pos-0.2), arrowstyle='->', 
+                           mutation_scale=25, linewidth=3, color='#2E86AB')
+    ax.add_patch(arrow)
+    
+    # STEP 2: FEATURE EXTRACTION - NO DUPLICATES
+    y_pos -= 0.6
+    ax.text(0.8, y_pos, 'FEATURE', fontsize=10, fontweight='bold', color='#F77F00')
+    ax.text(0.8, y_pos-0.3, 'EXTRACTION', fontsize=10, fontweight='bold', color='#F77F00')
+    
+    feature_box = FancyBboxPatch((2.5, y_pos-1.6), 5, 1.8, boxstyle="round,pad=0.1", 
+                                 edgecolor='#F77F00', facecolor='#FFF3E5', linewidth=2)
+    ax.add_patch(feature_box)
+    ax.text(5, y_pos-0.2, 'FEATURE EXTRACTION', ha='center', va='center', 
+            fontsize=11, fontweight='bold', color='#F77F00')
+    
+    # Left column features
+    features_left = [
+        '• Severity',
+        '• CVSS Score',
+        '• URL Complexity',
+        '• Evidence Length'
+    ]
+    y_feat = y_pos - 0.55
+    for feat in features_left:
+        ax.text(3.2, y_feat, feat, ha='left', va='center', fontsize=9)
+        y_feat -= 0.22
+    
+    # Right column features
+    features_right = [
+        '• Response Code',
+        '• Response Time',
+        '• Keyword Match',
+        '• Status Patterns'
+    ]
+    y_feat = y_pos - 0.55
+    for feat in features_right:
+        ax.text(5.8, y_feat, feat, ha='left', va='center', fontsize=9)
+        y_feat -= 0.22
+    
+    y_pos -= 2
+    arrow = FancyArrowPatch((5, y_pos+0.3), (5, y_pos-0.2), arrowstyle='->', 
+                           mutation_scale=25, linewidth=3, color='#2E86AB')
+    ax.add_patch(arrow)
+    
+    # STEP 3: MACHINE LEARNING CLASSIFIER
+    y_pos -= 0.6
+    ax.text(0.8, y_pos, 'MACHINE', fontsize=10, fontweight='bold', color='#06A77D')
+    ax.text(0.8, y_pos-0.3, 'LEARNING', fontsize=10, fontweight='bold', color='#06A77D')
+    
+    ml_box = FancyBboxPatch((2.5, y_pos-1.3), 5, 1.5, boxstyle="round,pad=0.1", 
+                            edgecolor='#06A77D', facecolor='#E5F9F0', linewidth=2)
+    ax.add_patch(ml_box)
+    ax.text(5, y_pos-0.2, 'MACHINE LEARNING CLASSIFIER', ha='center', va='center', 
+            fontsize=11, fontweight='bold', color='#06A77D')
+    ax.text(5, y_pos-0.5, '• Model Ensemble (Random Forest + GB)', ha='center', va='center', 
+            fontsize=9, style='italic')
+    ax.text(5, y_pos-0.75, '• Analisis pola temuan', ha='center', va='center', fontsize=9)
+    ax.text(5, y_pos-1.0, '• Hitung probabilitas TP / FP', ha='center', va='center', fontsize=9)
+    
+    y_pos -= 1.7
+    arrow = FancyArrowPatch((5, y_pos+0.3), (5, y_pos-0.2), arrowstyle='->', 
+                           mutation_scale=25, linewidth=3, color='#2E86AB')
+    ax.add_patch(arrow)
+    
+    # STEP 4: DECISION ENGINE
+    y_pos -= 0.6
+    ax.text(0.8, y_pos-0.15, 'DECISION', fontsize=10, fontweight='bold', color='#6C757D')
+    ax.text(0.8, y_pos-0.45, 'ENGINE', fontsize=10, fontweight='bold', color='#6C757D')
+    
+    decision_box = FancyBboxPatch((2.5, y_pos-0.8), 5, 1, boxstyle="round,pad=0.1", 
+                                  edgecolor='#6C757D', facecolor='#F8F9FA', linewidth=2)
+    ax.add_patch(decision_box)
+    ax.text(5, y_pos-0.1, 'DECISION ENGINE', ha='center', va='center', 
+            fontsize=11, fontweight='bold')
+    ax.text(5, y_pos-0.35, 'Apakah temuan False Positive?', ha='center', va='center', 
+            fontsize=10, style='italic')
+    ax.text(5, y_pos-0.6, 'Probabilitas > Threshold (0.5)', ha='center', va='center', fontsize=9)
+    
+    y_pos -= 1.2
+    
+    # Split arrows
+    arrow_left = FancyArrowPatch((5, y_pos+0.2), (3, y_pos-0.5), arrowstyle='->', 
+                                mutation_scale=25, linewidth=3, color='#E63946')
+    arrow_right = FancyArrowPatch((5, y_pos+0.2), (7, y_pos-0.5), arrowstyle='->', 
+                                 mutation_scale=25, linewidth=3, color='#06A77D')
+    ax.add_patch(arrow_left)
+    ax.add_patch(arrow_right)
+    
+    ax.text(3.5, y_pos-0.15, 'Ya', ha='center', va='center', fontsize=10, 
+            fontweight='bold', color='#E63946')
+    ax.text(6.5, y_pos-0.15, 'Tidak', ha='center', va='center', fontsize=10, 
+            fontweight='bold', color='#06A77D')
+    
+    y_pos -= 0.8
+    
+    # FALSE POSITIVE box
+    fp_box = FancyBboxPatch((1.5, y_pos-1), 3, 1.2, boxstyle="round,pad=0.1", 
+                            edgecolor='#E63946', facecolor='#FFE5E5', linewidth=2)
+    ax.add_patch(fp_box)
+    ax.text(3, y_pos-0.2, 'FALSE POSITIVE', ha='center', va='center', 
+            fontsize=11, fontweight='bold', color='#E63946')
+    ax.text(3, y_pos-0.5, '• Otomatis difilter', ha='center', va='center', fontsize=9)
+    ax.text(3, y_pos-0.7, '• Tidak dianalisis manual', ha='center', va='center', fontsize=9)
+    
+    # TRUE POSITIVE box
+    tp_box = FancyBboxPatch((5.5, y_pos-1), 3, 1.2, boxstyle="round,pad=0.1", 
+                            edgecolor='#06A77D', facecolor='#E5F9F0', linewidth=2)
+    ax.add_patch(tp_box)
+    ax.text(7, y_pos-0.2, 'TRUE POSITIVE', ha='center', va='center', 
+            fontsize=11, fontweight='bold', color='#06A77D')
+    ax.text(7, y_pos-0.5, '• Dipertahankan', ha='center', va='center', fontsize=9)
+    ax.text(7, y_pos-0.7, '• Hitung CVSS', ha='center', va='center', fontsize=9)
+    ax.text(7, y_pos-0.9, '• Masuk laporan', ha='center', va='center', fontsize=9)
+    
+    y_pos -= 1.5
+    
+    # Merge arrows
+    arrow_merge_left = FancyArrowPatch((3, y_pos+0.3), (5, y_pos-0.3), arrowstyle='->', 
+                                      mutation_scale=25, linewidth=2, color='#2E86AB')
+    arrow_merge_right = FancyArrowPatch((7, y_pos+0.3), (5, y_pos-0.3), arrowstyle='->', 
+                                       mutation_scale=25, linewidth=2, color='#2E86AB')
+    ax.add_patch(arrow_merge_left)
+    ax.add_patch(arrow_merge_right)
+    
+    y_pos -= 0.5
+    
+    # FINAL REPORT
+    report_box = FancyBboxPatch((2, y_pos-1), 6, 1.2, boxstyle="round,pad=0.1", 
+                                edgecolor='#2E86AB', facecolor='#E5F2FF', linewidth=2)
+    ax.add_patch(report_box)
+    ax.text(5, y_pos-0.2, 'LAPORAN KEAMANAN FINAL', ha='center', va='center', 
+            fontsize=12, fontweight='bold', color='#2E86AB')
+    ax.text(5, y_pos-0.5, '• Lebih akurat', ha='center', va='center', fontsize=9)
+    ax.text(5, y_pos-0.7, '• Lebih sedikit noise', ha='center', va='center', fontsize=9)
+    ax.text(5, y_pos-0.9, '• Fokus pada ancaman nyata', ha='center', va='center', fontsize=9)
+    
+    plt.tight_layout()
+    plt.savefig('ML_Complete_Flow_Diagram.png', dpi=300, bbox_inches='tight', 
+                facecolor='white', edgecolor='none')
+    plt.close()
+    print("✓ Generated: ML_Complete_Flow_Diagram.png (NO DUPLICATES)")
+
+
 if __name__ == "__main__":
     print("\n" + "="*60)
     print("GENERATING ML DIAGRAMS FOR SEMPRO PRESENTATION")
@@ -579,6 +753,7 @@ if __name__ == "__main__":
         create_confusion_matrix()
         create_feature_importance()
         create_metrics_comparison()
+        create_ml_complete_flow()  # NEW: Complete flow with no duplicates
         
         print("\n" + "="*60)
         print("✓ ALL DIAGRAMS GENERATED SUCCESSFULLY!")
@@ -590,6 +765,7 @@ if __name__ == "__main__":
         print("  4. ML_Diagram_5_Feature_Importance.png")
         print("  5. ML_Diagram_6_Confusion_Matrix.png")
         print("  6. ML_Diagram_7_Metrics_Comparison.png")
+        print("  7. ML_Complete_Flow_Diagram.png (NEW - NO DUPLICATES)")
         print("\n📊 Ready to insert into PowerPoint!")
         print("="*60 + "\n")
         

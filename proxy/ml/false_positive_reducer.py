@@ -274,17 +274,21 @@ class FalsePositiveReducer:
         # Train Ensemble Model (Random Forest + Gradient Boosting)
         from sklearn.ensemble import GradientBoostingClassifier, VotingClassifier
         from sklearn.calibration import CalibratedClassifierCV
-        
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.tree import DecisionTreeClassifier
+        from sklearn.svm import SVC
+        from sklearn.metrics import precision_score, recall_score, f1_score, classification_report
+
         # Model 1: Random Forest
         rf_model = RandomForestClassifier(
-            n_estimators=150,  # Increased from 100
-            max_depth=12,      # Increased from 10
+            n_estimators=150,
+            max_depth=12,
             min_samples_split=4,
             min_samples_leaf=2,
             random_state=42,
             class_weight='balanced'
         )
-        
+
         # Model 2: Gradient Boosting
         gb_model = GradientBoostingClassifier(
             n_estimators=100,
@@ -292,47 +296,67 @@ class FalsePositiveReducer:
             learning_rate=0.1,
             random_state=42
         )
-        
+
         # Ensemble: Voting Classifier
         ensemble = VotingClassifier(
             estimators=[
                 ('rf', rf_model),
                 ('gb', gb_model)
             ],
-            voting='soft',  # Use probability voting
-            weights=[2, 1]  # RF gets more weight
+            voting='soft',
+            weights=[2, 1]
         )
-        
+
         # Train ensemble
         ensemble.fit(X_train_scaled, y_train)
-        
+
         # Calibrate probabilities for better confidence estimates
         self.model = CalibratedClassifierCV(
             ensemble,
-            method='sigmoid',  # Platt scaling
+            method='sigmoid',
             cv=3
         )
-        
         self.model.fit(X_train_scaled, y_train)
         self.is_trained = True
-        
-        # Evaluate
+
+        # Evaluate ensemble
         train_score = self.model.score(X_train_scaled, y_train)
         test_score = self.model.score(X_test_scaled, y_test)
-        
-        # Detailed metrics on test set
-        from sklearn.metrics import precision_score, recall_score, f1_score, classification_report
-        
         y_pred = self.model.predict(X_test_scaled)
-        
-        # Calculate metrics (handle potential errors with zero_division)
         try:
             precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
             recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
             f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
         except:
             precision = recall = f1 = 0.0
-        
+
+        # Baseline: Logistic Regression
+        lr = LogisticRegression(max_iter=1000, class_weight='balanced', random_state=42)
+        lr.fit(X_train_scaled, y_train)
+        lr_pred = lr.predict(X_test_scaled)
+        lr_acc = lr.score(X_test_scaled, y_test)
+        lr_prec = precision_score(y_test, lr_pred, average='weighted', zero_division=0)
+        lr_rec = recall_score(y_test, lr_pred, average='weighted', zero_division=0)
+        lr_f1 = f1_score(y_test, lr_pred, average='weighted', zero_division=0)
+
+        # Baseline: Decision Tree
+        dt = DecisionTreeClassifier(max_depth=10, class_weight='balanced', random_state=42)
+        dt.fit(X_train_scaled, y_train)
+        dt_pred = dt.predict(X_test_scaled)
+        dt_acc = dt.score(X_test_scaled, y_test)
+        dt_prec = precision_score(y_test, dt_pred, average='weighted', zero_division=0)
+        dt_rec = recall_score(y_test, dt_pred, average='weighted', zero_division=0)
+        dt_f1 = f1_score(y_test, dt_pred, average='weighted', zero_division=0)
+
+        # Baseline: SVM
+        svm = SVC(kernel='rbf', probability=True, class_weight='balanced', random_state=42)
+        svm.fit(X_train_scaled, y_train)
+        svm_pred = svm.predict(X_test_scaled)
+        svm_acc = svm.score(X_test_scaled, y_test)
+        svm_prec = precision_score(y_test, svm_pred, average='weighted', zero_division=0)
+        svm_rec = recall_score(y_test, svm_pred, average='weighted', zero_division=0)
+        svm_f1 = f1_score(y_test, svm_pred, average='weighted', zero_division=0)
+
         # Feature importance (from base estimator)
         feature_names = [
             'severity', 'category', 'evidence_length', 'description_length',
@@ -340,26 +364,30 @@ class FalsePositiveReducer:
             'fp_keyword_count', 'tp_keyword_count', 'keyword_ratio', 'is_informational',
             'status_code', 'response_time', 'occurrence_count', 'days_since_first_seen'
         ]
-        
-        # Get feature importance from the base estimator (before calibration)
         try:
-            # Access the base estimator's feature importance
             base_estimator = self.model.calibrated_classifiers_[0].base_estimator
             if hasattr(base_estimator, 'estimators_'):
-                # It's a VotingClassifier, get RF importance
                 rf_estimator = base_estimator.estimators_[0]
                 feature_importance = dict(zip(feature_names, rf_estimator.feature_importances_.tolist()))
             else:
                 feature_importance = {name: 0.0 for name in feature_names}
         except:
             feature_importance = {name: 0.0 for name in feature_names}
-        
+
         # Save model
         self._save_model()
-        
+
+        # Benchmark results for documentation
+        benchmark_results = {
+            "Ensemble (RF+GB)": {"accuracy": float(test_score), "precision": float(precision), "recall": float(recall), "f1": float(f1)},
+            "Logistic Regression": {"accuracy": float(lr_acc), "precision": float(lr_prec), "recall": float(lr_rec), "f1": float(lr_f1)},
+            "Decision Tree": {"accuracy": float(dt_acc), "precision": float(dt_prec), "recall": float(dt_rec), "f1": float(dt_f1)},
+            "SVM": {"accuracy": float(svm_acc), "precision": float(svm_prec), "recall": float(svm_rec), "f1": float(svm_f1)}
+        }
+
         return {
             'success': True,
-            'accuracy': float(test_score),  # Use test accuracy as main metric
+            'accuracy': float(test_score),
             'train_accuracy': float(train_score),
             'test_accuracy': float(test_score),
             'precision': float(precision),
@@ -368,6 +396,7 @@ class FalsePositiveReducer:
             'samples_trained': len(X_train),
             'samples_tested': len(X_test),
             'feature_importance': feature_importance,
+            'benchmark_results': benchmark_results,
             'timestamp': datetime.utcnow().isoformat() + 'Z'
         }
     
