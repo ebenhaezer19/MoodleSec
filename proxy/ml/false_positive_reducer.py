@@ -254,8 +254,16 @@ class FalsePositiveReducer:
         # Extract features for all training samples
         X = []
         for sample in training_data:
-            finding = sample.get('finding', {})
-            context = sample.get('context', {})
+            # ✅ FIX: Handle both nested and flat formats
+            if 'finding' in sample:
+                # Nested format: {'finding': {...}, 'context': {...}}
+                finding = sample['finding']
+                context = sample.get('context', {})
+            else:
+                # Flat format: {'severity': ..., 'category': ..., ...}
+                finding = sample
+                context = {}
+            
             features = self.extract_features(finding, context)
             X.append(features.flatten())
         
@@ -364,14 +372,25 @@ class FalsePositiveReducer:
             'fp_keyword_count', 'tp_keyword_count', 'keyword_ratio', 'is_informational',
             'status_code', 'response_time', 'occurrence_count', 'days_since_first_seen'
         ]
+        
+        # ✅ FIX: Proper feature importance extraction from ensemble
+        feature_importance = {}
         try:
-            base_estimator = self.model.calibrated_classifiers_[0].base_estimator
-            if hasattr(base_estimator, 'estimators_'):
-                rf_estimator = base_estimator.estimators_[0]
-                feature_importance = dict(zip(feature_names, rf_estimator.feature_importances_.tolist()))
-            else:
-                feature_importance = {name: 0.0 for name in feature_names}
-        except:
+            # Get the base ensemble model before calibration
+            if hasattr(self.model, 'calibrated_classifiers_') and len(self.model.calibrated_classifiers_) > 0:
+                # Get base estimator (VotingClassifier)
+                base_estimator = self.model.calibrated_classifiers_[0].estimator
+                
+                # Get Random Forest from VotingClassifier
+                if hasattr(base_estimator, 'estimators_'):
+                    rf_model = base_estimator.estimators_[0]  # First estimator is RF
+                    if hasattr(rf_model, 'feature_importances_'):
+                        feature_importance = dict(zip(feature_names, rf_model.feature_importances_.tolist()))
+                elif hasattr(base_estimator, 'feature_importances_'):
+                    # Direct access if not voting
+                    feature_importance = dict(zip(feature_names, base_estimator.feature_importances_.tolist()))
+        except Exception as e:
+            print(f"⚠️  Warning: Could not extract feature importance: {e}")
             feature_importance = {name: 0.0 for name in feature_names}
 
         # Save model
