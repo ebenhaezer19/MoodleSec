@@ -33,7 +33,7 @@ def load_training_data(filepath):
     """
     print(f"Loading training data from: {filepath}")
     
-    with open(filepath, 'r') as f:
+    with open(filepath, 'r', encoding='utf-8-sig') as f:
         data = json.load(f)
     
     training_data = []
