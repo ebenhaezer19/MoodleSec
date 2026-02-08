@@ -76,15 +76,33 @@ echo "🚀 Starting Moodle 3.9.0..."
 echo "   This may take 3-5 minutes on first run..."
 echo ""
 
-# Start containers
-docker-compose up -d
+# Check if docker-compose (v1) or docker compose (v2) is available
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+elif docker compose version &> /dev/null 2>&1; then
+    DOCKER_COMPOSE="docker compose"
+else
+    echo "❌ Neither 'docker-compose' nor 'docker compose' found"
+    echo "Install Docker Compose: https://docs.docker.com/compose/install/"
+    exit 1
+fi
+
+echo "Using: $DOCKER_COMPOSE"
+echo ""
+
+# Start containers (try with sudo if permission denied)
+if ! $DOCKER_COMPOSE up -d 2>&1; then
+    echo ""
+    echo "⚠️  Permission denied. Trying with sudo..."
+    sudo $DOCKER_COMPOSE up -d
+fi
 
 echo ""
 echo "⏳ Waiting for Moodle to initialize..."
 sleep 30
 
 # Check if running
-if docker ps | grep -q moodle-vuln; then
+if sudo docker ps | grep -q moodle-vuln 2>/dev/null || docker ps | grep -q moodle-vuln 2>/dev/null; then
     echo ""
     echo "✅ Moodle 3.9.0 is running!"
     echo ""
@@ -95,16 +113,23 @@ if docker ps | grep -q moodle-vuln; then
     echo ""
     echo "🔍 Check logs:"
     echo "   docker logs moodle-vuln -f"
+    echo "   (or: sudo docker logs moodle-vuln -f)"
     echo ""
     echo "🛑 Stop Moodle:"
-    echo "   docker-compose down"
+    echo "   docker compose down (or: docker-compose down)"
     echo ""
     echo "🗑️ Remove everything (including data):"
-    echo "   docker-compose down -v"
+    echo "   docker compose down -v"
     echo ""
 else
     echo "❌ Failed to start Moodle"
-    echo "Check logs: docker logs moodle-vuln"
+    echo "Check logs: sudo docker logs moodle-vuln"
+    echo ""
+    echo "💡 Common fixes:"
+    echo "   1. Add user to docker group: sudo usermod -aG docker \$USER"
+    echo "   2. Then logout and login again"
+    echo "   3. Or always use: sudo docker compose up -d"
+    echo ""
 fi
 EOF
 
