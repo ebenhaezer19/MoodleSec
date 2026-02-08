@@ -35,7 +35,7 @@ services:
       - moodle-network
 
   moodle:
-    image: bitnami/moodle:3.9.0
+    image: bitnami/moodle:3.9.7
     container_name: moodle-vuln
     ports:
       - "8080:8080"
