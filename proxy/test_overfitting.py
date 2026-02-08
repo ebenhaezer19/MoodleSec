@@ -234,6 +234,9 @@ def test_feature_correlation(training_data, labels):
     X = np.array(X)
     y = np.array(labels)
     
+    # Feature names (16 features total)
+    # Note: Features 9-11 (keyword features) are domain knowledge-based,
+    # derived from OWASP/SANS security patterns, not from training labels
     feature_names = [
         'severity', 'category', 'evidence_length', 'description_length',
         'url_complexity', 'has_params', 'cvss_score', 'risk_score',
@@ -241,6 +244,16 @@ def test_feature_correlation(training_data, labels):
         'is_informational', 'status_code', 'response_time',
         'occurrence_count', 'days_since_first'
     ]
+    
+    # Validate feature count matches
+    if X.shape[1] != len(feature_names):
+        print(f"⚠️ Warning: Expected {len(feature_names)} features, got {X.shape[1]}")
+        print(f"   Adjusting feature names...")
+        # Truncate or pad feature names
+        if X.shape[1] < len(feature_names):
+            feature_names = feature_names[:X.shape[1]]
+        else:
+            feature_names.extend([f'feature_{i}' for i in range(len(feature_names), X.shape[1])])
     
     print("Feature Correlations with Label:")
     print("-" * 60)
@@ -339,6 +352,12 @@ def test_data_distribution(training_data, labels):
 
 def main():
     """Run all overfitting tests."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Test for overfitting in FP Reducer model')
+    parser.add_argument('--data', type=str, help='Path to training data file')
+    args = parser.parse_args()
+    
     print("="*80)
     print("OVERFITTING DETECTION SUITE")
     print("="*80)
@@ -346,7 +365,25 @@ def main():
     print()
     
     # Load data
-    data_file = Path('ml/training_data/merged/hybrid_balanced_20260127_200506.json')
+    if args.data:
+        data_file = Path(args.data)
+    else:
+        # Try to find latest file
+        candidates = [
+            Path('ml/training_data/merged_training_data_20260129_112500.json'),
+            Path('ml/training_data/merged/hybrid_balanced_20260127_200506.json'),
+            Path('ml/training_data/merged_training_data_20251219_033523.json')
+        ]
+        data_file = None
+        for candidate in candidates:
+            if candidate.exists():
+                data_file = candidate
+                break
+        
+        if not data_file:
+            print("❌ No training data file found!")
+            return
+    
     if not data_file.exists():
         print(f"❌ Data file not found: {data_file}")
         return

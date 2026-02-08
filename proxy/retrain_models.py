@@ -196,10 +196,18 @@ def retrain_severity_predictor(training_data):
     
     valid_severities = ['critical', 'high', 'medium', 'low', 'info']
     
-    for finding in training_data:
+    for item in training_data:
+        # Handle both flat and nested formats
+        finding = item.get('finding', item)
         severity = finding.get('severity', '').lower()
+        
         if severity in valid_severities:
-            valid_data.append(finding)
+            # Severity predictor needs nested format with finding + context
+            if 'finding' not in item:
+                # Wrap flat format into nested
+                valid_data.append({'finding': finding, 'context': {}})
+            else:
+                valid_data.append(item)
             severity_labels.append(severity)
     
     if len(valid_data) < 10:
@@ -229,12 +237,13 @@ def retrain_severity_predictor(training_data):
         
         # Print results
         print("\n📊 Training Results:")
-        print(f"   Accuracy: {results.get('accuracy', 0):.2%}")
+        print(f"   Train Accuracy: {results.get('train_accuracy', 0):.2%}")
+        print(f"   Test Accuracy:  {results.get('test_accuracy', 0):.2%}")
         
         # Save model
         print(f"\n💾 Model saved to: {severity_predictor.model_path}")
         
-        if results.get('accuracy', 0) < 0.50:
+        if results.get('test_accuracy', 0) < 0.50:
             print("\n⚠️  WARNING: Severity predictor accuracy is low!")
             print("   This is normal if severity distribution is imbalanced.")
         else:
@@ -275,9 +284,16 @@ def test_improved_confidence(training_data):
     
     correct = 0
     high_confidence = 0
+    tested = 0
     
     for i, finding in enumerate(training_data[:sample_size], 1):
         true_label = finding.get('label', -1)
+        
+        # Skip unlabeled findings for accuracy test
+        if true_label == -1:
+            continue
+        
+        tested += 1
         
         # Predict
         is_fp, confidence = fp_reducer.predict(finding, context={})
@@ -296,7 +312,7 @@ def test_improved_confidence(training_data):
         accuracy_icon = '✅' if is_correct else '❌'
         confidence_icon = '✅' if confidence > 0.70 else '⚠️'
         
-        print(f"\n{i}. {finding.get('category', 'Unknown')[:50]}")
+        print(f"\n{tested}. {finding.get('category', 'Unknown')[:50]}")
         print(f"   True Label: {label_names.get(true_label, 'Unknown')}")
         print(f"   Predicted: {label_names.get(predicted_label, 'Unknown')}")
         print(f"   Confidence: {confidence:.2%}")
@@ -304,12 +320,16 @@ def test_improved_confidence(training_data):
         print(f"   Status: {confidence_icon} {'High confidence (>70%)' if confidence > 0.70 else 'Low confidence (<70%)'}")
     
     # Summary
-    accuracy = correct / sample_size * 100
-    high_conf_pct = high_confidence / sample_size * 100
-    
-    print(f"\n📊 Test Summary:")
-    print(f"   Accuracy: {correct}/{sample_size} ({accuracy:.0f}%)")
-    print(f"   High confidence: {high_confidence}/{sample_size} ({high_conf_pct:.0f}%)")
+    if tested > 0:
+        accuracy = correct / tested * 100
+        high_conf_pct = high_confidence / tested * 100
+        
+        print(f"\n📊 Test Summary:")
+        print(f"   Tested: {tested}/{sample_size} labeled samples")
+        print(f"   Accuracy: {correct}/{tested} ({accuracy:.0f}%)")
+        print(f"   High confidence: {high_confidence}/{tested} ({high_conf_pct:.0f}%)")
+    else:
+        print(f"\n⚠️  No labeled samples in first {sample_size} findings to test on.")
 
 def find_latest_training_data():
     """
@@ -324,6 +344,15 @@ def find_latest_training_data():
         merged_files = list(merged_dir.glob('normalized_training_data_*.json'))
         if merged_files:
             # Get latest by timestamp in filename
+            latest = max(merged_files, key=lambda p: p.stat().st_mtime)
+            return latest
+    
+    # Check for merged_training_data files in ml/training_data
+    training_data_dir = Path('ml/training_data')
+    if training_data_dir.exists():
+        merged_files = list(training_data_dir.glob('merged_training_data_*.json'))
+        if merged_files:
+            # Get latest by modification time
             latest = max(merged_files, key=lambda p: p.stat().st_mtime)
             return latest
     
@@ -411,7 +440,10 @@ Examples:
         print(f"\n📊 Results:")
         print(f"   FP Reducer Accuracy: {fp_results.get('accuracy', 0):.2%}")
         if severity_results:
-            print(f"   Severity Predictor Accuracy: {severity_results.get('accuracy', 0):.2%}")
+            print(f"   Severity Predictor Train: {severity_results.get('train_accuracy', 0):.2%}")
+            print(f"   Severity Predictor Test:  {severity_results.get('test_accuracy', 0):.2%}")
+        else:
+            print(f"   Severity Predictor: Skipped")
         
         print("\n" + "=" * 60)
         print("NEXT STEPS")

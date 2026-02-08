@@ -124,9 +124,16 @@ def auto_label_finding(finding: Dict[str, Any]) -> Dict[str, Any]:
 
 def normalize_owasp_finding(raw_finding: Dict[str, Any], scan_id: str) -> Dict[str, Any]:
     """Normalize OWASP ZAP finding to system format."""
+    # Extract severity from riskdesc (format: "High (Medium)" -> "High")
+    riskdesc = raw_finding.get('riskdesc', '')
+    if riskdesc and '(' in riskdesc:
+        severity = riskdesc.split('(')[0].strip()
+    else:
+        severity = raw_finding.get('severity', raw_finding.get('risk', 'Medium'))
+    
     finding = {
         'scan_id': scan_id,
-        'severity': raw_finding.get('severity', raw_finding.get('risk', 'Medium')),
+        'severity': severity,
         'category': raw_finding.get('name', raw_finding.get('alert', 'Unknown')),
         'description': raw_finding.get('description', raw_finding.get('desc', '')),
         'evidence': raw_finding.get('solution', raw_finding.get('solution', '')),
@@ -149,16 +156,38 @@ def normalize_owasp_finding(raw_finding: Dict[str, Any], scan_id: str) -> Dict[s
     
     return finding
 
-def normalize_acunetix_finding(raw_finding: Dict[str, Any], scan_id: str) -> Dict[str, Any]:
+def normalize_acunetix_finding(raw_finding: Dict[str, Any], scan_id: str, severity_map: Dict[str, int] = None) -> Dict[str, Any]:
     """Normalize Acunetix finding to system format."""
+    # Handle new Acunetix format with 'info' nested structure
+    info = raw_finding.get('info', raw_finding)
+    
+    # Map severity code to text
+    severity_text_map = {
+        0: 'Informational',
+        1: 'Low',
+        2: 'Medium',
+        3: 'High',
+        4: 'Critical'
+    }
+    
+    # Get severity from vt_id lookup
+    severity = 'Medium'  # default
+    if severity_map and info.get('vt_id'):
+        severity_code = severity_map.get(info.get('vt_id'))
+        if severity_code is not None:
+            severity = severity_text_map.get(severity_code, 'Medium')
+    else:
+        # Fallback to direct fields
+        severity = info.get('severity', raw_finding.get('Severity', 'Medium'))
+    
     finding = {
         'scan_id': scan_id,
-        'severity': raw_finding.get('Severity', raw_finding.get('severity', 'Medium')),
-        'category': raw_finding.get('Name', raw_finding.get('name', 'Unknown')),
-        'description': raw_finding.get('Description', raw_finding.get('description', '')),
-        'evidence': raw_finding.get('Recommendation', raw_finding.get('recommendation', '')),
-        'url': raw_finding.get('AffectedUrl', raw_finding.get('url', '')),
-        'cvss_score': float(raw_finding.get('Cvss31Score', raw_finding.get('cvss_score', 0))),
+        'severity': severity,
+        'category': info.get('name', info.get('vt_name', raw_finding.get('Name', 'Unknown'))),
+        'description': info.get('description', raw_finding.get('Description', '')),
+        'evidence': info.get('recommendation', raw_finding.get('Recommendation', '')),
+        'url': info.get('url', raw_finding.get('AffectedUrl', raw_finding.get('url', ''))),
+        'cvss_score': float(info.get('cvss', {}).get('score', 0) if isinstance(info.get('cvss'), dict) else info.get('cvss_score', raw_finding.get('Cvss31Score', 0))),
         'risk_score': 0,
         'priority': 3,
         'first_seen': datetime.now().isoformat(),
@@ -167,10 +196,10 @@ def normalize_acunetix_finding(raw_finding: Dict[str, Any], scan_id: str) -> Dic
         'scan_type': 'acunetix',
         'scan_timestamp': datetime.now().isoformat() + 'Z',
         'metadata': {
-            'recommendation': raw_finding.get('Recommendation', ''),
-            'details': raw_finding.get('Details', ''),
-            'type': raw_finding.get('Type', ''),
-            'confirmed': raw_finding.get('Confirmed', False)
+            'recommendation': info.get('recommendation', raw_finding.get('Recommendation', '')),
+            'details': info.get('details', raw_finding.get('Details', '')),
+            'type': info.get('type', raw_finding.get('Type', '')),
+            'confirmed': info.get('confirmed', raw_finding.get('Confirmed', False))
         }
     }
     
@@ -179,8 +208,8 @@ def normalize_acunetix_finding(raw_finding: Dict[str, Any], scan_id: str) -> Dic
 def process_all_data():
     """Process all data from OWASP and Acunetix folders."""
     base_path = Path('ml/training_data')
-    owasp_path = base_path / 'real_data' / 'OWASP_ZAP_Data'
-    acunetix_path = base_path / 'real_data' / 'Acunnetix_Data'
+    owasp_path = base_path / 'OWASP_ZAP_Data'
+    acunetix_path = base_path / 'Acunnetix_Data'
     
     all_findings = []
     seen_hashes: Set[str] = set()
@@ -224,30 +253,29 @@ def process_all_data():
                 
                 for alert in alerts:
                     finding = normalize_owasp_finding(alert, scan_id)
-                    finding_hash = calculate_hash(finding)
                     
-                    if finding_hash not in seen_hashes:
-                        seen_hashes.add(finding_hash)
-                        
-                        # Auto-label
-                        label_info = auto_label_finding(finding)
-                        
-                        labeled_finding = {
-                            'finding': finding,
-                            **label_info
-                        }
-                        
-                        all_findings.append(labeled_finding)
-                        stats['total_findings'] += 1
-                        
-                        if label_info['label'] == 0:
-                            stats['auto_labeled_tp'] += 1
-                        elif label_info['label'] == 1:
-                            stats['auto_labeled_fp'] += 1
-                        else:
-                            stats['needs_review'] += 1
+                    # SKIP DEDUPLICATION - Keep all findings
+                    # finding_hash = calculate_hash(finding)
+                    # if finding_hash not in seen_hashes:
+                    #     seen_hashes.add(finding_hash)
+                    
+                    # Auto-label
+                    label_info = auto_label_finding(finding)
+                    
+                    labeled_finding = {
+                        'finding': finding,
+                        **label_info
+                    }
+                    
+                    all_findings.append(labeled_finding)
+                    stats['total_findings'] += 1
+                    
+                    if label_info['label'] == 0:
+                        stats['auto_labeled_tp'] += 1
+                    elif label_info['label'] == 1:
+                        stats['auto_labeled_fp'] += 1
                     else:
-                        stats['duplicates'] += 1
+                        stats['needs_review'] += 1
                         
             except Exception as e:
                 print(f"   ⚠️  Error loading {json_file.name}: {e}")
@@ -269,15 +297,47 @@ def process_all_data():
                 scan_id = f"acunetix_{json_file.stem}"
                 
                 # Handle different Acunetix formats
-                vulnerabilities = data.get('Vulnerabilities', data.get('vulnerabilities', []))
-                
-                for vuln in vulnerabilities:
-                    finding = normalize_acunetix_finding(vuln, scan_id)
-                    finding_hash = calculate_hash(finding)
-                    
-                    if finding_hash not in seen_hashes:
-                        seen_hashes.add(finding_hash)
+                if 'export' in data and 'scans' in data['export']:
+                    # New Acunetix export format
+                    scans = data['export']['scans']
+                    for scan in scans:
+                        # Build severity map from vulnerability_types
+                        severity_map = {}
+                        for vt in scan.get('vulnerability_types', []):
+                            vt_id = vt.get('vt_id')
+                            severity_code = vt.get('severity')
+                            if vt_id and severity_code is not None:
+                                severity_map[vt_id] = severity_code
                         
+                        vulnerabilities = scan.get('vulnerabilities', [])
+                        for vuln in vulnerabilities:
+                            finding = normalize_acunetix_finding(vuln, scan_id, severity_map)
+                            
+                            # SKIP DEDUPLICATION - Keep all findings
+                            # Auto-label
+                            label_info = auto_label_finding(finding)
+                            
+                            labeled_finding = {
+                                'finding': finding,
+                                **label_info
+                            }
+                            
+                            all_findings.append(labeled_finding)
+                            stats['total_findings'] += 1
+                            
+                            if label_info['label'] == 0:
+                                stats['auto_labeled_tp'] += 1
+                            elif label_info['label'] == 1:
+                                stats['auto_labeled_fp'] += 1
+                            else:
+                                stats['needs_review'] += 1
+                else:
+                    # Old format
+                    vulnerabilities = data.get('Vulnerabilities', data.get('vulnerabilities', []))
+                    for vuln in vulnerabilities:
+                        finding = normalize_acunetix_finding(vuln, scan_id, None)
+                        
+                        # SKIP DEDUPLICATION - Keep all findings
                         # Auto-label
                         label_info = auto_label_finding(finding)
                         
@@ -295,8 +355,6 @@ def process_all_data():
                             stats['auto_labeled_fp'] += 1
                         else:
                             stats['needs_review'] += 1
-                    else:
-                        stats['duplicates'] += 1
                         
             except Exception as e:
                 print(f"   ⚠️  Error loading {json_file.name}: {e}")
