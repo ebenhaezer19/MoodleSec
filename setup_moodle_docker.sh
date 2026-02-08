@@ -35,25 +35,23 @@ services:
       - moodle-network
 
   moodle:
-    image: bitnami/moodle:3.9.7
+    image: moodlehq/moodle-php-apache:3.9
     container_name: moodle-vuln
     ports:
-      - "8080:8080"
-      - "8443:8443"
+      - "8080:80"
     environment:
+      MOODLE_DATABASE_TYPE: mariadb
       MOODLE_DATABASE_HOST: mariadb
-      MOODLE_DATABASE_PORT_NUMBER: 3306
       MOODLE_DATABASE_NAME: moodle
       MOODLE_DATABASE_USER: moodleuser
       MOODLE_DATABASE_PASSWORD: moodlepass
-      MOODLE_USERNAME: admin
-      MOODLE_PASSWORD: Admin123!
-      MOODLE_EMAIL: admin@localhost.com
-      MOODLE_SITE_NAME: "MoodleSec Test Lab"
-      ALLOW_EMPTY_PASSWORD: 'yes'
+      MOODLE_ADMIN_USER: admin
+      MOODLE_ADMIN_PASSWORD: Admin123!
+      MOODLE_ADMIN_EMAIL: admin@localhost.com
+      MOODLE_WWWROOT: http://localhost:8080
     volumes:
-      - moodle_data:/bitnami/moodle
-      - moodledata_data:/bitnami/moodledata
+      - moodle_data:/var/www/html
+      - moodledata_data:/var/moodledata
     depends_on:
       - mariadb
     networks:
