@@ -75,4 +75,27 @@ def test_get_status(monkeypatch):
     assert status["version"] == "2.1"
 
 
+# integration test: runs only when a ZAP instance is reachable on localhost:8080
+# mark with `-m integration` to execute explicitly
+
+import socket
+
+
+def is_zap_listening(host: str = "localhost", port: int = 8080) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=1):
+            return True
+    except Exception:
+        return False
+
+
+@pytest.mark.integration
+def test_live_zap_connection():
+    """Attempt to contact a real ZAP API; skip if not running."""
+    if not is_zap_listening():
+        pytest.skip("ZAP not running on localhost:8080")
+    client = ZAPClient(host="localhost", port=8080, api_key="")
+    status = client.get_status()
+    assert status.get("status") == "connected"
+
 # more tests could follow
