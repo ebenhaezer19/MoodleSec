@@ -38,6 +38,8 @@ def test_invalid_config():
 
 
 def test_request_retries(monkeypatch):
+    # prevent actual connection during init
+    monkeypatch.setattr(ZAPClient, "_validate_connection", lambda self: {})
     client = ZAPClient(host="localhost", port=8080, api_key="")
     # override session with dummy that returns 500 twice then 200
     client.session = DummySession([
@@ -52,6 +54,7 @@ def test_request_retries(monkeypatch):
 
 
 def test_timeout(monkeypatch):
+    monkeypatch.setattr(ZAPClient, "_validate_connection", lambda self: {})
     client = ZAPClient(host="localhost", port=8080, api_key="")
     def raise_timeout(*args, **kwargs):
         raise requests.Timeout()
@@ -63,6 +66,7 @@ def test_timeout(monkeypatch):
 
 
 def test_get_status(monkeypatch):
+    monkeypatch.setattr(ZAPClient, "_validate_connection", lambda self: {})
     client = ZAPClient(host="localhost", port=8080, api_key="")
     # stub get_version
     monkeypatch.setattr(client, "get_version", lambda: {"version": "2.1"})

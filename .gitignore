@@ -34,6 +34,9 @@ logs/
 *.swp
 *.swo
 
+# WSL virtual environment
+.venv_wsl/
+
 # OS
 .DS_Store
 Thumbs.db
