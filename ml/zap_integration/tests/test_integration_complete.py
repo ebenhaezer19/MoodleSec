@@ -18,9 +18,11 @@ def mock_zap_manager():
         
         # Mock all components
         manager.client.get_status = Mock(return_value={"status": "connected"})
+        manager.spider_manager.start_spider = Mock(return_value=("spider_scan_1", 100.0))
         manager.spider_manager.wait_for_completion = Mock(
             return_value=(True, ["http://target/page1", "http://target/page2"], 30.0)
         )
+        manager.ascan_manager.start_ascan = Mock(return_value=("ascan_scan_1", 100.0))
         manager.ascan_manager.wait_for_scan_completion = Mock(
             return_value=(True, [
                 {"id": "1", "type": "SQL Injection", "risk": "High", "url": "http://target/page1"},
