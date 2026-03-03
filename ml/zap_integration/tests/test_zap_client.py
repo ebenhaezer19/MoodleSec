@@ -94,7 +94,7 @@ def test_live_zap_connection():
     """Attempt to contact a real ZAP API; skip if not running."""
     if not is_zap_listening():
         pytest.skip("ZAP not running on localhost:8080")
-    client = ZAPClient(host="localhost", port=8080, api_key="")
+    client = ZAPClient(host="localhost", port=8080, api_key="1qlbij76v3j9c6ail8d0locm24")
     status = client.get_status()
     assert status.get("status") == "connected"
 
