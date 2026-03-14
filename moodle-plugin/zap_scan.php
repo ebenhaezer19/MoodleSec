@@ -88,7 +88,7 @@ $form_html = <<<HTML
     </div>
     <div class="card-body">
         <form method="post" class="form-inline">
-            {$OUTPUT->sesskey_form_field()}
+            <input type="hidden" name="sesskey" value="' . sesskey() . '">
             
             <div class="form-group mb-2 mr-2">
                 <label for="scan_type" class="mr-2">Scan Type:</label>

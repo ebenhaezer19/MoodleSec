@@ -301,7 +301,7 @@ function local_security_dashboard_store_scan($scan_result) {
  */
 function local_security_dashboard_get_scan($scan_id) {
     global $DB;
-    return $DB->get_record('local_security_dashboard_scans', ['id' => $scan_id]);
+    return $DB->get_record('local_security_scans', ['id' => $scan_id]);
 }
 
 /**
@@ -309,8 +309,8 @@ function local_security_dashboard_get_scan($scan_id) {
  */
 function local_security_dashboard_get_scan_findings($scan_id) {
     global $DB;
-    return $DB->get_records('local_security_dashboard_findings', 
-        ['scan_id' => $scan_id], 'sequence ASC');
+    return $DB->get_records('local_security_findings', 
+        ['scan_id' => $scan_id], 'severity DESC, id ASC');
 }
 
 /**
@@ -318,7 +318,7 @@ function local_security_dashboard_get_scan_findings($scan_id) {
  */
 function local_security_dashboard_get_recent_scans($limit = 10) {
     global $DB;
-    return $DB->get_records('local_security_dashboard_scans', 
+    return $DB->get_records('local_security_scans', 
         [], 'timecreated DESC', '*', 0, $limit);
 }
 
@@ -329,7 +329,7 @@ function local_security_dashboard_get_vulnerability_trends($start_time, $end_tim
     global $DB;
     
     // Get all scans in date range
-    $scans = $DB->get_records_select('local_security_dashboard_scans',
+    $scans = $DB->get_records_select('local_security_scans',
         'timecreated >= ? AND timecreated <= ?',
         [$start_time, $end_time],
         'timecreated ASC');
@@ -343,9 +343,9 @@ function local_security_dashboard_get_vulnerability_trends($start_time, $end_tim
     
     foreach ($scans as $scan) {
         $total_vuln += $scan->total_findings;
-        $high_count += $scan->high_risk_findings;
-        $medium_count += $scan->medium_risk_findings;
-        $low_count += $scan->low_risk_findings;
+        $high_count += $scan->high_count;
+        $medium_count += $scan->medium_count;
+        $low_count += $scan->low_count;
         
         $day = date('Y-m-d', $scan->timecreated);
         if (!isset($daily_data[$day])) {
@@ -357,9 +357,9 @@ function local_security_dashboard_get_vulnerability_trends($start_time, $end_tim
             ];
         }
         
-        $daily_data[$day]['high'] += $scan->high_risk_findings;
-        $daily_data[$day]['medium'] += $scan->medium_risk_findings;
-        $daily_data[$day]['low'] += $scan->low_risk_findings;
+        $daily_data[$day]['high'] += $scan->high_count;
+        $daily_data[$day]['medium'] += $scan->medium_count;
+        $daily_data[$day]['low'] += $scan->low_count;
     }
     
     return [
@@ -379,12 +379,15 @@ function local_security_dashboard_get_vulnerability_trends($start_time, $end_tim
 function local_security_dashboard_get_vulnerability_types($start_time, $end_time) {
     global $DB;
     
-    $sql = "SELECT type, COUNT(*) as count, AVG(CASE WHEN risk='High' THEN 3 
-            WHEN risk='Medium' THEN 2 WHEN risk='Low' THEN 1 ELSE 0 END) as avg_severity_num
-            FROM {local_security_dashboard_findings} f
-            JOIN {local_security_dashboard_scans} s ON s.id = f.scan_id
+    $sql = "SELECT category as type, COUNT(*) as count, 
+            AVG(CASE WHEN severity='High' THEN 3 
+                WHEN severity='Medium' THEN 2 
+                WHEN severity='Low' THEN 1 
+                ELSE 0 END) as avg_severity_num
+            FROM {local_security_findings} f
+            JOIN {local_security_scans} s ON s.id = f.scan_id
             WHERE s.timecreated >= ? AND s.timecreated <= ?
-            GROUP BY type
+            GROUP BY category
             ORDER BY count DESC";
     
     $records = $DB->get_records_sql($sql, [$start_time, $end_time]);
@@ -421,15 +424,15 @@ function local_security_dashboard_get_monthly_statistics($start_time, $end_time)
         $month_start = strtotime('first day of', $current);
         $month_end = strtotime('last day of', $current);
         
-        $scans = $DB->get_records_select('local_security_dashboard_scans',
+        $scans = $DB->get_records_select('local_security_scans',
             'timecreated >= ? AND timecreated <= ?',
             [$month_start, $month_end]);
         
         $high = $medium = $low = 0;
         foreach ($scans as $scan) {
-            $high += $scan->high_risk_findings;
-            $medium += $scan->medium_risk_findings;
-            $low += $scan->low_risk_findings;
+            $high += $scan->high_count;
+            $medium += $scan->medium_count;
+            $low += $scan->low_count;
         }
         
         $stats[] = [
@@ -452,13 +455,13 @@ function local_security_dashboard_get_monthly_statistics($start_time, $end_time)
 function local_security_dashboard_get_compliance_report($type = 'all', $start_date = [], $end_date = []) {
     global $DB;
     
-    $latest_scan = $DB->get_records('local_security_dashboard_scans', [], 'timecreated DESC', '*', 0, 1);
+    $latest_scan = $DB->get_records('local_security_scans', [], 'timecreated DESC', '*', 0, 1);
     $last_scan = reset($latest_scan);
     
     return [
         'overall_score' => 72,
         'score_class' => 'bg-warning',
-        'high_risk_count' => $last_scan->high_risk_findings ?? 0,
+        'high_risk_count' => $last_scan->high_count ?? 0,
         'resolved_issues' => 8,
         'last_scan_date' => $last_scan ? userdate($last_scan->timecreated) : 'Never',
         'framework' => 'OWASP Top 10 2021',
