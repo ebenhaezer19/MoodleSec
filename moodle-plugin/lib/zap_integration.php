@@ -92,6 +92,9 @@ function local_security_dashboard_zap_api_call($endpoint, $params = [], $method 
     
     $api_key = get_config('local_security_dashboard', 'zap_api_key') ?? 'ha6dlibv9t5ttps7b1jut91i4d';
     
+    // DEBUG: Log API key being used
+    error_log("DEBUG ZAP API: Using API key: " . substr($api_key, 0, 5) . "..." . substr($api_key, -5));
+    
     $url = "http://$host:$port/JSON/$endpoint";
     
     // Add API key to params
@@ -184,6 +187,8 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
             'recurse' => 'true',
             'policy' => get_config('local_security_dashboard', 'scan_policy') ?? 'medium'
         ], 'GET', $host, $port);
+        
+        error_log("DEBUG ZAP ASCAN: Result = " . json_encode($ascan_result));
         
         $ascan_id = $ascan_result['scan'] ?? null;
         if ($ascan_id === null || $ascan_id === '') {
