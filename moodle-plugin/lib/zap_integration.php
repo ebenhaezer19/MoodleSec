@@ -90,7 +90,7 @@ function local_security_dashboard_zap_api_call($endpoint, $params = [], $method 
         $port = get_config('local_security_dashboard', 'zap_port') ?? '8080';
     }
     
-    $api_key = get_config('local_security_dashboard', 'zap_api_key') ?? '1qlbij76v3j9c6ail8d0locm24';
+    $api_key = get_config('local_security_dashboard', 'zap_api_key') ?? 'ha6dlibv9t5ttps7b1jut91i4d';
     
     $url = "http://$host:$port/JSON/$endpoint";
     
@@ -140,62 +140,67 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
     
     $host = local_security_dashboard_get_zap_host();
     $port = get_config('local_security_dashboard', 'zap_port') ?? '8080';
+    $start_time = time();
+    $spider_id = null;
+    $ascan_id = null;
     
     try {
-        // Start spider
-        $spider_result = local_security_dashboard_zap_api_call('spider/action/scan', [
-            'url' => $target_url,
-            'contextid' => 1,
-            'contextname' => 'Moodle',
-            'depth' => get_config('local_security_dashboard', 'scan_spider_depth') ?? 3
-        ], 'GET', $host, $port);
-        
-        $spider_id = $spider_result['scan'] ?? null;
-        if (!$spider_id) {
-            throw new Exception('Failed to start spider scan');
-        }
-        
-        // Wait for spider to complete (with timeout)
-        $max_wait = 300; // 5 minutes
-        $wait_time = 0;
-        $poll_interval = 5;
-        
-        while ($wait_time < $max_wait) {
-            $status = local_security_dashboard_zap_api_call('spider/view/status', [
-                'scanid' => $spider_id
+        // Try spider scan (optional - may fail on some ZAP versions)
+        try {
+            $spider_result = local_security_dashboard_zap_api_call('spider/action/scan', [
+                'url' => $target_url,
+                'maxdepth' => get_config('local_security_dashboard', 'scan_spider_depth') ?? 3
             ], 'GET', $host, $port);
             
-            if ($status['status'] == 100) {
-                break;
-            }
+            $spider_id = $spider_result['scan'] ?? null;
             
-            sleep($poll_interval);
-            $wait_time += $poll_interval;
+            // Wait for spider if started
+            if ($spider_id !== null && $spider_id !== '') {
+                $max_wait = 300; // 5 minutes
+                $wait_time = 0;
+                $poll_interval = 5;
+                
+                while ($wait_time < $max_wait) {
+                    $status = local_security_dashboard_zap_api_call('spider/view/status', [
+                        'scanid' => $spider_id
+                    ], 'GET', $host, $port);
+                    
+                    if (isset($status['status']) && $status['status'] == 100) {
+                        break;
+                    }
+                    
+                    sleep($poll_interval);
+                    $wait_time += $poll_interval;
+                }
+            }
+        } catch (Exception $spider_err) {
+            // Spider is optional, continue with active scan only
+            error_log('ZAP Spider failed: ' . $spider_err->getMessage());
         }
         
-        // Start active scan
+        // Start active scan (required)
         $ascan_result = local_security_dashboard_zap_api_call('ascan/action/scan', [
             'url' => $target_url,
-            'contextid' => 1,
-            'userid' => 1,
+            'recurse' => 'true',
             'policy' => get_config('local_security_dashboard', 'scan_policy') ?? 'medium'
         ], 'GET', $host, $port);
         
         $ascan_id = $ascan_result['scan'] ?? null;
-        if (!$ascan_id) {
-            throw new Exception('Failed to start active scan');
+        if ($ascan_id === null || $ascan_id === '') {
+            throw new Exception('Failed to start active scan - no scan ID returned');
         }
         
         // Wait for ascan to complete
         $wait_time = 0;
         $max_wait = 900; // 15 minutes
+        $poll_interval = 10;
         
         while ($wait_time < $max_wait) {
             $status = local_security_dashboard_zap_api_call('ascan/view/status', [
                 'scanid' => $ascan_id
             ], 'GET', $host, $port);
             
-            if ($status['status'] == 100) {
+            if (isset($status['status']) && $status['status'] == 100) {
                 break;
             }
             
@@ -203,12 +208,16 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
             $wait_time += $poll_interval;
         }
         
-        // Get alerts
-        $alerts_result = local_security_dashboard_zap_api_call('core/view/alerts', [
-            'baseurl' => $target_url
-        ], 'GET', $host, $port);
-        
-        $alerts = $alerts_result['alerts'] ?? [];
+        // Get alerts (may return empty if no vulnerabilities found)
+        try {
+            $alerts_result = local_security_dashboard_zap_api_call('core/view/alerts', [
+                'baseurl' => $target_url
+            ], 'GET', $host, $port);
+            $alerts = $alerts_result['alerts'] ?? [];
+        } catch (Exception $e) {
+            // If alerts endpoint fails, continue with empty alerts
+            $alerts = [];
+        }
         
         // Apply ML filtering if enabled
         if (get_config('local_security_dashboard', 'ml_filtering_enabled')) {
@@ -227,7 +236,7 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
             else $low_count++;
         }
         
-        $duration = $wait_time;
+        $duration = time() - $start_time;
         
         return [
             'success' => true,
@@ -241,14 +250,16 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
             'low_risk_findings' => $low_count,
             'alerts' => $alerts,
             'duration' => $duration,
-            'timestamp' => time(),
+            'timestamp' => $start_time,
             'scan_id' => null  // Will be set after DB insertion
         ];
         
     } catch (Exception $e) {
         return [
             'success' => false,
-            'error' => $e->getMessage()
+            'error' => $e->getMessage(),
+            'target_url' => $target_url,
+            'scan_type' => $scan_type
         ];
     }
 }

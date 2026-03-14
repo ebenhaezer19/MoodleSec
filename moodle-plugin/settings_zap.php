@@ -40,7 +40,7 @@ if ($hassiteconfig) {
     $settings_zap->add(new admin_setting_configpasswordunmask('local_security_dashboard/zap_api_key',
         new lang_string('zap_api_key', 'local_security_dashboard'),
         new lang_string('zap_api_key_desc', 'local_security_dashboard'),
-        '1qlbij76v3j9c6ail8d0locm24'));
+        'ha6dlibv9t5ttps7b1jut91i4d'));
     
     // ZAP Enabled
     $settings_zap->add(new admin_setting_configcheckbox('local_security_dashboard/zap_enabled',
