@@ -40,8 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $result = local_security_dashboard_trigger_zap_scan($scan_type, $target_url);
         
         if ($result['success']) {
-            // Store scan in database
-            local_security_dashboard_store_scan($result);
+            // Store scan in database and get scan_id
+            $scan_id = local_security_dashboard_store_scan($result);
             
             // Send notification if high-risk findings
             if ($result['total_findings'] > 0) {
@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             redirect(new moodle_url('/local/security_dashboard/zap_results.php', 
-                ['scan_id' => $result['scan_id']]));
+                ['scan_id' => $scan_id]));
         } else {
             $error = $result['error'];
         }

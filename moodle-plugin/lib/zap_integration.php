@@ -202,7 +202,8 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
             'low_risk_findings' => $low_count,
             'alerts' => $alerts,
             'duration' => $duration,
-            'timestamp' => time()
+            'timestamp' => time(),
+            'scan_id' => null  // Will be set after DB insertion
         ];
         
     } catch (Exception $e) {
@@ -249,42 +250,47 @@ function local_security_dashboard_apply_ml_filtering($alerts) {
  * Store scan results in database
  */
 function local_security_dashboard_store_scan($scan_result) {
-    global $DB;
+    global $DB, $USER;
     
     $record = new stdClass();
-    $record->scan_type = $scan_result['scan_type'];
+    $record->scan_id = uniqid('zap_');
     $record->target_url = $scan_result['target_url'];
-    $record->spider_scan_id = $scan_result['spider_scan_id'];
-    $record->ascan_scan_id = $scan_result['ascan_scan_id'];
+    $record->scan_path = '/';
+    $record->scan_method = 'GET';
+    $record->scan_type = $scan_result['scan_type'];
     $record->total_findings = $scan_result['total_findings'];
-    $record->high_risk_findings = $scan_result['high_risk_findings'];
-    $record->medium_risk_findings = $scan_result['medium_risk_findings'];
-    $record->low_risk_findings = $scan_result['low_risk_findings'];
-    $record->duration = $scan_result['duration'];
+    $record->critical_count = 0;  // ZAP Risk levels: High, Medium, Low, Info
+    $record->high_count = $scan_result['high_risk_findings'];
+    $record->medium_count = $scan_result['medium_risk_findings'];
+    $record->low_count = $scan_result['low_risk_findings'];
+    $record->info_count = 0;
+    $record->scan_duration = $scan_result['duration'];
     $record->status = 'completed';
+    $record->triggered_by = $USER->id;
     $record->timecreated = $scan_result['timestamp'];
     $record->timemodified = $scan_result['timestamp'];
     
-    $scan_id = $DB->insert_record('local_security_dashboard_scans', $record);
+    $scan_id = $DB->insert_record('local_security_scans', $record);
     
     // Store individual findings
     foreach ($scan_result['alerts'] as $idx => $alert) {
         $finding = new stdClass();
         $finding->scan_id = $scan_id;
-        $finding->sequence = $idx;
-        $finding->type = $alert['type'] ?? 'Unknown';
-        $finding->risk = $alert['risk'] ?? 'Low';
-        $finding->url = $alert['url'] ?? '';
-        $finding->method = $alert['method'] ?? 'GET';
-        $finding->evidence = $alert['evidence'] ?? '';
+        $finding->severity = $alert['risk'] ?? 'Low';
+        $finding->category = $alert['type'] ?? 'Unknown';
+        $finding->title = $alert['name'] ?? $alert['type'] ?? 'Unknown Vulnerability';
         $finding->description = $alert['description'] ?? '';
-        $finding->solution = $alert['solution'] ?? '';
-        $finding->reference = $alert['reference'] ?? '';
-        $finding->cwe_id = $alert['cwe_id'] ?? 0;
-        $finding->wascid = $alert['wascid'] ?? 0;
+        $finding->evidence = $alert['evidence'] ?? '';
+        $finding->cvss_score = null;
+        $finding->cvss_vector = '';
+        $finding->cwe_id = $alert['cwe_id'] ?? '';
+        $finding->remediation = $alert['solution'] ?? '';
+        $finding->status = 'open';
+        $finding->false_positive = 0;
         $finding->timecreated = $scan_result['timestamp'];
+        $finding->timemodified = $scan_result['timestamp'];
         
-        $DB->insert_record('local_security_dashboard_findings', $finding);
+        $DB->insert_record('local_security_findings', $finding);
     }
     
     return $scan_id;
@@ -503,16 +509,14 @@ function local_security_dashboard_notify_findings($result) {
         return;
     }
     
-    if ($result['high_risk_findings'] === 0) {
+    if ($result['high_risk_findings'] == 0) {
         return;
     }
     
-    $recipients = get_config('local_security_dashboard', 'email_recipients');
-    if (!$recipients) {
+    $admin_users = get_users_by_capability(context_system::instance(), 'local/security_dashboard:manage_scans');
+    if (!$admin_users) {
         return;
     }
-    
-    $emails = explode("\n", $recipients);
     
     $subject = "Security Alert: {$result['high_risk_findings']} High-Risk Vulnerabilities Found";
     $message = "A ZAP scan on {$result['target_url']} found {$result['high_risk_findings']} high-risk vulnerabilities.\n\n";
@@ -521,10 +525,7 @@ function local_security_dashboard_notify_findings($result) {
     $message .= "Low risk: {$result['low_risk_findings']}\n\n";
     $message .= "Please review the results in the Security Dashboard.";
     
-    foreach ($emails as $email) {
-        $email = trim($email);
-        if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            email_to_user(null, null, $subject, $message, $message, $email);
-        }
+    foreach ($admin_users as $user) {
+        email_to_user($user, get_admin(), $subject, $message, $message);
     }
 }

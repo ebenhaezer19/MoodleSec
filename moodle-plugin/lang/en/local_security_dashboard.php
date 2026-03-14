@@ -87,6 +87,7 @@ $string['email_recipients_desc'] = 'Email addresses to notify (one per line)';
 $string['zap_scan'] = 'ZAP Vulnerability Scan';
 $string['zap_scan_title'] = 'Trigger ZAP Scan';
 $string['zap_status'] = 'ZAP Server Status';
+$string['connection_status'] = 'Connection Status';
 $string['zap_connected'] = 'Connected';
 $string['zap_disconnected'] = 'Disconnected';
 $string['zap_version'] = 'ZAP Version';
