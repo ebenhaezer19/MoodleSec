@@ -3,10 +3,10 @@
  * English language strings for Security Dashboard
  *
  * @package    local_security_dashboard
- * @copyright  2024 Your Name
+ * @copyright  2024 Krisopras & Nathanael
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-
+ 
 $string['pluginname'] = 'Security Dashboard';
 $string['security_dashboard'] = 'Security Dashboard';
 $string['dashboard'] = 'Dashboard';
@@ -152,3 +152,18 @@ $string['event_details'] = 'Details';
 $string['event_time'] = 'Time';
 $string['cert_export'] = 'Export Certificate';
 $string['export_html'] = 'Export as HTML';
+
+// ZAP Settings 
+$string['zap_configuration'] = 'ZAP Configuration';
+$string['zap_server_settings'] = 'ZAP Server Settings';
+$string['zap_server_settings_desc'] = 'Settings for ZAP server integration.';
+$string['zap_enabled'] = 'Enable ZAP Integration';
+$string['zap_enabled_desc'] = 'Enable or disable ZAP vulnerability scanning integration.';
+$string['zap_disabled'] = 'ZAP integration is currently disabled. Please enable it in the settings to use ZAP scanning features.';
+$string['scan_settings_desc'] = 'Configure scanning behavior and policies.';
+$string['scan_authenticated_desc'] = 'Perform authenticated scans using test credentials.';
+$string['scan_test_user'] = 'Test Username';
+$string['scan_test_user_desc'] = 'Username to use for authenticated scans.';
+$string['ml_filtering'] = 'Machine Learning Filtering';
+$string['ml_filtering_desc'] = 'Configure machine learning settings to filter false positives.';
+$string['notification_settings_desc'] = 'Configure notifications for security findings.';

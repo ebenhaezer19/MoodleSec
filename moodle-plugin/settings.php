@@ -3,11 +3,12 @@
  * Settings for Security Dashboard plugin
  *
  * @package    local_security_dashboard
- * @copyright  2024 Your Name
+ * @copyright  2024 Krisopras & Nathanael
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 defined('MOODLE_INTERNAL') || die();
+
 
 if ($hassiteconfig) {
     // Don't create $settings if we're adding a category
@@ -120,16 +121,10 @@ if ($hassiteconfig) {
     // ));
 
     $ADMIN->add('local_security_dashboard', $settingspage);
-}
 
-
-// Include ZAP Integration settings if exists
-$zap_settings_file = $CFG->dirroot . '/local/security_dashboard/settings_zap.php';
-if (file_exists($zap_settings_file)) {
-    require_once($zap_settings_file);
-}
-
-// Include ZAP Integration settings
-$zap_file = $CFG->dirroot . '/local/security_dashboard/settings_zap.php';
-if (file_exists($zap_file)) { require_once($zap_file); }
+    // Include ZAP Integration settings
+    $zap_settings_file = $CFG->dirroot . '/local/security_dashboard/settings_zap.php';
+    if (file_exists($zap_settings_file)) {
+        require_once($zap_settings_file);
+    }
 }

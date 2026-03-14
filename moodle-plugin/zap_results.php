@@ -13,7 +13,12 @@ require_once($CFG->libdir . '/adminlib.php');
 require_login();
 require_capability('local/security_dashboard:view', context_system::instance());
 
-$scan_id = required_param('scan_id', PARAM_INT);
+$scan_id = optional_param('scan_id', 0, PARAM_INT);
+
+// If no scan_id provided, redirect to dashboard or show message
+if (!$scan_id) {
+    redirect(new moodle_url('/local/security_dashboard/index.php'));
+}
 
 $PAGE->set_url(new moodle_url('/local/security_dashboard/zap_results.php', ['scan_id' => $scan_id]));
 $PAGE->set_context(context_system::instance());

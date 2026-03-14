@@ -95,12 +95,20 @@ $high_data = [];
 $medium_data = [];
 $low_data = [];
 
-foreach ($trends['daily_data'] as $day) {
-    $dates[] = date('M d', $day['date']);
-    $high_data[] = $day['high'];
-    $medium_data[] = $day['medium'];
-    $low_data[] = $day['low'];
+if (!empty($trends['daily_data'])) {
+    foreach ($trends['daily_data'] as $day) {
+        $dates[] = date('M d', (int)$day['date']);
+        $high_data[] = (int)$day['high'];
+        $medium_data[] = (int)$day['medium'];
+        $low_data[] = (int)$day['low'];
+    }
 }
+
+// Convert to JSON for JavaScript
+$dates_json = json_encode($dates);
+$high_json = json_encode($high_data);
+$medium_json = json_encode($medium_data);
+$low_json = json_encode($low_data);
 
 $chart_html = <<<HTML
 <canvas id="trendChart"></canvas>
@@ -111,25 +119,25 @@ const ctx = document.getElementById('trendChart').getContext('2d');
 const trendChart = new Chart(ctx, {
     type: 'line',
     data: {
-        labels: ['". implode("', '", $dates) . "'],
+        labels: $dates_json,
         datasets: [
             {
                 label: 'High Risk',
-                data: [". implode(",", $high_data) . "],
+                data: $high_json,
                 borderColor: '#dc3545',
                 backgroundColor: 'rgba(220, 53, 69, 0.1)',
                 tension: 0.4
             },
             {
                 label: 'Medium Risk',
-                data: [". implode(",", $medium_data) . "],
+                data: $medium_json,
                 borderColor: '#ffc107',
                 backgroundColor: 'rgba(255, 193, 7, 0.1)',
                 tension: 0.4
             },
             {
                 label: 'Low Risk',
-                data: [". implode(",", $low_data) . "],
+                data: $low_json,
                 borderColor: '#17a2b8',
                 backgroundColor: 'rgba(23, 162, 184, 0.1)',
                 tension: 0.4

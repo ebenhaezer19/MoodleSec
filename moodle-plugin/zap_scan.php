@@ -9,6 +9,7 @@
 
 require_once(__DIR__ . '/../../config.php');
 require_once($CFG->libdir . '/adminlib.php');
+require_once($CFG->dirroot . '/local/security_dashboard/lib/zap_integration.php');
 
 require_login();
 require_capability('local/security_dashboard:scan', context_system::instance());
@@ -34,9 +35,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     $scan_type = required_param('scan_type', PARAM_ALPHA);
     $target_url = optional_param('target_url', $CFG->wwwroot, PARAM_URL);
-    
-    // Call ZAP integration
-    require_once($CFG->dirroot . '/local/security_dashboard/lib/zap_integration.php');
     
     try {
         $result = local_security_dashboard_trigger_zap_scan($scan_type, $target_url);

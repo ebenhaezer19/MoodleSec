@@ -3,7 +3,7 @@
  * ZAP Integration Settings and Configuration
  * 
  * @package    local_security_dashboard
- * @copyright  2026 Security Team
+ * @copyright  2026 Krisopras & Nathanael
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -37,7 +37,7 @@ if ($hassiteconfig) {
         PARAM_INT));
     
     // ZAP API Key
-    $settings_zap->add(new admin_setting_configpassword('local_security_dashboard/zap_api_key',
+    $settings_zap->add(new admin_setting_configpasswordunmask('local_security_dashboard/zap_api_key',
         new lang_string('zap_api_key', 'local_security_dashboard'),
         new lang_string('zap_api_key_desc', 'local_security_dashboard'),
         '1qlbij76v3j9c6ail8d0locm24'));
