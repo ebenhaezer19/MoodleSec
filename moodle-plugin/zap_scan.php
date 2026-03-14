@@ -80,6 +80,11 @@ if (isset($error)) {
     echo $OUTPUT->notification($error, 'error');
 }
 
+// Get configuration values
+$spider_depth = get_config('local_security_dashboard', 'scan_spider_depth') ?? 3;
+$scan_policy = get_config('local_security_dashboard', 'scan_policy') ?? 'medium';
+$ml_filtering = get_config('local_security_dashboard', 'ml_filtering_enabled') ? 'Enabled' : 'Disabled';
+
 // Scan Type Selection Form
 $form_html = <<<HTML
 <div class="card">
@@ -119,17 +124,17 @@ $form_html = <<<HTML
     <div class="card-body">
         <div class="form-group">
             <label>Spider Depth: 
-                <strong>{get_config('local_security_dashboard', 'scan_spider_depth')}</strong>
+                <strong>$spider_depth</strong>
             </label>
         </div>
         <div class="form-group">
             <label>Scan Policy: 
-                <strong>{get_config('local_security_dashboard', 'scan_policy')}</strong>
+                <strong>$scan_policy</strong>
             </label>
         </div>
         <div class="form-group">
             <label>ML Filtering: 
-                <strong>{(get_config('local_security_dashboard', 'ml_filtering_enabled') ? 'Enabled' : 'Disabled')}</strong>
+                <strong>$ml_filtering</strong>
             </label>
         </div>
     </div>

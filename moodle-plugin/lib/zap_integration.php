@@ -12,14 +12,45 @@
 defined('MOODLE_INTERNAL') || die();
 
 /**
- * Check if ZAP server is available
+ * Get working ZAP host (with fallback for WSL to Windows)
  */
-function local_security_dashboard_check_zap_status() {
+function local_security_dashboard_get_zap_host() {
     global $CFG;
     
     $host = get_config('local_security_dashboard', 'zap_host') ?? 'localhost';
     $port = get_config('local_security_dashboard', 'zap_port') ?? '8080';
     
+    // Try primary host
+    $sock = @fsockopen($host, $port, $errno, $errstr, 2);
+    if (is_resource($sock)) {
+        fclose($sock);
+        return $host;
+    }
+    
+    // If localhost failed, try Windows IP (for WSL environment)
+    if ($host === 'localhost') {
+        $windows_host = '172.19.80.1';
+        $sock = @fsockopen($windows_host, $port, $errno, $errstr, 2);
+        if (is_resource($sock)) {
+            fclose($sock);
+            return $windows_host;
+        }
+    }
+    
+    // Return configured host even if unreachable (for error messages)
+    return $host;
+}
+
+/**
+ * Check if ZAP server is available
+ */
+function local_security_dashboard_check_zap_status() {
+    global $CFG;
+    
+    $port = get_config('local_security_dashboard', 'zap_port') ?? '8080';
+    $host = local_security_dashboard_get_zap_host();
+    
+    // Test connection
     $sock = @fsockopen($host, $port, $errno, $errstr, 5);
     $connected = is_resource($sock);
     
@@ -31,10 +62,10 @@ function local_security_dashboard_check_zap_status() {
     $version = 'Unknown';
     if ($connected) {
         try {
-            $version = local_security_dashboard_zap_api_call('core/view/version');
-            $version = $version['version'] ?? 'Unknown';
+            $result = local_security_dashboard_zap_api_call('core/view/version', [], 'GET', $host, $port);
+            $version = $result['version'] ?? 'Unknown';
         } catch (Exception $e) {
-            $version = 'Error';
+            $version = 'Error: ' . $e->getMessage();
         }
     }
     
@@ -49,11 +80,16 @@ function local_security_dashboard_check_zap_status() {
 /**
  * Make API call to ZAP
  */
-function local_security_dashboard_zap_api_call($endpoint, $params = [], $method = 'GET') {
+function local_security_dashboard_zap_api_call($endpoint, $params = [], $method = 'GET', $host = null, $port = null) {
     global $CFG;
     
-    $host = get_config('local_security_dashboard', 'zap_host') ?? 'localhost';
-    $port = get_config('local_security_dashboard', 'zap_port') ?? '8080';
+    if (!$host) {
+        $host = get_config('local_security_dashboard', 'zap_host') ?? 'localhost';
+    }
+    if (!$port) {
+        $port = get_config('local_security_dashboard', 'zap_port') ?? '8080';
+    }
+    
     $api_key = get_config('local_security_dashboard', 'zap_api_key') ?? '1qlbij76v3j9c6ail8d0locm24';
     
     $url = "http://$host:$port/JSON/$endpoint";
@@ -102,6 +138,9 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
         $target_url = $CFG->wwwroot;
     }
     
+    $host = local_security_dashboard_get_zap_host();
+    $port = get_config('local_security_dashboard', 'zap_port') ?? '8080';
+    
     try {
         // Start spider
         $spider_result = local_security_dashboard_zap_api_call('spider/action/scan', [
@@ -109,7 +148,7 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
             'contextid' => 1,
             'contextname' => 'Moodle',
             'depth' => get_config('local_security_dashboard', 'scan_spider_depth') ?? 3
-        ]);
+        ], 'GET', $host, $port);
         
         $spider_id = $spider_result['scan'] ?? null;
         if (!$spider_id) {
@@ -124,7 +163,7 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
         while ($wait_time < $max_wait) {
             $status = local_security_dashboard_zap_api_call('spider/view/status', [
                 'scanid' => $spider_id
-            ]);
+            ], 'GET', $host, $port);
             
             if ($status['status'] == 100) {
                 break;
@@ -140,7 +179,7 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
             'contextid' => 1,
             'userid' => 1,
             'policy' => get_config('local_security_dashboard', 'scan_policy') ?? 'medium'
-        ]);
+        ], 'GET', $host, $port);
         
         $ascan_id = $ascan_result['scan'] ?? null;
         if (!$ascan_id) {
@@ -154,7 +193,7 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
         while ($wait_time < $max_wait) {
             $status = local_security_dashboard_zap_api_call('ascan/view/status', [
                 'scanid' => $ascan_id
-            ]);
+            ], 'GET', $host, $port);
             
             if ($status['status'] == 100) {
                 break;
@@ -167,7 +206,7 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
         // Get alerts
         $alerts_result = local_security_dashboard_zap_api_call('core/view/alerts', [
             'baseurl' => $target_url
-        ]);
+        ], 'GET', $host, $port);
         
         $alerts = $alerts_result['alerts'] ?? [];
         
