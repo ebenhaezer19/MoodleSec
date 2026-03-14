@@ -58,3 +58,97 @@ $string['security_dashboard:manageschedule'] = 'Manage scan schedule';
 $string['scan_task'] = 'Scheduled security scan';
 $string['scheduled_scan_paths'] = 'Scheduled scan paths';
 $string['scheduled_scan_paths_desc'] = 'Comma-separated list of paths to scan automatically (e.g., /login/index.php, /course/view.php)';
+
+// ZAP Integration Settings
+$string['zap_settings'] = 'ZAP Settings';
+$string['zap_host'] = 'ZAP Server Host';
+$string['zap_host_desc'] = 'Hostname or IP address of the ZAP server';
+$string['zap_port'] = 'ZAP Server Port';
+$string['zap_port_desc'] = 'Port number the ZAP server is listening on (default: 8080)';
+$string['zap_api_key'] = 'ZAP API Key';
+$string['zap_api_key_desc'] = 'API key for authenticating with ZAP server';
+$string['scan_settings'] = 'Scan Settings';
+$string['scan_spider_depth'] = 'Spider Depth';
+$string['scan_spider_depth_desc'] = 'Maximum depth for spider crawling (1-5)';
+$string['scan_policy'] = 'Scanning Policy';
+$string['scan_policy_desc'] = 'Default scanning policy (low, medium, high)';
+$string['ml_settings'] = 'Machine Learning Settings';
+$string['ml_filtering_enabled'] = 'Enable ML Filtering';
+$string['ml_filtering_enabled_desc'] = 'Apply machine learning to reduce false positives';
+$string['ml_confidence_threshold'] = 'ML Confidence Threshold';
+$string['ml_confidence_threshold_desc'] = 'Minimum confidence score for accepting findings (0-1)';
+$string['notification_settings'] = 'Notification Settings';
+$string['email_on_high_risk'] = 'Email on High Risk Findings';
+$string['email_on_high_risk_desc'] = 'Send email notification when high-risk vulnerabilities are found';
+$string['email_recipients'] = 'Email Recipients';
+$string['email_recipients_desc'] = 'Email addresses to notify (one per line)';
+
+// ZAP Scanning
+$string['zap_scan'] = 'ZAP Vulnerability Scan';
+$string['zap_scan_title'] = 'Trigger ZAP Scan';
+$string['zap_status'] = 'ZAP Server Status';
+$string['zap_connected'] = 'Connected';
+$string['zap_disconnected'] = 'Disconnected';
+$string['zap_version'] = 'ZAP Version';
+$string['scan_type'] = 'Scan Type';
+$string['scan_unauthenticated'] = 'Unauthenticated Scan';
+$string['scan_authenticated'] = 'Authenticated Scan';
+$string['scan_api'] = 'API Scan';
+$string['target_url'] = 'Target URL';
+$string['target_url_placeholder'] = 'Enter URL to scan (e.g., http://www.example.com)';
+$string['trigger_scan_button'] = 'Start Scan';
+$string['scanning_in_progress'] = 'Scanning in progress...';
+$string['recent_scans_list'] = 'Recent Scans';
+$string['scan_id'] = 'Scan ID';
+$string['scan_type_label'] = 'Type';
+$string['target'] = 'Target';
+$string['started'] = 'Started';
+$string['duration_seconds'] = 'Duration (s)';
+$string['findings_count'] = 'Findings';
+$string['view_scan'] = 'View Results';
+
+// ZAP Results
+$string['zap_results'] = 'ZAP Scan Results';
+$string['scan_summary'] = 'Scan Summary';
+$string['total_findings'] = 'Total Findings';
+$string['high_risk'] = 'High Risk';
+$string['medium_risk'] = 'Medium Risk';
+$string['low_risk'] = 'Low Risk';
+$string['findings_list'] = 'Vulnerability Findings';
+$string['finding_type'] = 'Type';
+$string['finding_severity'] = 'Severity';
+$string['finding_url'] = 'Vulnerable URL';
+$string['finding_evidence'] = 'Evidence';
+$string['finding_description'] = 'Description';
+$string['finding_solution'] = 'Remediation';
+$string['export_pdf'] = 'Export as PDF';
+$string['export_json'] = 'Export as JSON';
+
+// ZAP Trends
+$string['zap_trends'] = 'Vulnerability Trends';
+$string['trends_title'] = 'Security Trends & Analysis';
+$string['overall_statistics'] = 'Overall Statistics';
+$string['trending_direction'] = 'Trending';
+$string['vulnerability_chart'] = 'Vulnerability Timeline';
+$string['top_vulnerability_types'] = 'Top Vulnerability Types';
+$string['vulnerability_type'] = 'Vulnerability Type';
+$string['count'] = 'Count';
+$string['severity'] = 'Severity';
+$string['monthly_summary'] = 'Monthly Summary';
+$string['export_csv'] = 'Export as CSV';
+
+// ZAP Compliance
+$string['zap_compliance'] = 'Compliance & Audit';
+$string['compliance_report'] = 'Compliance Report';
+$string['compliance_score'] = 'Compliance Score';
+$string['audit_status'] = 'Audit Status';
+$string['security_checklist'] = 'Security Checklist';
+$string['owasp_top10'] = 'OWASP Top 10 Coverage';
+$string['remediation_actions'] = 'Remediation Actions';
+$string['audit_trail'] = 'Audit Trail';
+$string['event_type'] = 'Event Type';
+$string['event_user'] = 'User';
+$string['event_details'] = 'Details';
+$string['event_time'] = 'Time';
+$string['cert_export'] = 'Export Certificate';
+$string['export_html'] = 'Export as HTML';

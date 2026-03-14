@@ -175,5 +175,112 @@ function xmldb_local_security_dashboard_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026011200, 'local', 'security_dashboard');
     }
 
+    // Add ZAP vulnerability scanning tables
+    if ($oldversion < 2026031400) {
+        
+        // Create scans table
+        $table = new xmldb_table('local_security_dashboard_scans');
+        
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('scan_type', XMLDB_TYPE_CHAR, '50', null, XMLDB_NOTNULL);
+            $table->add_field('target_url', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL);
+            $table->add_field('spider_scan_id', XMLDB_TYPE_CHAR, '50');
+            $table->add_field('ascan_scan_id', XMLDB_TYPE_CHAR, '50');
+            $table->add_field('total_findings', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('high_risk_findings', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('medium_risk_findings', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('low_risk_findings', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('status', XMLDB_TYPE_CHAR, '50', null, XMLDB_NOTNULL, null, 'pending');
+            $table->add_field('duration', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL);
+            $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL);
+            
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, array('id'));
+            $table->add_index('timecreated', XMLDB_INDEX_NOTUNIQUE, array('timecreated'));
+            $table->add_index('scan_type', XMLDB_INDEX_NOTUNIQUE, array('scan_type'));
+            
+            $dbman->create_table($table);
+        }
+
+        // Create findings table
+        $table = new xmldb_table('local_security_dashboard_findings');
+        
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('scan_id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL);
+            $table->add_field('sequence', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('type', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL);
+            $table->add_field('risk', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL);
+            $table->add_field('url', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL);
+            $table->add_field('method', XMLDB_TYPE_CHAR, '10', null, XMLDB_NOTNULL, null, 'GET');
+            $table->add_field('evidence', XMLDB_TYPE_TEXT);
+            $table->add_field('description', XMLDB_TYPE_TEXT);
+            $table->add_field('solution', XMLDB_TYPE_TEXT);
+            $table->add_field('reference', XMLDB_TYPE_TEXT);
+            $table->add_field('cwe_id', XMLDB_TYPE_INTEGER, '10');
+            $table->add_field('wascid', XMLDB_TYPE_INTEGER, '10');
+            $table->add_field('ml_confidence', XMLDB_TYPE_FLOAT);
+            $table->add_field('is_false_positive', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL);
+            
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, array('id'));
+            $table->add_key('scan_id_fk', XMLDB_KEY_FOREIGN, array('scan_id'), 'local_security_dashboard_scans', array('id'));
+            $table->add_index('scan_id', XMLDB_INDEX_NOTUNIQUE, array('scan_id'));
+            $table->add_index('risk', XMLDB_INDEX_NOTUNIQUE, array('risk'));
+            $table->add_index('type', XMLDB_INDEX_NOTUNIQUE, array('type'));
+            
+            $dbman->create_table($table);
+        }
+
+        // Create remediation table
+        $table = new xmldb_table('local_security_dashboard_remediation');
+        
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('finding_id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL);
+            $table->add_field('issue_title', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL);
+            $table->add_field('priority', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL);
+            $table->add_field('status', XMLDB_TYPE_CHAR, '50', null, XMLDB_NOTNULL, null, 'open');
+            $table->add_field('assigned_to_userid', XMLDB_TYPE_INTEGER, '10');
+            $table->add_field('assigned_to_name', XMLDB_TYPE_CHAR, '255');
+            $table->add_field('due_date', XMLDB_TYPE_INTEGER, '10');
+            $table->add_field('notes', XMLDB_TYPE_TEXT);
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL);
+            $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL);
+            
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, array('id'));
+            $table->add_key('finding_id_fk', XMLDB_KEY_FOREIGN, array('finding_id'), 'local_security_dashboard_findings', array('id'));
+            $table->add_index('status', XMLDB_INDEX_NOTUNIQUE, array('status'));
+            $table->add_index('priority', XMLDB_INDEX_NOTUNIQUE, array('priority'));
+            
+            $dbman->create_table($table);
+        }
+
+        // Create audit table
+        $table = new xmldb_table('local_security_dashboard_audit');
+        
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('event_type', XMLDB_TYPE_CHAR, '100', null, XMLDB_NOTNULL);
+            $table->add_field('event_severity', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'info');
+            $table->add_field('user_id', XMLDB_TYPE_INTEGER, '10');
+            $table->add_field('user_name', XMLDB_TYPE_CHAR, '255');
+            $table->add_field('event_details', XMLDB_TYPE_TEXT);
+            $table->add_field('related_scan_id', XMLDB_TYPE_INTEGER, '10');
+            $table->add_field('related_finding_id', XMLDB_TYPE_INTEGER, '10');
+            $table->add_field('ip_address', XMLDB_TYPE_CHAR, '45');
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL);
+            
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, array('id'));
+            $table->add_index('event_type', XMLDB_INDEX_NOTUNIQUE, array('event_type'));
+            $table->add_index('timecreated', XMLDB_INDEX_NOTUNIQUE, array('timecreated'));
+            
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2026031400, 'local', 'security_dashboard');
+    }
+
     return true;
 }
