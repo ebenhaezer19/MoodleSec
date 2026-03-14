@@ -11,7 +11,7 @@ require_once(__DIR__ . '/../../config.php');
 require_once($CFG->libdir . '/adminlib.php');
 
 require_login();
-require_capability('local/security_dashboard:manage', context_system::instance());
+require_capability('local/security_dashboard:scan', context_system::instance());
 
 $PAGE->set_url(new moodle_url('/local/security_dashboard/zap_scan.php'));
 $PAGE->set_context(context_system::instance());
@@ -214,3 +214,4 @@ echo html_writer::end_div();
 echo html_writer::end_div();
 
 echo $OUTPUT->footer();
+

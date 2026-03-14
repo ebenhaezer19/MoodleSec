@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * Security Dashboard main page
  *
@@ -39,7 +39,7 @@ if (isset($logs_data['error'])) {
 } else {
     // Display summary
     echo html_writer::start_div('row');
-    
+
     // Scan buttons
     echo html_writer::start_div('col-md-12 mb-3');
     echo html_writer::link(
@@ -82,33 +82,27 @@ if (isset($logs_data['error'])) {
         '<i class="fa fa-user-shield"></i> Login Monitor',
         ['class' => 'btn btn-info mr-2']
     );
-    // Vulnerability Map disabled - requires external SQLite database
-    // echo html_writer::link(
-    //     new moodle_url('/local/security_dashboard/vulnerability_map.php'),
-    //     '<i class="fa fa-map-marked"></i> Vulnerability Map',
-    //     ['class' => 'btn btn-primary']
-    // );
     echo html_writer::end_div();
-    
+
     echo html_writer::end_div();
-    
+
     // Display recent logs
     echo html_writer::tag('h3', get_string('recent_scans', 'local_security_dashboard'));
-    
+
     if (empty($logs_data['logs'])) {
         echo html_writer::div(get_string('no_scans', 'local_security_dashboard'), 'alert alert-info');
     } else {
         $table = new html_table();
         $table->head = ['Type', 'Timestamp', 'Details'];
         $table->attributes['class'] = 'generaltable';
-        
+
         foreach ($logs_data['logs'] as $log) {
             $row = [];
-            
+
             // XSS Prevention: Sanitize all log data
             $row[] = s($log['type'] ?? 'N/A');
             $row[] = s($log['timestamp'] ?? 'N/A');
-            
+
             // Format details based on log type
             $details = '';
             if (isset($log['scan_id'])) {
@@ -127,13 +121,54 @@ if (isset($logs_data['error'])) {
                 $details .= 'Medium: ' . intval($summary['medium'] ?? 0) . ' | ';
                 $details .= 'Low: ' . intval($summary['low'] ?? 0);
             }
-            
+
             $row[] = $details ?: 'N/A';
             $table->data[] = $row;
         }
-        
+
         echo html_writer::table($table);
     }
 }
 
+// ZAP INTEGRATION SECTION (Phase 2)
+echo html_writer::start_div('', ['style' => 'margin-top: 30px;']);
+echo html_writer::tag('h3', 'ZAP Vulnerability Scanning');
+
+echo html_writer::start_div('', ['style' => 'margin-top: 15px;']);
+
+echo html_writer::link(
+    new moodle_url('/admin/settings.php?section=local_security_dashboard_zap'),
+    '⚙️ ZAP Settings',
+    ['class' => 'btn btn-secondary', 'style' => 'margin-right: 10px;']
+);
+
+echo html_writer::link(
+    new moodle_url('/local/security_dashboard/zap_scan.php'),
+    '🔍 Trigger Scan',
+    ['class' => 'btn btn-primary', 'style' => 'margin-right: 10px;']
+);
+
+echo html_writer::link(
+    new moodle_url('/local/security_dashboard/zap_results.php'),
+    '📊 Scan Results',
+    ['class' => 'btn btn-info', 'style' => 'margin-right: 10px;']
+);
+
+echo html_writer::link(
+    new moodle_url('/local/security_dashboard/zap_trends.php'),
+    '📈 Trends',
+    ['class' => 'btn btn-warning', 'style' => 'margin-right: 10px;']
+);
+
+echo html_writer::link(
+    new moodle_url('/local/security_dashboard/zap_compliance.php'),
+    '✅ Compliance',
+    ['class' => 'btn btn-danger']
+);
+
+echo html_writer::end_div();
+echo html_writer::end_div();
+
+// Display footer
 echo $OUTPUT->footer();
+?>

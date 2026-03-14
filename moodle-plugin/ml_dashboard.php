@@ -17,7 +17,7 @@ require_once(__DIR__ . '/classes/api_client.php');
 require_login();
 // Check if user has manage capability, otherwise check for view capability
 $context = context_system::instance();
-if (!has_capability('local/security_dashboard:manage', $context)) {
+if (!has_capability('local/security_dashboard:view', $context)) {
     require_capability('local/security_dashboard:view', $context);
 }
 
@@ -371,3 +371,4 @@ function render_metric_card($title, $value, $label, $color) {
     
     return $html;
 }
+

@@ -121,3 +121,15 @@ if ($hassiteconfig) {
 
     $ADMIN->add('local_security_dashboard', $settingspage);
 }
+
+
+// Include ZAP Integration settings if exists
+$zap_settings_file = $CFG->dirroot . '/local/security_dashboard/settings_zap.php';
+if (file_exists($zap_settings_file)) {
+    require_once($zap_settings_file);
+}
+
+// Include ZAP Integration settings
+$zap_file = $CFG->dirroot . '/local/security_dashboard/settings_zap.php';
+if (file_exists($zap_file)) { require_once($zap_file); }
+}
