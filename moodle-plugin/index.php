@@ -99,27 +99,53 @@ if (isset($logs_data['error'])) {
         foreach ($logs_data['logs'] as $log) {
             $row = [];
 
-            // XSS Prevention: Sanitize all log data
-            $row[] = s($log['type'] ?? 'N/A');
+            // Format type with badge for ZAP scans
+            $type_display = s($log['type'] ?? 'N/A');
+            if ($log['source'] === 'zap') {
+                $type_display = '<span class="badge badge-info">ZAP</span> ' . $type_display;
+            } else {
+                $type_display = '<span class="badge badge-secondary">Proxy</span> ' . $type_display;
+            }
+            $row[] = $type_display;
+            
+            // Timestamp
             $row[] = s($log['timestamp'] ?? 'N/A');
 
-            // Format details based on log type
+            // Format details
             $details = '';
-            if (isset($log['scan_id'])) {
-                $details .= 'Scan ID: ' . s($log['scan_id']) . '<br>';
-            }
-            if (isset($log['target_url'])) {
-                $details .= 'URL: ' . s($log['target_url']) . '<br>';
-            }
-            if (isset($log['findings_count'])) {
-                $details .= 'Findings: ' . intval($log['findings_count']) . '<br>';
-            }
-            if (isset($log['summary'])) {
-                $summary = $log['summary'];
-                $details .= 'Critical: ' . intval($summary['critical'] ?? 0) . ' | ';
-                $details .= 'High: ' . intval($summary['high'] ?? 0) . ' | ';
-                $details .= 'Medium: ' . intval($summary['medium'] ?? 0) . ' | ';
-                $details .= 'Low: ' . intval($summary['low'] ?? 0);
+            
+            // For ZAP scans - show findings summary
+            if ($log['source'] === 'zap') {
+                $details .= 'URL: ' . s($log['url']) . '<br>';
+                $details .= 'Findings: ' . intval($log['findings'] ?? 0);
+                
+                if ($log['findings'] > 0) {
+                    $summary_parts = [];
+                    if ($log['critical'] > 0) $summary_parts[] = 'Critical: ' . intval($log['critical']);
+                    if ($log['high'] > 0) $summary_parts[] = 'High: ' . intval($log['high']);
+                    if ($log['medium'] > 0) $summary_parts[] = 'Medium: ' . intval($log['medium']);
+                    if ($log['low'] > 0) $summary_parts[] = 'Low: ' . intval($log['low']);
+                    
+                    if (!empty($summary_parts)) {
+                        $details .= '<br>' . implode(' | ', $summary_parts);
+                    }
+                }
+                
+                // Add link to view results
+                if (!empty($log['scan_id'])) {
+                    $details .= '<br>' . html_writer::link(
+                        new moodle_url('/local/security_dashboard/zap_results.php', 
+                            ['scan_id' => strtolower(str_replace('zap_', '', $log['scan_id']))]),
+                        'View Results →',
+                        ['class' => 'small', 'style' => 'margin-top: 5px; display: inline-block;']
+                    );
+                }
+            } else {
+                // For proxy logs - show details as-is
+                $details = s($log['details'] ?? 'N/A');
+                if (!empty($log['url'])) {
+                    $details .= '<br>URL: ' . s($log['url']);
+                }
             }
 
             $row[] = $details ?: 'N/A';
