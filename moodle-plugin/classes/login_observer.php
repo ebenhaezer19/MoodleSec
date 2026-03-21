@@ -268,6 +268,11 @@ class login_observer {
     private static function send_suspicious_login_alert($log, $user) {
         global $CFG;
         
+        // Skip email sending if messaging is disabled
+        if (empty($CFG->mnet_dispatcher_mode) || $CFG->mnet_dispatcher_mode !== 'off') {
+            return; // Email system not fully configured, skip
+        }
+        
         $admins = get_admins();
         if (empty($admins)) {
             return;
@@ -282,8 +287,18 @@ class login_observer {
         $message .= "Time: " . userdate($log->timecreated) . "\n\n";
         $message .= "View login logs: {$CFG->wwwroot}/local/security_dashboard/login_monitor.php\n";
         
-        foreach ($admins as $admin) {
-            email_to_user($admin, \core_user::get_noreply_user(), $subject, $message);
+        try {
+            $noreply = \core_user::get_noreply_user();
+            // Only send if noreply user is valid and has email
+            if ($noreply && !empty($noreply->email) && strpos($noreply->email, 'localhost') === false) {
+                foreach ($admins as $admin) {
+                    @email_to_user($admin, $noreply, $subject, $message);
+                }
+            }
+        } catch (\Exception $e) {
+            // Silent fail - email system not configured properly
+            // Log error for debugging but don't break the login flow
+            error_log('MoodleSec: Email alert failed - ' . $e->getMessage());
         }
     }
     

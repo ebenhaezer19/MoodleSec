@@ -40,7 +40,7 @@ if ($hassiteconfig) {
     $settings_zap->add(new admin_setting_configpasswordunmask('local_security_dashboard/zap_api_key',
         new lang_string('zap_api_key', 'local_security_dashboard'),
         new lang_string('zap_api_key_desc', 'local_security_dashboard'),
-        'ha6dlibv9t5ttps7b1jut91i4d'));
+        '.'));
     
     // ZAP Enabled
     $settings_zap->add(new admin_setting_configcheckbox('local_security_dashboard/zap_enabled',
@@ -78,12 +78,36 @@ if ($hassiteconfig) {
         new lang_string('scan_authenticated_desc', 'local_security_dashboard'),
         1));
     
-    // Test Credentials
+    // Authentication Settings Section
+    $settings_zap->add(new admin_setting_heading('local_security_dashboard/auth_settings',
+        'Authenticated Scanning Settings',
+        'Configure how ZAP authenticates to Moodle for authenticated scanning'));
+    
+    // Authentication Method
+    $auth_methods = [
+        'manual' => 'Manual Credentials (Admin enters username/password)',
+        'auto_admin' => 'Auto-Detect Admin User (scans as first admin)',
+        'session_token' => 'Session Token (uses Moodle login flow)',
+    ];
+    $settings_zap->add(new admin_setting_configselect('local_security_dashboard/auth_method',
+        'Authentication Method',
+        'Select how ZAP should authenticate. Manual = store credentials. Auto = use existing admin. Token = more secure.',
+        'auto_admin',
+        $auth_methods));
+    
+    // Test User (for manual auth method)
     $settings_zap->add(new admin_setting_configtext('local_security_dashboard/scan_test_user',
-        new lang_string('scan_test_user', 'local_security_dashboard'),
-        new lang_string('scan_test_user_desc', 'local_security_dashboard'),
-        'testuser',
+        'Scan Test Username',
+        'Username to use for authenticated scanning (used if "Manual Credentials" method selected)',
+        'admin',
         PARAM_USERNAME));
+    
+    // Test User Password (encrypted storage)
+    $settings_zap->add(new admin_setting_configpasswordunmask('local_security_dashboard/scan_test_password',
+        'Scan Test Password',
+        'Password for the test user (will be encrypted). Leave empty to skip authenticated scanning.',
+        '',
+        PARAM_RAW));
     
     // ML Filtering Configuration
     $settings_zap->add(new admin_setting_heading('local_security_dashboard/ml_settings',

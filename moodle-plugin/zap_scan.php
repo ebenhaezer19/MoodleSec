@@ -9,6 +9,7 @@
 
 require_once(__DIR__ . '/../../config.php');
 require_once($CFG->libdir . '/adminlib.php');
+require_once($CFG->dirroot . '/local/security_dashboard/lib.php');
 require_once($CFG->dirroot . '/local/security_dashboard/lib/zap_integration.php');
 
 require_login();
@@ -39,7 +40,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $result = local_security_dashboard_trigger_zap_scan($scan_type, $target_url);
         
-        if ($result['success']) {
+        // Ensure result is an array
+        if (!is_array($result)) {
+            throw new Exception('Unexpected response from scan: ' . (is_string($result) ? $result : 'Invalid type'));
+        }
+        
+        if (isset($result['success']) && $result['success']) {
             // Store scan in database and get scan_id
             $scan_id = local_security_dashboard_store_scan($result);
             
@@ -50,11 +56,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             redirect(new moodle_url('/local/security_dashboard/zap_results.php', 
                 ['scan_id' => $scan_id]));
-        } else {
+        } elseif (isset($result['error'])) {
             $error = $result['error'];
+        } else {
+            $error = 'Unknown error occurred during scan';
         }
     } catch (Exception $e) {
-        $error = $e->getMessage();
+        $error = 'Scan failed: ' . $e->getMessage();
+        error_log('ZAP Scan Error: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
     }
 }
 
@@ -80,6 +89,48 @@ if (isset($error)) {
     echo $OUTPUT->notification($error, 'error');
 }
 
+// Check authentication configuration
+$auth_method = get_config('local_security_dashboard', 'auth_method') ?? 'auto_admin';
+$auth_user = get_config('local_security_dashboard', 'scan_test_user') ?? '';
+$auth_pass = get_config('local_security_dashboard', 'scan_test_password') ?? '';
+$auth_configured = !empty($auth_user) && !empty($auth_pass);
+
+// Display authentication status
+echo html_writer::start_div('card mt-3');
+echo html_writer::start_div('card-header');
+echo html_writer::tag('h5', 'Authentication Status');
+echo html_writer::end_div();
+
+echo html_writer::start_div('card-body');
+echo '<p><strong>Method:</strong> ' . s($auth_method) . '</p>';
+
+if ($auth_configured) {
+    echo '<p><span class="badge badge-success">✓</span> <strong>Credentials Configured</strong></p>';
+    echo '<p>Username: <code>' . s($auth_user) . '</code></p>';
+    echo '<p>Password: <span class="badge badge-info">Encrypted in database</span></p>';
+    echo '<p style="color: green; font-size: 14px;">✓ Authenticated scanning is ready to use</p>';
+} else {
+    echo '<p><span class="badge badge-warning">⚠</span> <strong>Credentials NOT Configured</strong></p>';
+    echo '<p style="color: #ff8800; font-size: 14px;">Authenticated scanning will not work until credentials are configured.</p>';
+}
+
+echo '<p>';
+echo html_writer::link(
+    'Configure Credentials →',
+    new moodle_url('/admin/settings.php', array('section' => 'local_security_dashboard_zap')),
+    array('class' => 'btn btn-sm btn-warning')
+);
+echo ' | ';
+echo html_writer::link(
+    'Test Authentication →',
+    new moodle_url('/local/security_dashboard/auth_setup.php'),
+    array('class' => 'btn btn-sm btn-info')
+);
+echo '</p>';
+
+echo html_writer::end_div();
+echo html_writer::end_div();
+
 // Get configuration values
 $spider_depth = get_config('local_security_dashboard', 'scan_spider_depth') ?? 3;
 $scan_policy = get_config('local_security_dashboard', 'scan_policy') ?? 'medium';
@@ -87,12 +138,40 @@ $ml_filtering = get_config('local_security_dashboard', 'ml_filtering_enabled') ?
 
 // Scan Type Selection Form
 $form_html = <<<HTML
+<!-- Loading Modal -->
+<div id="scan-loading-modal" class="modal fade" role="dialog" style="background: rgba(0,0,0,0.5); display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999;">
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 40px; border-radius: 10px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <!-- Spinning Loader -->
+        <div style="display: inline-block; width: 60px; height: 60px; border: 4px solid #f3f3f3; border-top: 4px solid #007bff; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+        <h4 style="margin-top: 20px; color: #333;">Scanning Vulnerabilities...</h4>
+        <p style="color: #666; margin-top: 10px;">Please wait, this may take several minutes</p>
+        <p style="font-size: 12px; color: #999; margin-top: 15px;">Do not close this window or refresh the page</p>
+    </div>
+</div>
+
+<!-- CSS untuk spinner animation -->
+<style>
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.scan-form {
+    transition: opacity 0.3s ease;
+}
+
+.scan-form.scanning {
+    opacity: 0.5;
+    pointer-events: none;
+}
+</style>
+
 <div class="card">
     <div class="card-header">
         <h5>ZAP Vulnerability Scan</h5>
     </div>
     <div class="card-body">
-        <form method="post" class="form-inline">
+        <form method="post" class="form-inline scan-form" id="scan-form" onsubmit="showScanLoading(event)">
             <input type="hidden" name="sesskey" value="' . sesskey() . '">
             
             <div class="form-group mb-2 mr-2">
@@ -169,6 +248,35 @@ function updateScanInfo() {
     };
     
     info.innerHTML = descriptions[type];
+}
+
+// Show loading spinner saat scan dimulai
+function showScanLoading(event) {
+    const modal = document.getElementById('scan-loading-modal');
+    const form = document.getElementById('scan-form');
+    
+    // Tampilkan modal loading
+    modal.style.display = 'block';
+    form.classList.add('scanning');
+    
+    // Disable button untuk prevent double-click
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    
+    // Form akan submit secara normal
+    return true;
+}
+
+// Hide loading spinner (jika diperlukan di masa depan)
+function hideScanLoading() {
+    const modal = document.getElementById('scan-loading-modal');
+    const form = document.getElementById('scan-form');
+    
+    modal.style.display = 'none';
+    form.classList.remove('scanning');
+    
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = false;
 }
 </script>
 HTML;

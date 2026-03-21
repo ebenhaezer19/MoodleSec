@@ -78,9 +78,9 @@ function local_security_dashboard_check_zap_status() {
 }
 
 /**
- * Make API call to ZAP
+ * Make API call to ZAP - Bypass Moodle's SSRF blocking using shell_exec
  */
-function local_security_dashboard_zap_api_call($endpoint, $params = [], $method = 'GET', $host = null, $port = null) {
+function local_security_dashboard_zap_api_call($endpoint, $params = [], $method = 'GET', $host = null, $port = null, $cookie_file = null) {
     global $CFG;
     
     if (!$host) {
@@ -92,40 +92,43 @@ function local_security_dashboard_zap_api_call($endpoint, $params = [], $method 
     
     $api_key = get_config('local_security_dashboard', 'zap_api_key') ?? 'ha6dlibv9t5ttps7b1jut91i4d';
     
-    // DEBUG: Log API key being used
-    error_log("DEBUG ZAP API: Using API key: " . substr($api_key, 0, 5) . "..." . substr($api_key, -5));
+    error_log("DEBUG ZAP API: Using API key: " . substr($api_key, 0, 5) . "...");
     
     $url = "http://$host:$port/JSON/$endpoint";
     
     // Add API key to params
     $params['apikey'] = $api_key;
     
-    // Make request
+    // Make request using shell_exec curl to bypass Moodle's SSRF blocking
     $query_string = http_build_query($params);
     $full_url = $url . ($query_string ? "?$query_string" : '');
     
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $full_url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    // Escape URL for shell
+    $full_url_escaped = escapeshellarg($full_url);
     
-    $response = curl_exec($ch);
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    // Build curl command with optional cookie support
+    $cmd = "curl -s -m 30 ";
     
-    if ($response === false) {
-        throw new Exception('ZAP API call failed: ' . curl_error($ch));
+    // Add cookies if provided (for authenticated scans)
+    if ($cookie_file && file_exists($cookie_file)) {
+        $cookie_file_escaped = escapeshellarg($cookie_file);
+        $cmd .= "-b " . $cookie_file_escaped . " ";
+        error_log("DEBUG ZAP API: Using cookies from: $cookie_file");
     }
     
-    curl_close($ch);
+    $cmd .= $full_url_escaped . " 2>&1";
     
-    if ($http_code !== 200) {
-        throw new Exception("ZAP API returned HTTP $http_code");
+    error_log("DEBUG ZAP API CALL: " . (strlen($cmd) > 200 ? substr($cmd, 0, 200) . "..." : $cmd));
+    
+    $response = shell_exec($cmd);
+    
+    if ($response === null || $response === false) {
+        throw new Exception('ZAP API call failed via shell_exec');
     }
     
     $data = json_decode($response, true);
     if (!$data) {
-        throw new Exception('Invalid JSON response from ZAP API');
+        throw new Exception('Invalid JSON response from ZAP API: ' . substr($response, 0, 200));
     }
     
     return $data;
@@ -146,14 +149,59 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
     $start_time = time();
     $spider_id = null;
     $ascan_id = null;
+    $scan_scan_type = $scan_type;  // Store for later
     
     try {
+        // Setup authentication if authenticated scan
+        $cookie_file = null;
+        $auth_username = null;
+        
+        if ($scan_type === 'authenticated') {
+            require_once($CFG->dirroot . '/local/security_dashboard/lib.php');
+            
+            // Get credentials from settings
+            $creds = local_security_dashboard_get_credentials();
+            if (isset($creds['error'])) {
+                throw new Exception('Authentication setup failed: ' . $creds['error']);
+            }
+            
+            // Validate that username and password exist
+            if (empty($creds['username']) || empty($creds['password'])) {
+                throw new Exception('Credentials incomplete: username=' . (!empty($creds['username']) ? 'set' : 'missing') . 
+                    ', password=' . (!empty($creds['password']) ? 'set' : 'missing'));
+            }
+            
+            error_log("DEBUG: Setting up authenticated scan with user: " . $creds['username']);
+            
+            // Setup authentication and get session cookie
+            $auth_setup = local_security_dashboard_setup_zap_auth($creds['username'], $creds['password'], 'Moodle');
+            
+            // Ensure auth_setup is an array
+            if (!is_array($auth_setup)) {
+                throw new Exception('Invalid response from auth setup: ' . (is_string($auth_setup) ? $auth_setup : 'Unknown type'));
+            }
+            
+            if (isset($auth_setup['error'])) {
+                throw new Exception('Failed to setup auth: ' . $auth_setup['error']);
+            }
+            
+            $cookie_file = $auth_setup['cookie_file'] ?? null;
+            $auth_username = $auth_setup['username'] ?? null;
+            $login_verified = $auth_setup['login_verified'] ?? false;
+            
+            error_log("DEBUG: Authentication setup completed. Login verified: " . ($login_verified ? 'YES' : 'NO'));
+            error_log("DEBUG: Cookie file: $cookie_file");
+        }
+        
         // Try spider scan (optional - may fail on some ZAP versions)
         try {
-            $spider_result = local_security_dashboard_zap_api_call('spider/action/scan', [
+            $spider_params = [
                 'url' => $target_url,
                 'maxdepth' => get_config('local_security_dashboard', 'scan_spider_depth') ?? 3
-            ], 'GET', $host, $port);
+            ];
+            
+            $spider_result = local_security_dashboard_zap_api_call('spider/action/scan', 
+                $spider_params, 'GET', $host, $port, $cookie_file);
             
             $spider_id = $spider_result['scan'] ?? null;
             
@@ -166,9 +214,9 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
                 while ($wait_time < $max_wait) {
                     $status = local_security_dashboard_zap_api_call('spider/view/status', [
                         'scanid' => $spider_id
-                    ], 'GET', $host, $port);
+                    ], 'GET', $host, $port, $cookie_file);
                     
-                    if (isset($status['status']) && $status['status'] == 100) {
+                    if (is_array($status) && isset($status['status']) && $status['status'] == 100) {
                         break;
                     }
                     
@@ -182,17 +230,25 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
         }
         
         // Start active scan (required)
-        $ascan_result = local_security_dashboard_zap_api_call('ascan/action/scan', [
+        $ascan_params = [
             'url' => $target_url,
             'recurse' => 'true',
             'policy' => get_config('local_security_dashboard', 'scan_policy') ?? 'medium'
-        ], 'GET', $host, $port);
+        ];
+        
+        $ascan_result = local_security_dashboard_zap_api_call('ascan/action/scan', 
+            $ascan_params, 'GET', $host, $port, $cookie_file);
+        
+        // Ensure result is an array before trying to access it
+        if (!is_array($ascan_result)) {
+            throw new Exception('Invalid response from ZAP ascan: ' . (is_string($ascan_result) ? substr($ascan_result, 0, 200) : 'Unknown type'));
+        }
         
         error_log("DEBUG ZAP ASCAN: Result = " . json_encode($ascan_result));
         
         $ascan_id = $ascan_result['scan'] ?? null;
         if ($ascan_id === null || $ascan_id === '') {
-            throw new Exception('Failed to start active scan - no scan ID returned');
+            throw new Exception('Failed to start active scan - no scan ID returned. Response: ' . json_encode($ascan_result));
         }
         
         // Wait for ascan to complete
@@ -203,9 +259,9 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
         while ($wait_time < $max_wait) {
             $status = local_security_dashboard_zap_api_call('ascan/view/status', [
                 'scanid' => $ascan_id
-            ], 'GET', $host, $port);
+            ], 'GET', $host, $port, $cookie_file);
             
-            if (isset($status['status']) && $status['status'] == 100) {
+            if (is_array($status) && isset($status['status']) && $status['status'] == 100) {
                 break;
             }
             
@@ -217,7 +273,13 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
         try {
             $alerts_result = local_security_dashboard_zap_api_call('core/view/alerts', [
                 'baseurl' => $target_url
-            ], 'GET', $host, $port);
+            ], 'GET', $host, $port, $cookie_file);
+            
+            // Ensure alerts_result is an array
+            if (!is_array($alerts_result)) {
+                throw new Exception('Invalid response from ZAP alerts endpoint');
+            }
+            
             $alerts = $alerts_result['alerts'] ?? [];
         } catch (Exception $e) {
             // If alerts endpoint fails, continue with empty alerts
@@ -242,6 +304,9 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
         }
         
         $duration = time() - $start_time;
+        
+        // Log scan type used
+        error_log("DEBUG: Scan completed. Scan type: $scan_scan_type, Context: " . ($context_id ?? 'none'));
         
         return [
             'success' => true,

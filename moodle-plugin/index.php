@@ -132,10 +132,10 @@ if (isset($logs_data['error'])) {
                 }
                 
                 // Add link to view results
-                if (!empty($log['scan_id'])) {
+                if (!empty($log['db_id']) && $log['source'] === 'zap') {
                     $details .= '<br>' . html_writer::link(
                         new moodle_url('/local/security_dashboard/zap_results.php', 
-                            ['scan_id' => strtolower(str_replace('zap_', '', $log['scan_id']))]),
+                            ['scan_id' => $log['db_id']]),
                         'View Results →',
                         ['class' => 'small', 'style' => 'margin-top: 5px; display: inline-block;']
                     );

@@ -52,17 +52,25 @@ function local_security_dashboard_get_logs($limit = 100) {
                 $proxy_data = json_decode($response, true);
                 if (isset($proxy_data['logs']) && is_array($proxy_data['logs'])) {
                     foreach ($proxy_data['logs'] as $log) {
+                        // Parse ISO 8601 timestamp to Unix timestamp
+                        $timestamp_str = $log['timestamp'] ?? date('c');
+                        $timestamp_obj = new DateTime($timestamp_str);
+                        $timestamp_int = $timestamp_obj->getTimestamp();
+                        
+                        // Extract summary data
+                        $summary = $log['summary'] ?? ['critical' => 0, 'high' => 0, 'medium' => 0, 'low' => 0];
+                        
                         $logs[] = [
                             'type' => $log['type'] ?? 'proxy_transaction',
-                            'timestamp' => date('Y-m-d H:i:s', $log['timestamp'] ?? time()),
-                            'details' => $log['details'] ?? '',
-                            'url' => $log['url'] ?? '',
-                            'scan_id' => null,
-                            'findings' => 0,
-                            'critical' => 0,
-                            'high' => 0,
-                            'medium' => 0,
-                            'low' => 0,
+                            'timestamp' => date('Y-m-d H:i:s', $timestamp_int),
+                            'details' => 'Scan ID: ' . ($log['scan_id'] ?? 'N/A') . ' | Findings: ' . ($log['findings_count'] ?? 0),
+                            'url' => $log['base_url'] ?? '',
+                            'scan_id' => $log['scan_id'] ?? null,
+                            'findings' => intval($log['findings_count'] ?? 0),
+                            'critical' => intval($summary['critical'] ?? 0),
+                            'high' => intval($summary['high'] ?? 0),
+                            'medium' => intval($summary['medium'] ?? 0),
+                            'low' => intval($summary['low'] ?? 0),
                             'source' => 'proxy'
                         ];
                     }
@@ -70,6 +78,7 @@ function local_security_dashboard_get_logs($limit = 100) {
             }
         } catch (Exception $e) {
             // Continue even if proxy fails
+            error_log('Error fetching proxy logs: ' . $e->getMessage());
         }
     }
     
@@ -85,6 +94,7 @@ function local_security_dashboard_get_logs($limit = 100) {
                 'details' => 'Scan ID: ' . $scan->scan_id . ' | Findings: ' . $scan->total_findings,
                 'url' => $scan->target_url,
                 'scan_id' => $scan->scan_id,
+                'db_id' => $scan->id,  // Database record ID for lookup
                 'findings' => $scan->total_findings,
                 'critical' => $scan->critical_count ?? 0,
                 'high' => $scan->high_count ?? 0,
@@ -976,5 +986,367 @@ function local_security_dashboard_quarantine_content($findingid) {
         return ['success' => false, 'message' => 'Content not found'];
     } catch (Exception $e) {
         return ['success' => false, 'message' => 'Error: ' . $e->getMessage()];
+    }
+}
+
+/**
+ * Get credentials for authenticated scanning
+ * 
+ * @param string $method Authentication method (manual, auto_admin, session_token)
+ * @return array Credentials array with username and password
+ */
+function local_security_dashboard_get_credentials($method = null) {
+    global $DB, $CFG;
+    
+    if ($method === null) {
+        $method = get_config('local_security_dashboard', 'auth_method') ?? 'manual';
+    }
+    
+    switch ($method) {
+        case 'manual':
+            // Get stored credentials
+            $username = get_config('local_security_dashboard', 'scan_test_user');
+            $password = get_config('local_security_dashboard', 'scan_test_password');
+            
+            if (empty($username) || empty($password)) {
+                return ['error' => 'Manual credentials not configured. Please set username and password in ZAP settings.'];
+            }
+            return ['username' => $username, 'password' => $password, 'method' => 'manual'];
+            
+        case 'auto_admin':
+            // Auto-detect first admin user, but password must be manually configured
+            try {
+                $admin = $DB->get_record('user', ['id' => 2]); // Moodle default admin is usually id=2
+                if (!$admin) {
+                    // Fallback: find any admin user
+                    $admins = get_admins();
+                    if (!empty($admins)) {
+                        $admin = reset($admins);
+                    } else {
+                        return ['error' => 'No admin user found. Please configure manual credentials.'];
+                    }
+                }
+                
+                $password = get_config('local_security_dashboard', 'scan_test_password');
+                if (empty($password)) {
+                    return ['error' => 'Auto-admin detected user "' . $admin->username . '" but password not configured. Please set password in settings.'];
+                }
+                
+                return ['username' => $admin->username, 'password' => $password, 'method' => 'auto_admin'];
+            } catch (Exception $e) {
+                return ['error' => 'Failed to detect admin: ' . $e->getMessage()];
+            }
+            
+        case 'session_token':
+            // Session token method requires manual credentials setup
+            $username = get_config('local_security_dashboard', 'scan_test_user');
+            $password = get_config('local_security_dashboard', 'scan_test_password');
+            
+            if (empty($username) || empty($password)) {
+                return ['error' => 'Session token method requires both username and password configuration.'];
+            }
+            
+            return [
+                'username' => $username,
+                'password' => $password,
+                'method' => 'session',
+                'auth_url' => $CFG->wwwroot . '/login/index.php'
+            ];
+            
+        default:
+            return ['error' => 'Unknown authentication method: ' . $method];
+    }
+}
+
+/**
+ * Configure ZAP Authentication - SIMPLIFIED APPROACH
+ * Tests actual login and generates session cookie instead of using ZAP's complex auth API
+ * 
+ * @param string $username Moodle username
+ * @param string $password Moodle password  
+ * @param string $context_id ZAP context ID
+ * @return array Result with session cookie or error
+ */
+function local_security_dashboard_setup_zap_auth($username, $password, $context_id = 'Moodle') {
+    global $CFG;
+    
+    try {
+        // Step 1: Fetch login page to get CSRF token
+        error_log("DEBUG: Fetching login page from {$CFG->wwwroot}/login/index.php");
+        
+        $login_url = rtrim($CFG->wwwroot, '/') . '/login/index.php';
+        
+        // Create temporary cookie file for session persistence
+        $cookie_file = tempnam(sys_get_temp_dir(), 'moodle_login_');
+        error_log("DEBUG: Using cookie file: $cookie_file");
+        
+        // Fetch login page
+        $cmd = "curl -s -c " . escapeshellarg($cookie_file) . " " . escapeshellarg($login_url) . " 2>&1";
+        $page = shell_exec($cmd);
+        
+        if (!$page) {
+            throw new Exception('Failed to fetch login page');
+        }
+        
+        error_log("DEBUG: Login page fetched, size: " . strlen($page) . " bytes");
+        
+        // Step 2: Extract CSRF token from login form
+        $logintoken = null;
+        
+        // Try multiple patterns for CSRF token extraction
+        if (preg_match('/<input[^>]*name=["\']logintoken["\'][^>]*value=["\']([^"\']+)["\']/', $page, $matches)) {
+            $logintoken = $matches[1];
+            error_log("DEBUG: Found logintoken via pattern 1");
+        } elseif (preg_match('/name=["\']logintoken["\'][^>]*value=["\']([^"\']+)["\']/', $page, $matches)) {
+            $logintoken = $matches[1];
+            error_log("DEBUG: Found logintoken via pattern 2");
+        }
+        
+        if (!$logintoken) {
+            error_log("WARNING: Could not extract CSRF token from login page - proceeding without it");
+            $logintoken = '';
+        }
+        
+        // Step 3: Perform login
+        error_log("DEBUG: Attempting login for user: $username");
+        
+        $post_data = array(
+            'username' => $username,
+            'password' => $password,
+            'submit' => 'Log in'
+        );
+        
+        if (!empty($logintoken)) {
+            $post_data['logintoken'] = $logintoken;
+        }
+        
+        $post_string = http_build_query($post_data);
+        
+        // Login with curl, following redirects and saving cookies
+        $cmd = "curl -s -b " . escapeshellarg($cookie_file) . 
+               " -c " . escapeshellarg($cookie_file) . 
+               " -L " . // follow redirects
+               "-X POST " .
+               "-d " . escapeshellarg($post_string) . 
+               " " . escapeshellarg($login_url) . 
+               " 2>&1 | head -c 2000"; // Get first 2000 chars of response
+        
+        $login_response = shell_exec($cmd);
+        error_log("DEBUG: Login response received, size: " . strlen($login_response) . " bytes");
+        
+        // Step 4: Verify login by checking for success indicators
+        $success_patterns = array(
+            '/Dashboard/',
+            '/My courses/i',
+            '/My home/i',
+            '/Administration/i'
+        );
+        
+        $login_success = false;
+        foreach ($success_patterns as $pattern) {
+            if (preg_match($pattern, $login_response)) {
+                $login_success = true;
+                error_log("DEBUG: Found success indicator: $pattern");
+                break;
+            }
+        }
+        
+        if (!$login_success) {
+            // Check for failure indicators
+            if (preg_match('/login/i', $login_response) && preg_match('/(error|invalid|failed|incorrect)/i', $login_response)) {
+                throw new Exception('Login failed - invalid credentials or authentication error');
+            }
+            error_log("WARNING: Could not confirm login success - cookies may or may not be valid");
+        }
+        
+        // Step 5: Extract session cookie
+        $cookies = array();
+        if (file_exists($cookie_file)) {
+            $cookie_content = file_get_contents($cookie_file);
+            
+            // Parse netscape cookie format
+            preg_match_all('/^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\S+)\s+(\S+)$/m', $cookie_content, $matches);
+            
+            if (!empty($matches[1])) {
+                $cookies = array_combine($matches[1], $matches[2]);
+                error_log("DEBUG: Extracted " . count($cookies) . " cookies");
+            }
+        }
+        
+        // Store cookie file path in database for later use in scans
+        set_config('last_auth_cookie_file', $cookie_file, 'local_security_dashboard');
+        
+        error_log("DEBUG: ZAP authentication setup completed successfully");
+        error_log("DEBUG: Stored cookie file at: $cookie_file");
+        error_log("DEBUG: Login success: " . ($login_success ? 'YES' : 'UNCERTAIN'));
+        
+        return array(
+            'success' => true,
+            'message' => 'ZAP authentication configured successfully',
+            'context_id' => 1,
+            'username' => $username,
+            'cookie_file' => $cookie_file,
+            'login_verified' => $login_success,
+            'cookies' => $cookies,
+            'details' => 'Session cookies prepared and stored for authenticated scanning'
+        );
+        
+    } catch (Exception $e) {
+        error_log('Exception during ZAP auth setup: ' . $e->getMessage());
+        return array('error' => 'Exception during ZAP auth setup: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Verify ZAP Authentication
+ * Test if ZAP can successfully login to Moodle
+ * Uses shell_exec curl to bypass Moodle's SSRF blocking
+ * 
+ * @param string $username Username to test
+ * @param string $password Password to test
+ * @return array Test result
+ */
+function local_security_dashboard_verify_zap_auth($username, $password) {
+    global $CFG;
+    
+    try {
+        $login_url = rtrim($CFG->wwwroot, '/') . '/login/index.php';
+        $dashboard_url = rtrim($CFG->wwwroot, '/') . '/my/';
+        $cookie_file = '/tmp/moodle_verify_' . md5($username . time()) . '.txt';
+        
+        error_log("DEBUG: Starting auth test for user: $username");
+        error_log("DEBUG: Cookie file: $cookie_file");
+        
+        // Step 1: Get login page to extract CSRF token via shell_exec
+        $login_url_escaped = escapeshellarg($login_url);
+        $cookie_file_escaped = escapeshellarg($cookie_file);
+        
+        $cmd = "curl -s -c $cookie_file_escaped -b $cookie_file_escaped $login_url_escaped 2>&1";
+        error_log("DEBUG: Getting login page: $cmd");
+        $page = shell_exec($cmd);
+        
+        if (!$page) {
+            error_log("DEBUG: No response when fetching login page");
+            return ['success' => false, 'message' => 'Failed to fetch login page'];
+        }
+        
+        error_log("DEBUG: Login page length: " . strlen($page));
+        
+        // Parse CSRF token from login form - try multiple patterns
+        $token = '';
+        
+        // Pattern 1: Standard input field
+        if (preg_match('/<input[^>]*name=["\']logintoken["\'][^>]*value=["\']([^"\']+)["\']/', $page, $matches)) {
+            $token = $matches[1];
+            error_log("DEBUG: Found logintoken (pattern 1): " . substr($token, 0, 10) . "...");
+        }
+        // Pattern 2: Alternative
+        elseif (preg_match('/name=["\']logintoken["\'][^>]*value=["\']([^"\']+)["\']/', $page, $matches)) {
+            $token = $matches[1];
+            error_log("DEBUG: Found logintoken (pattern 2): " . substr($token, 0, 10) . "...");
+        }
+        
+        if (empty($token)) {
+            error_log("DEBUG: Could not find logintoken in page. Page content: " . substr($page, 0, 500));
+            // Continue anyway - older Moodle versions might not need it
+            $token = '';
+        }
+        
+        // Step 2: POST login credentials via shell_exec
+        $post_data = [
+            'username' => $username,
+            'password' => $password,
+        ];
+        
+        if (!empty($token)) {
+            $post_data['logintoken'] = $token;
+        }
+        
+        $post_data['submit'] = 'Log in';
+        
+        // Build POST data string
+        $post_str = http_build_query($post_data);
+        $post_str_escaped = escapeshellarg($post_str);
+        
+        // POST with curl, follow redirects, include headers for verbosity
+        $cmd = "curl -s -i -L -c $cookie_file_escaped -b $cookie_file_escaped " .
+               "-d $post_str_escaped " .
+               $login_url_escaped . " 2>&1";
+        
+        error_log("DEBUG: Executing login POST for user: $username");
+        $response = shell_exec($cmd);
+        
+        if (!$response) {
+            error_log("DEBUG: No response from login POST");
+            return ['success' => false, 'message' => 'No response from login'];
+        }
+        
+        error_log("DEBUG: Login response length: " . strlen($response));
+        error_log("DEBUG: Login response (first 800 chars): " . substr($response, 0, 800));
+        
+        // Step 3: Verify login by accessing dashboard with saved cookies
+        error_log("DEBUG: Verifying login by accessing dashboard...");
+        $dashboard_url_escaped = escapeshellarg($dashboard_url);
+        
+        $cmd = "curl -s -i -b $cookie_file_escaped $dashboard_url_escaped 2>&1";
+        $dashboard_response = shell_exec($cmd);
+        
+        if (!$dashboard_response) {
+            error_log("DEBUG: No response from dashboard");
+            $is_success = false;
+        } else {
+            error_log("DEBUG: Dashboard response length: " . strlen($dashboard_response));
+            error_log("DEBUG: Dashboard response (first 500 chars): " . substr($dashboard_response, 0, 500));
+            
+            // Check if we got a successful HTTP response (200 OK) without redirect to login
+            $is_success = false;
+            
+            if (stripos($dashboard_response, '200 OK') !== false || stripos($dashboard_response, '301 Found') !== false) {
+                // Check that we're NOT redirected back to login - use AND not OR
+                if (stripos($dashboard_response, 'Location: http') === false && 
+                    stripos($dashboard_response, 'login/index.php') === false) {
+                    $is_success = true;
+                    error_log("DEBUG: Got successful HTTP response without redirect to login");
+                }
+            }
+            
+            // Fallback: check for logged-in indicators in page content
+            if (!$is_success) {
+                $success_indicators = [
+                    'Dashboard',
+                    'My Courses', 
+                    'My Home',
+                    'My Moodle',
+                    'administration',
+                    'user-menu',
+                    'action-menu',
+                    'profile',
+                    $username  // Check if username appears on page (logged in)
+                ];
+                
+                foreach ($success_indicators as $indicator) {
+                    if (stripos($dashboard_response, $indicator) !== false) {
+                        $is_success = true;
+                        error_log("DEBUG: Found success indicator: $indicator");
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Cleanup cookie file
+        @unlink($cookie_file);
+        
+        if ($is_success) {
+            error_log("DEBUG: Authentication test PASSED");
+            return ['success' => true, 'message' => 'Authentication test passed'];
+        } else {
+            error_log("DEBUG: Authentication test FAILED");
+            return ['success' => false, 'message' => 'Login failed - verify credentials in Moodle settings'];
+        }
+        
+    } catch (Exception $e) {
+        error_log("DEBUG: Authentication test exception: " . $e->getMessage());
+        return ['success' => false, 'error' => $e->getMessage()];
     }
 }

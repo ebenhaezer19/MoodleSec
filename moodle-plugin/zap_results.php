@@ -13,6 +13,18 @@ require_once($CFG->libdir . '/adminlib.php');
 require_login();
 require_capability('local/security_dashboard:view', context_system::instance());
 
+/**
+ * Helper function to truncate string
+ */
+if (!function_exists('str_truncate')) {
+    function str_truncate($str, $length = 50) {
+        if (strlen($str) > $length) {
+            return substr($str, 0, $length) . '...';
+        }
+        return $str;
+    }
+}
+
 $scan_id = optional_param('scan_id', 0, PARAM_INT);
 
 // If no scan_id provided, redirect to dashboard or show message
@@ -60,19 +72,19 @@ $summary_html = <<<HTML
     </div>
     <div class="col-md-3">
         <div class="stat-box">
-            <h3 class="stat-number" style="color: #dc3545;">{$scan->high_risk_findings}</h3>
+            <h3 class="stat-number" style="color: #dc3545;">{$scan->high_count}</h3>
             <p class="stat-label">High Risk</p>
         </div>
     </div>
     <div class="col-md-3">
         <div class="stat-box">
-            <h3 class="stat-number" style="color: #ffc107;">{$scan->medium_risk_findings}</h3>
+            <h3 class="stat-number" style="color: #ffc107;">{$scan->medium_count}</h3>
             <p class="stat-label">Medium Risk</p>
         </div>
     </div>
     <div class="col-md-3">
         <div class="stat-box">
-            <h3 class="stat-number" style="color: #28a745;">{$scan->low_risk_findings}</h3>
+            <h3 class="stat-number" style="color: #28a745;">{$scan->low_count}</h3>
             <p class="stat-label">Low Risk</p>
         </div>
     </div>
@@ -85,7 +97,7 @@ $summary_html = <<<HTML
     </div>
     <div class="col-md-6">
         <p><strong>Status:</strong> <span class="badge badge-success">{$scan->status}</span></p>
-        <p><strong>Scan Duration:</strong> {$scan->duration} seconds</p>
+        <p><strong>Scan Duration:</strong> {$scan->scan_duration} seconds</p>
         <p><strong>Scanned:</strong> {userdate($scan->timecreated)}</p>
     </div>
 </div>
@@ -119,18 +131,18 @@ if (!empty($findings)) {
     
     $i = 1;
     foreach ($findings as $finding) {
-        // Risk color
+        // Risk color based on severity
         $risk_color = 'danger';
-        if ($finding->risk === 'Medium') $risk_color = 'warning';
-        if ($finding->risk === 'Low') $risk_color = 'info';
+        if ($finding->severity === 'Medium') $risk_color = 'warning';
+        if ($finding->severity === 'Low') $risk_color = 'info';
         
         $table->data[] = [
             $i++,
-            $finding->type,
-            "<span class='badge badge-{$risk_color}'>{$finding->risk}</span>",
-            str_truncate($finding->url, 50),
+            $finding->title ?? $finding->category,
+            "<span class='badge badge-{$risk_color}'>{$finding->severity}</span>",
+            str_truncate($scan->target_url, 50),
             str_truncate($finding->evidence, 30),
-            str_truncate($finding->solution, 40)
+            str_truncate($finding->remediation, 40)
         ];
     }
     
@@ -146,7 +158,7 @@ if (!empty($findings)) {
     echo html_writer::start_div('card-body');
     
     foreach ($findings as $finding) {
-        $risk_color = match($finding->risk) {
+        $risk_color = match($finding->severity) {
             'High' => '#dc3545',
             'Medium' => '#ffc107',
             'Low' => '#17a2b8',
@@ -154,15 +166,18 @@ if (!empty($findings)) {
         };
         
         echo html_writer::start_div('finding-detail mb-3', ['style' => "border-left: 4px solid $risk_color; padding-left: 10px;"]);
-        echo html_writer::tag('h6', $finding->type . " [{$finding->risk}]");
-        echo "<p><strong>URL:</strong> {$finding->url}</p>";
+        echo html_writer::tag('h6', ($finding->title ?? $finding->category) . " [{$finding->severity}]");
+        echo "<p><strong>URL:</strong> {$scan->target_url}</p>";
+        echo "<p><strong>Category:</strong> {$finding->category}</p>";
         echo "<p><strong>Evidence:</strong></p>";
         echo "<pre class='bg-light p-2'>" . htmlspecialchars($finding->evidence) . "</pre>";
         echo "<p><strong>Description:</strong></p>";
         echo "<p>{$finding->description}</p>";
-        echo "<p><strong>Solution:</strong></p>";
-        echo "<p>{$finding->solution}</p>";
-        echo "<p><small>Reference: <a href='{$finding->reference}' target='_blank'>{$finding->reference}</a></small></p>";
+        echo "<p><strong>Remediation:</strong></p>";
+        echo "<p>{$finding->remediation}</p>";
+        if (!empty($finding->cwe_id)) {
+            echo "<p><small>CWE: <a href='https://cwe.mitre.org/data/definitions/{$finding->cwe_id}.html' target='_blank'>CWE-{$finding->cwe_id}</a></small></p>";
+        }
         echo html_writer::end_div();
     }
     
