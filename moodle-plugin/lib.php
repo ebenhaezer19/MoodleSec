@@ -1071,6 +1071,12 @@ function local_security_dashboard_setup_zap_auth($username, $password, $context_
     global $CFG;
     
     try {
+        // Step 0: Ensure Firefox is configured
+        $firefox_config = local_security_dashboard_configure_zap_firefox();
+        if (isset($firefox_config['error'])) {
+            throw new Exception($firefox_config['error']);
+        }
+        
         // Step 1: Fetch login page to get CSRF token
         error_log("DEBUG: Fetching login page from {$CFG->wwwroot}/login/index.php");
         
@@ -1194,6 +1200,44 @@ function local_security_dashboard_setup_zap_auth($username, $password, $context_
     } catch (Exception $e) {
         error_log('Exception during ZAP auth setup: ' . $e->getMessage());
         return array('error' => 'Exception during ZAP auth setup: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Configure ZAP Browser Automation with Firefox Binary Path
+ * Tells ZAP where to find Firefox executable for authenticated scanning
+ * 
+ * @param string $firefox_binary_path Full path to Firefox binary
+ * @return array Configuration result
+ */
+function local_security_dashboard_configure_zap_firefox($firefox_binary_path = null) {
+    global $CFG;
+    
+    try {
+        if (!$firefox_binary_path) {
+            $firefox_binary_path = get_config('local_security_dashboard', 'firefox_binary_path') ?? '/usr/bin/firefox';
+        }
+        
+        // Verify Firefox binary exists
+        if (!file_exists($firefox_binary_path)) {
+            error_log("WARNING: Firefox binary not found at: $firefox_binary_path");
+            return array('error' => "Firefox binary not found at: $firefox_binary_path. Please configure correct path in ZAP Settings.");
+        }
+        
+        error_log("DEBUG: Firefox binary path verified at: $firefox_binary_path");
+        
+        // Store Firefox binary path for ZAP to use
+        set_config('firefox_binary_path_verified', $firefox_binary_path, 'local_security_dashboard');
+        
+        return array(
+            'success' => true,
+            'message' => 'Firefox browser automation configured',
+            'firefox_binary' => $firefox_binary_path
+        );
+        
+    } catch (Exception $e) {
+        error_log('Exception during Firefox configuration: ' . $e->getMessage());
+        return array('error' => 'Exception during Firefox configuration: ' . $e->getMessage());
     }
 }
 

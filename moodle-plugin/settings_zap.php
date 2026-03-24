@@ -109,6 +109,13 @@ if ($hassiteconfig) {
         '',
         PARAM_RAW));
     
+    // Firefox Binary Path (for authenticated scanning)
+    $settings_zap->add(new admin_setting_configtext('local_security_dashboard/firefox_binary_path',
+        'Firefox Binary Path',
+        'Full path to Firefox executable (required for authenticated scanning with browser automation). Example: /usr/bin/firefox or C:\\Program Files\\Mozilla Firefox\\firefox.exe',
+        '/usr/bin/firefox',
+        PARAM_RAW));
+    
     // ML Filtering Configuration
     $settings_zap->add(new admin_setting_heading('local_security_dashboard/ml_settings',
         new lang_string('ml_filtering', 'local_security_dashboard'),
