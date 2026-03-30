@@ -274,6 +274,56 @@ function local_security_dashboard_trigger_full_scan($max_depth = 2, $max_pages =
 }
 
 /**
+ * Trigger native authenticated full-site vulnerability scan
+ * 
+ * Performs authenticated scanning as admin user, allowing discovery of
+ * endpoints and vulnerabilities that are only visible when logged in.
+ *
+ * @param int $max_depth Maximum crawl depth
+ * @param int $max_pages Maximum pages to crawl
+ * @param string $username Username for authentication (default: admin)
+ * @param string $password Password for authentication (default: Admin@1234)
+ * @return array Scan results including findings and statistics
+ */
+function local_security_dashboard_trigger_native_auth_scan($max_depth = 2, $max_pages = 50, $username = 'admin', $password = 'Admin@1234') {
+    $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    
+    if (empty($proxy_url)) {
+        return ['error' => 'Proxy URL not configured'];
+    }
+    
+    // Call the new native authenticated scan endpoint
+    $url = rtrim($proxy_url, '/') . '/api/scan-native-auth';
+    
+    try {
+        $curl = new curl();
+        $response = $curl->post($url, json_encode([
+            'max_depth' => $max_depth,
+            'max_pages' => $max_pages,
+            'username' => $username,
+            'password' => $password
+        ]), [
+            'CURLOPT_HTTPHEADER' => ['Content-Type: application/json'],
+            'CURLOPT_TIMEOUT' => 600  // 10 minutes timeout for full authenticated scan
+        ]);
+        
+        if ($curl->get_errno()) {
+            return ['error' => 'Connection error: ' . $curl->error];
+        }
+        
+        $result = json_decode($response, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return ['error' => 'Invalid response from proxy service'];
+        }
+        
+        return $result;
+    } catch (Exception $e) {
+        return ['error' => $e->getMessage()];
+    }
+}
+
+/**
  * Create a scheduled scan
  *
  * @param string $target_url Target URL to scan
