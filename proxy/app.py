@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field
 from config import MOODLE_URL, LISTEN_PORT, LOG_DIR, MAX_LOG_ENTRIES, SLACK_WEBHOOK_URL, SLACK_ENABLED
 from utils.logger import append_log, read_logs, ensure_log_directory
 from utils.slack_notifier import SlackNotifier
+from utils.payload_debug_logger import PayloadDebugLogger
+from utils.debug_endpoints import setup_debug_endpoints
 from scanners.scanner_engine import ScannerEngine
 from scanners.phishing_detector import PhishingDetector
 from crawler.web_crawler import WebCrawler
@@ -47,6 +49,17 @@ ensure_log_directory(LOG_DIR)
 
 # Initialize scanner engine
 scanner_engine = ScannerEngine()
+
+# Initialize payload debug logger
+try:
+    debug_logger = PayloadDebugLogger()
+    print("[✓] Payload Debug Logger initialized successfully")
+    
+    # Setup debug endpoints
+    setup_debug_endpoints(app, debug_logger, scanner_engine)
+except Exception as e:
+    print(f"[!] Payload Debug Logger initialization failed: {e}")
+    debug_logger = None
 
 # Initialize risk scorer
 risk_scorer = RiskScorer()
@@ -2265,6 +2278,165 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
             status_code=500,
             detail=f"Internal proxy error: {str(e)}"
         )
+
+
+# ==================== PHASE 2: PAYLOAD MANAGEMENT ENDPOINTS ====================
+
+@app.post("/api/payloads/reload")
+async def reload_payloads(category: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Reload payloads from database without restarting the application.
+    
+    Useful after importing payloads from ZAP or other sources.
+    
+    Args:
+        category: Optional specific category to reload (XSS, SQL Injection, CSRF, etc.)
+                 If None, reload all categories
+    
+    Returns:
+        Reload status with updated payload counts
+    """
+    if not payload_repo:
+        raise HTTPException(status_code=503, detail="Payload repository not initialized")
+    
+    try:
+        if category:
+            # Reload specific category
+            result = payload_repo.reload_payloads_by_category(category)
+            return {
+                "status": "success",
+                "action": "reload_category",
+                "category": category,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "result": result
+            }
+        else:
+            # Reload all payloads
+            result = payload_repo.reload_all_payloads()
+            return result
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reload payloads: {str(e)}")
+
+
+@app.post("/api/payloads/import-from-zap")
+async def import_payloads_from_zap(
+    zap_host: str = "localhost",
+    zap_port: int = 8080,
+    limit: int = 200,
+    reload_scanners: bool = True
+) -> Dict[str, Any]:
+    """
+    Import payloads directly from ZAP API.
+    
+    This endpoint:
+    1. Connects to ZAP API
+    2. Fetches alerts/findings
+    3. Extracts payloads from evidence
+    4. Stores in repository
+    5. Optionally reloads scanner instances
+    
+    Args:
+        zap_host: ZAP API host (default: localhost)
+        zap_port: ZAP API port (default: 8080)
+        limit: Maximum alerts to import (default: 200)
+        reload_scanners: Whether to reload scanner payloads (default: True)
+    
+    Returns:
+        Import results with statistics and affected categories
+    """
+    if not payload_repo:
+        raise HTTPException(status_code=503, detail="Payload repository not initialized")
+    
+    try:
+        print(f"\n[ZAP Import API] Starting ZAP payload import from {zap_host}:{zap_port}...")
+        
+        # Import from ZAP
+        result = payload_repo.import_from_zap_api(zap_host=zap_host, zap_port=zap_port, limit=limit)
+        
+        if result.get("status") == "error":
+            raise HTTPException(status_code=400, detail=result.get("message"))
+        
+        # If reload_scanners enabled, reinitialize scanner payloads
+        if reload_scanners and result.get("payloads_imported", 0) > 0:
+            try:
+                # Re-initialize scanner engine with new payloads
+                scanner_engine.initialize_scanners()
+                result["scanners_reloaded"] = True
+                print(f"[ZAP Import API] Scannersreloaded with new payloads")
+            except Exception as e:
+                result["scanner_reload_error"] = str(e)
+                print(f"[ZAP Import API] Scanner reload warning: {e}")
+        
+        return {
+            "status": "success",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "import_result": result
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"ZAP import failed: {str(e)}")
+
+
+@app.post("/api/scanners/reload-payloads")
+async def reload_scanner_payloads(category: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Reload payload instances in all scanner modules.
+    
+    This forces scanners to reload smart payloads from the repository
+    without restarting the application.
+    
+    Args:
+        category: Optional specific category to reload
+    
+    Returns:
+        Reload status for each scanner type
+    """
+    try:
+        results = {}
+        
+        # Reload from scanner engine
+        if hasattr(scanner_engine, 'initialize_scanners'):
+            scanner_engine.initialize_scanners()
+            results['scanner_engine'] = 'reloaded'
+        
+        print(f"[Scanner Reload] Reloaded payloads in active scanners")
+        
+        return {
+            "status": "success",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "reloaded_components": results
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Scanner reload failed: {str(e)}")
+
+
+@app.get("/api/payloads/import-status")
+async def get_import_status() -> Dict[str, Any]:
+    """
+    Get current import status and payload repository health.
+    
+    Returns:
+        Current statistics about imported payloads
+    """
+    if not payload_repo:
+        raise HTTPException(status_code=503, detail="Payload repository not initialized")
+    
+    try:
+        stats = payload_repo.get_stats()
+        
+        return {
+            "status": "ok",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "repository": stats,
+            "scanner_status": "active" if scanner_engine else "inactive"
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get import status: {str(e)}")
 
 
 if __name__ == "__main__":

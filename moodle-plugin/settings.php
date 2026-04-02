@@ -80,6 +80,14 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
     
+    // Add Phase 2: Payload Management page
+    $ADMIN->add('local_security_dashboard', new admin_externalpage(
+        'local_security_dashboard_payload_mgmt',
+        '🚀 Phase 2: Payload Management',
+        new moodle_url('/local/security_dashboard/payload_management.php'),
+        'moodle/site:config'
+    ));
+    
     // Add Settings page at the end
     $settingspage = new admin_settingpage('local_security_dashboard_settings', 
         'Settings');

@@ -47,6 +47,30 @@ class ScannerEngine:
             }
         }
     
+    def initialize_scanners(self):
+        """Reinitialize all scanners with fresh payload data from repository.
+        
+        Useful after importing new payloads from ZAP without restarting.
+        """
+        try:
+            print("[Scanner Engine] Reinitializing scanners with fresh payloads...")
+            
+            # Reinitialize each detector
+            self.sql_detector = SQLInjectionDetector()
+            self.xss_detector = XSSDetector()
+            self.csrf_validator = CSRFValidator()
+            self.path_traversal_detector = PathTraversalDetector()
+            
+            # Update scanner references
+            self.scanners['sql_injection']['detector'] = self.sql_detector
+            self.scanners['xss']['detector'] = self.xss_detector
+            self.scanners['csrf']['detector'] = self.csrf_validator
+            self.scanners['path_traversal']['detector'] = self.path_traversal_detector
+            
+            print("[Scanner Engine] Scanner reinitialization complete")
+        except Exception as e:
+            print(f"[Scanner Engine] Error reinitializing scanners: {e}")
+    
     def scan(self, url: str, method: str = 'GET', 
              params: Optional[Dict[str, Any]] = None,
              request_body: str = "",

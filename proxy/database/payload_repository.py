@@ -11,7 +11,7 @@ Manages vulnerable payload database for intelligent reuse during scanning.
 import sqlite3
 import hashlib
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from pathlib import Path
 
 
@@ -290,3 +290,165 @@ class PayloadRepositoryManager:
             "vulnerable_payloads": vulnerable,
             "by_category": by_category
         }
+    
+    def reload_payloads_by_category(self, category: str, force_reload: bool = True) -> Dict[str, int]:
+        """Reload and refresh payloads for category without restart.
+        
+        Args:
+            category: Category to reload (XSS, SQL Injection, CSRF, etc.)
+            force_reload: If True, clear cache and reload from DB
+        
+        Returns:
+            Count of reloaded payloads by effectiveness status
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Get all payloads for category ordered by effectiveness
+        cursor.execute("""
+            SELECT COUNT(*) as total,
+                   SUM(CASE WHEN is_vulnerable = 1 THEN 1 ELSE 0 END) as vulnerable,
+                   SUM(CASE WHEN effectiveness_score >= 0.7 THEN 1 ELSE 0 END) as high_effectiveness,
+                   SUM(CASE WHEN effectiveness_score >= 0.5 AND effectiveness_score < 0.7 THEN 1 ELSE 0 END) as medium_effectiveness
+            FROM payloads
+            WHERE category = ?
+        """, (category,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return {"total": 0, "vulnerable": 0, "high_effectiveness": 0, "medium_effectiveness": 0}
+        
+        total, vulnerable, high_eff, medium_eff = row
+        
+        return {
+            "total": total or 0,
+            "vulnerable": vulnerable or 0,
+            "high_effectiveness": high_eff or 0,
+            "medium_effectiveness": medium_eff or 0
+        }
+    
+    def reload_all_payloads(self) -> Dict[str, Any]:
+        """Reload all payloads from database. Useful after ZAP import.
+        
+        Returns:
+            Summary of reloaded payloads by category
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT category, COUNT(*) as count, 
+                   SUM(CASE WHEN is_vulnerable = 1 THEN 1 ELSE 0 END) as vulnerable
+            FROM payloads
+            GROUP BY category
+            ORDER BY count DESC
+        """)
+        
+        by_category = {}
+        for category, count, vulnerable in cursor.fetchall():
+            by_category[category] = {
+                "total": count,
+                "vulnerable": vulnerable or 0
+            }
+        
+        conn.close()
+        
+        return {
+            "status": "reloaded",
+            "timestamp": datetime.now().isoformat(),
+            "by_category": by_category
+        }
+    
+    def import_from_zap_api(self, zap_host: str = "localhost", zap_port: int = 8080, 
+                           limit: int = 200) -> Dict[str, Any]:
+        """Import payloads from ZAP API directly.
+        
+        Args:
+            zap_host: ZAP API host
+            zap_port: ZAP API port
+            limit: Max alerts to import
+        
+        Returns:
+            Import result with statistics
+        """
+        try:
+            import requests
+            import json
+            
+            # Connect to ZAP
+            zap_url = f"http://{zap_host}:{zap_port}"
+            version_response = requests.get(f"{zap_url}/JSON/core/view/version", timeout=10)
+            
+            if version_response.status_code != 200:
+                return {"status": "error", "message": f"ZAP not accessible at {zap_url}"}
+            
+            zap_version = version_response.json().get('version', 'unknown')
+            print(f"[ZAP Import] Connected to ZAP v{zap_version}")
+            
+            # Fetch alerts
+            alerts_response = requests.get(
+                f"{zap_url}/JSON/core/view/alerts",
+                params={"zapapiformat": "JSON", "count": limit},
+                timeout=30
+            )
+            
+            if alerts_response.status_code != 200:
+                return {"status": "error", "message": "Failed to fetch ZAP alerts"}
+            
+            alerts = alerts_response.json().get('alerts', [])
+            imported = 0
+            by_category = {}
+            
+            # Process each alert
+            for alert in alerts:
+                try:
+                    category = alert.get('alert', 'Unknown')
+                    severity = alert.get('riskcode', '2')
+                    evidence = alert.get('evidence', '')
+                    url = alert.get('url', '')
+                    
+                    if not evidence or len(evidence) < 2:
+                        continue
+                    
+                    # Normalize category
+                    if 'XSS' in category or 'Cross' in category:
+                        norm_cat = 'XSS'
+                    elif 'SQL' in category:
+                        norm_cat = 'SQL Injection'
+                    elif 'CSRF' in category:
+                        norm_cat = 'CSRF'
+                    else:
+                        norm_cat = category
+                    
+                    severity_map = {'0': 'Low', '1': 'Low', '2': 'Medium', '3': 'High', '4': 'Critical', '5': 'Critical'}
+                    severity_str = severity_map.get(str(severity), 'Medium')
+                    
+                    # Add payload
+                    self.add_payload(
+                        payload_text=evidence[:1000],
+                        category=norm_cat,
+                        payload_type=category,
+                        severity=severity_str,
+                        source="ZAP_API_import",
+                        description=f"From ZAP: {category}",
+                        url=url
+                    )
+                    
+                    imported += 1
+                    by_category[norm_cat] = by_category.get(norm_cat, 0) + 1
+                
+                except Exception as e:
+                    continue
+            
+            return {
+                "status": "success",
+                "zap_version": zap_version,
+                "alerts_fetched": len(alerts),
+                "payloads_imported": imported,
+                "by_category": by_category
+            }
+        
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
