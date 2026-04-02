@@ -1248,6 +1248,55 @@ async def scan_api() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"API scan failed: {str(e)}")
 
 
+@app.get("/api/payload-stats")
+async def get_payload_stats() -> Dict[str, Any]:
+    """
+    Get intelligent payload repository statistics.
+    
+    Returns:
+        Payload repository stats including counts by category and effectiveness
+    """
+    if not payload_repo:
+        raise HTTPException(status_code=503, detail="Payload repository not initialized")
+    
+    try:
+        stats = payload_repo.get_stats()
+        return {
+            "status": "success",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "repository": stats
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get payload stats: {str(e)}")
+
+
+@app.get("/api/payload-top/{category}")
+async def get_top_payloads(category: str, limit: int = 10) -> Dict[str, Any]:
+    """
+    Get top-performing payloads for a specific category.
+    
+    Args:
+        category: Vulnerability category (XSS, SQL Injection, CSRF, etc.)
+        limit: Maximum payloads to return (default 10)
+    
+    Returns:
+        Top payloads ranked by effectiveness score
+    """
+    if not payload_repo:
+        raise HTTPException(status_code=503, detail="Payload repository not initialized")
+    
+    try:
+        payloads = payload_repo.get_top_payloads(category, limit)
+        return {
+            "status": "success",
+            "category": category,
+            "count": len(payloads),
+            "payloads": payloads
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get payloads: {str(e)}")
+
+
 @app.post("/api/scan-native-auth")
 async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str, Any]:
     """
