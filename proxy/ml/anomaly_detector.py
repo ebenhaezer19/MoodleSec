@@ -51,7 +51,9 @@ class AnomalyDetector:
     
     def extract_features(self, data: Dict[str, Any]) -> np.ndarray:
         """
-        Extract features for anomaly detection.
+        Extract enhanced features for anomaly detection.
+        
+        18 original features + 8 enhanced features = 26 total
         
         Args:
             data: Dictionary containing request/response/finding data
@@ -61,7 +63,9 @@ class AnomalyDetector:
         """
         features = []
         
-        # Request features
+        # ===== ORIGINAL 18 FEATURES =====
+        
+        # Request features (5)
         request = data.get('request', {})
         features.append(len(request.get('url', '')))  # URL length
         features.append(request.get('url', '').count('/'))  # Path depth
@@ -69,14 +73,14 @@ class AnomalyDetector:
         features.append(len(request.get('headers', {})))  # Header count
         features.append(len(request.get('body', '')))  # Body size
         
-        # Response features
+        # Response features (4)
         response = data.get('response', {})
         features.append(response.get('status_code', 200))  # Status code
         features.append(response.get('size', 0))  # Response size
         features.append(response.get('time', 0))  # Response time
         features.append(len(response.get('headers', {})))  # Response header count
         
-        # Finding features (if present)
+        # Finding features (3)
         finding = data.get('finding', {})
         if finding:
             severity_map = {'critical': 5, 'high': 4, 'medium': 3, 'low': 2, 'info': 1}
@@ -86,16 +90,97 @@ class AnomalyDetector:
         else:
             features.extend([0, 0, 0])
         
-        # Temporal features
+        # Temporal features (2)
         features.append(datetime.utcnow().hour)  # Hour of day
         features.append(datetime.utcnow().weekday())  # Day of week
         
-        # Behavioral features
+        # Behavioral features (3)
         features.append(data.get('request_count_last_minute', 0))
         features.append(data.get('unique_ips_last_minute', 0))
         features.append(data.get('error_rate_last_minute', 0))
         
+        # ===== ENHANCED FEATURES (P3) =====
+        
+        # Payload analysis (2)
+        body = request.get('body', '')
+        if body:
+            # Feature 1: Payload entropy (detect high entropy = injection payload)
+            entropy = self._calculate_entropy(body)
+            features.append(entropy)
+        else:
+            features.append(0)
+        
+        # Feature 2: Suspicious payload patterns
+        suspicious_patterns = ['<script', 'union select', '../', 'exec(', 'eval(', 'cmd.exe']
+        payload_suspicion = sum(1 for pattern in suspicious_patterns if pattern.lower() in body.lower())
+        features.append(payload_suspicion)
+        
+        # User agent analysis (1)
+        user_agent = request.get('headers', {}).get('User-Agent', '')
+        bot_keywords = ['bot', 'spider', 'crawler', 'scanner', 'nikto', 'sqlmap', 'nmap']
+        is_bot = sum(1 for keyword in bot_keywords if keyword.lower() in user_agent.lower())
+        features.append(float(is_bot > 0))
+        
+        # Response header anomalies (1)
+        response_headers = response.get('headers', {})
+        security_headers = ['x-frame-options', 'content-security-policy', 'strict-transport-security']
+        missing_headers = sum(1 for header in security_headers if header not in str(response_headers).lower())
+        features.append(missing_headers)
+        
+        # Status code abnormality (1)
+        status = response.get('status_code', 200)
+        status_abnormality = 0
+        if status >= 500:
+            status_abnormality = 1  # Server error
+        elif status >= 400 and status < 500:
+            status_abnormality = 0.5  # Client error
+        features.append(status_abnormality)
+        
+        # Request frequency spike (1)
+        req_freq = data.get('request_count_last_minute', 0)
+        freq_spike = min(1.0, req_freq / 100)  # Normalize to 0-1
+        features.append(freq_spike)
+        
+        # Response time deviation (1)
+        response_time = response.get('time', 0)
+        time_deviation = min(1.0, response_time / 5000)  # Normalize to 0-1
+        features.append(time_deviation)
+        
+        # Overall risk aggregation (1)
+        risk_score = finding.get('risk_score', 0) if finding else 0
+        normalized_risk = min(1.0, risk_score / 10)
+        features.append(normalized_risk)
+        
         return np.array(features).reshape(1, -1)
+    
+    def _calculate_entropy(self, text: str) -> float:
+        """
+        Calculate Shannon entropy of text.
+        High entropy = random/encoded content (possible injection).
+        
+        Args:
+            text: Input text
+            
+        Returns:
+            Entropy value (0-8)
+        """
+        if not text:
+            return 0
+        
+        # Count character frequencies
+        from collections import Counter
+        freq = Counter(text)
+        
+        # Calculate entropy
+        entropy = 0
+        text_len = len(text)
+        
+        for count in freq.values():
+            p = count / text_len
+            if p > 0:
+                entropy -= p * np.log2(p)
+        
+        return float(entropy)
     
     def detect(self, data: Dict[str, Any]) -> Tuple[bool, float, str]:
         """
