@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Import REAL payloads dari ZAP - VERIFIED WORKING VERSION
-Menggunakan requests library (ZAP API compatible)
+Import REAL payloads dari ZAP - DIRECT VERSION
+Menggunakan requests library (paling reliable)
 """
 
 import requests
@@ -18,24 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent / "database"))
 from payload_repository import PayloadRepositoryManager
 
 
-class ZAPPayloadImporter:
-    """Import REAL payloads dari ZAP scan history"""
-    
-    def __init__(self, zap_host: str = "localhost", zap_port: int = 8080, 
-                 zap_api_key: str = ""):
-        self.zap_base_url = f"http://{zap_host}:{zap_port}"
-        self.zap_api_key = zap_api_key
-        self.payload_repo = PayloadRepositoryManager("data/payload_repository.db")
-        # Create session with custom headers
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'ZAPPayloadImporter/1.0',
-            'Accept': 'application/json'
-        })
-        self.session.verify = False
-
-
-class ZAPPayloadImporter:
+class ZAPPayloadImporterDirect:
     """Import REAL payloads dari ZAP scan history"""
     
     def __init__(self, zap_host: str = "localhost", zap_port: int = 8080, 
@@ -54,12 +37,16 @@ class ZAPPayloadImporter:
     def check_zap(self) -> bool:
         """Check ZAP running"""
         try:
-            print(f"[*] Using requests library (ZAP API compatible)")
+            print(f"[*] Using requests library")
             print(f"[*] Attempting to connect to {self.zap_base_url}...")
             
             url = f"{self.zap_base_url}/JSON/core/view/version"
+            print(f"[*] URL: {url}")
+            
+            # Direct request
             response = self.session.get(url, timeout=10)
             print(f"[*] Response Status: {response.status_code}")
+            print(f"[*] Response Headers: {dict(response.headers)}\n")
             
             if response.status_code == 200:
                 try:
@@ -276,7 +263,7 @@ def main():
     
     args = parser.parse_args()
     
-    importer = ZAPPayloadImporter(
+    importer = ZAPPayloadImporterDirect(
         zap_host=args.host, 
         zap_port=args.port,
         zap_api_key=args.api_key
