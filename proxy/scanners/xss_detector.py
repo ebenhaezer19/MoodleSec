@@ -5,16 +5,45 @@ Detects XSS vulnerabilities including reflected, stored, and DOM-based XSS.
 """
 
 import re
+import sys
 from typing import List, Dict, Any, Optional
 from html import unescape
 from urllib.parse import unquote
+from pathlib import Path
+
+# Add database module to path
+db_path = Path(__file__).parent.parent / "database"
+if str(db_path) not in sys.path:
+    sys.path.insert(0, str(db_path))
+
+from payload_repository import PayloadRepositoryManager
 
 
 class XSSDetector:
     """Detect Cross-Site Scripting (XSS) vulnerabilities."""
     
-    def __init__(self):
+    def __init__(self, payload_repo: Optional[PayloadRepositoryManager] = None):
         """Initialize XSS detector with patterns and payloads."""
+        
+        # Initialize payload repository
+        if payload_repo is None:
+            try:
+                self.payload_repo = PayloadRepositoryManager()
+            except Exception as e:
+                print(f"[!] Payload repository initialization failed: {e}")
+                self.payload_repo = None
+        else:
+            self.payload_repo = payload_repo
+        
+        # Load smart payloads from repository (high-success ones prioritized)
+        self.smart_payloads = []
+        if self.payload_repo:
+            try:
+                smart_xss = self.payload_repo.get_top_payloads("XSS", limit=20)
+                self.smart_payloads = [p.get('payload_text', '') for p in smart_xss if p.get('payload_text')]
+                print(f"[✓] Loaded {len(self.smart_payloads)} smart XSS payloads from repository")
+            except Exception as e:
+                print(f"[!] Failed to load smart payloads: {e}")
         
         # XSS patterns in HTML context
         self.html_patterns = [
@@ -307,4 +336,14 @@ class XSSDetector:
                 'owasp': 'A03:2021 - Injection'
             })
         
-        return findings
+        return findings    
+    def record_payload_usage(self, payload_id: int, scan_id: str, url: str, 
+                            parameter: str, success: bool, response: str = ""):
+        """Record payload usage in repository for effectiveness tracking."""
+        if self.payload_repo is None:
+            return
+        
+        try:
+            self.payload_repo.record_usage(payload_id, scan_id, url, parameter, success, response)
+        except Exception as e:
+            print(f"[!] Failed to record payload usage: {e}")

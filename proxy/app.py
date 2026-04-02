@@ -20,6 +20,7 @@ from crawler.web_crawler import WebCrawler
 from risk.risk_scorer import RiskScorer
 from database.scan_history import ScanHistoryDB
 from database.scheduler_db import SchedulerDB
+from database.payload_repository import PayloadRepositoryManager
 from reporting.pdf_generator import PDFReportGenerator
 from integrations.integration_manager import IntegrationManager
 from ml.ml_manager import MLManager
@@ -55,6 +56,14 @@ scan_history_db = ScanHistoryDB()
 
 # Initialize scheduler database
 scheduler_db = SchedulerDB()
+
+# Initialize payload repository for smart reuse
+try:
+    payload_repo = PayloadRepositoryManager()
+    print("[✓] Payload Repository initialized successfully")
+except Exception as e:
+    print(f"[!] Payload Repository initialization failed: {e}")
+    payload_repo = None
 
 # Initialize PDF generator
 pdf_generator = PDFReportGenerator()
@@ -425,6 +434,15 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
         print(f"[Full Scan] AFTER ML: {len(filtered_findings)} findings")
         print(f"[Full Scan] ML Stats: {ml_results['filtered_count']} FPs filtered, "
               f"{ml_results['severity_adjusted_count']} severities adjusted")
+        
+        # Extract and save vulnerable payloads to repository for smart reuse
+        if payload_repo and filtered_findings:
+            try:
+                print(f"[Full Scan] Extracting payloads from findings...")
+                extracted_payloads = payload_repo.extract_from_findings(filtered_findings, scan_id)
+                print(f"[Full Scan] ✓ Extracted {len(extracted_payloads)} payloads to repository")
+            except Exception as e:
+                print(f"[Full Scan] ⚠️  Failed to extract payloads: {e}")
         
         # Step 4: Aggregate results
         # Sort by risk score
@@ -1182,6 +1200,15 @@ async def scan_api() -> Dict[str, Any]:
         print(f"[API Scan] Enriching {len(scan_results['findings'])} findings with risk scores...")
         enriched_findings = risk_scorer.batch_enrich_findings(scan_results['findings'])
         
+        # Extract and save vulnerable payloads to repository for smart reuse
+        if payload_repo and enriched_findings:
+            try:
+                print(f"[API Scan] Extracting payloads from findings...")
+                extracted_payloads = payload_repo.extract_from_findings(enriched_findings, scan_id)
+                print(f"[API Scan] ✓ Extracted {len(extracted_payloads)} payloads to repository")
+            except Exception as e:
+                print(f"[API Scan] ⚠️  Failed to extract payloads: {e}")
+        
         results['total_findings'] = len(enriched_findings)
         results['all_findings'] = enriched_findings
         results['summary'] = _generate_finding_summary(enriched_findings)
@@ -1432,6 +1459,15 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
         print(f"[Native Auth Scan] AFTER ML: {len(filtered_findings)} findings")
         print(f"[Native Auth Scan] ML Stats: {ml_results['filtered_count']} FPs filtered, "
               f"{ml_results['severity_adjusted_count']} severities adjusted")
+        
+        # Extract and save vulnerable payloads to repository for smart reuse
+        if payload_repo and filtered_findings:
+            try:
+                print(f"\n[Native Auth Scan] Extracting payloads from findings...")
+                extracted_payloads = payload_repo.extract_from_findings(filtered_findings, scan_id)
+                print(f"[Native Auth Scan] ✓ Extracted {len(extracted_payloads)} payloads to repository")
+            except Exception as e:
+                print(f"[Native Auth Scan] ⚠️  Failed to extract payloads: {e}")
         
         # Step 5: Aggregate results
         filtered_findings.sort(key=lambda x: x.get('risk_score', 0), reverse=True)
