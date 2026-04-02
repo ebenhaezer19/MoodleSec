@@ -78,6 +78,21 @@ class PayloadRepositoryManager:
         conn.commit()
         conn.close()
     
+    def _normalize_category(self, category: str) -> str:
+        """Normalize category name for consistency."""
+        # Mapping to standard categories
+        category_map = {
+            'Cross-Site Scripting (XSS)': 'XSS',
+            'Cross Site Scripting': 'XSS',
+            'Reflected XSS': 'XSS',
+            'Stored XSS': 'XSS',
+            'Cross-Site Request Forgery (CSRF)': 'CSRF',
+            'Cross-Site Request Forgery': 'CSRF',
+            'Directory Traversal': 'Path Traversal',
+            'OS Command Injection': 'OS Command Injection',
+        }
+        return category_map.get(category, category)
+    
     def _calculate_payload_hash(self, payload_text: str, category: str) -> str:
         """Calculate unique hash for payload."""
         combined = f"{payload_text}:{category}"
@@ -88,6 +103,9 @@ class PayloadRepositoryManager:
                    source: str = "custom", description: str = "",
                    scan_id: str = "", url: str = "") -> int:
         """Add payload to repository."""
+        # Normalize category
+        category = self._normalize_category(category)
+        
         payload_hash = self._calculate_payload_hash(payload_text, category)
         
         conn = sqlite3.connect(self.db_path)

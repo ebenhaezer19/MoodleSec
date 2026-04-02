@@ -59,13 +59,22 @@ class ZAPPayloadEnhancer:
         # Mapping of ZAP alert types to custom scanner categories
         self.category_mapping = {
             'Cross Site Scripting': 'XSS',
+            'Cross-Site Scripting (XSS)': 'XSS',
+            'Cross-Site Scripting': 'XSS',
+            'XSS': 'XSS',
+            'Reflected XSS': 'XSS',
+            'Stored XSS': 'XSS',
             'SQL Injection': 'SQL Injection',
             'CSRF': 'CSRF',
+            'Cross-Site Request Forgery (CSRF)': 'CSRF',
+            'Cross-Site Request Forgery': 'CSRF',
             'Path Traversal': 'Path Traversal',
+            'Directory Traversal': 'Path Traversal',
             'Remote Code Execution': 'RCE',
             'XXE': 'XXE',
             'LDAP Injection': 'LDAP Injection',
             'OS Injection': 'OS Command Injection',
+            'OS Command Injection': 'OS Command Injection',
             'XML Injection': 'XML Injection',
         }
         
