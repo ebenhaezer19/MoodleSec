@@ -24,14 +24,6 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
     
-    // Add Auth & API Scan page
-    $ADMIN->add('local_security_dashboard', new admin_externalpage(
-        'local_security_dashboard_auth',
-        'Auth & API Scan',
-        new moodle_url('/local/security_dashboard/auth_scan.php'),
-        'moodle/site:config'
-    ));
-    
     // Add Reports page
     $ADMIN->add('local_security_dashboard', new admin_externalpage(
         'local_security_dashboard_reports',

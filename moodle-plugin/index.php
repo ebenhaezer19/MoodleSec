@@ -62,11 +62,6 @@ if (isset($logs_data['error'])) {
         ['class' => 'btn btn-info mr-2']
     );
     echo html_writer::link(
-        new moodle_url('/local/security_dashboard/auth_scan.php'),
-        '<i class="fa fa-shield"></i> Auth Vulnerability Test',
-        ['class' => 'btn btn-primary mr-2']
-    );
-    echo html_writer::link(
         new moodle_url('/local/security_dashboard/scheduler.php'),
         '<i class="fa fa-clock-o"></i> Scheduler',
         ['class' => 'btn btn-info mr-2']
