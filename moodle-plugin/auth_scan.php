@@ -14,8 +14,8 @@ require_once(__DIR__ . '/lib.php');
 admin_externalpage_setup('local_security_dashboard_auth');
 
 $PAGE->set_url(new moodle_url('/local/security_dashboard/auth_scan.php'));
-$PAGE->set_title(get_string('pluginname', 'local_security_dashboard') . ' - Auth & API Scan');
-$PAGE->set_heading('Authentication & API Security Scanner');
+$PAGE->set_title(get_string('pluginname', 'local_security_dashboard') . ' - Auth Vulnerability Test');
+$PAGE->set_heading('Authentication & API Vulnerability Tests');
 
 // Handle scan requests
 $action = optional_param('action', '', PARAM_ALPHA);

@@ -16,8 +16,8 @@ require_capability('local/security_dashboard:scan', context_system::instance());
 
 $PAGE->set_url(new moodle_url('/local/security_dashboard/fullscan.php'));
 $PAGE->set_context(context_system::instance());
-$PAGE->set_title('Full Site Security Scan');
-$PAGE->set_heading('Full Site Security Scan');
+$PAGE->set_title('Unauthenticated Full Site Security Scan');
+$PAGE->set_heading('Unauthenticated Full Site Security Scan');
 $PAGE->set_pagelayout('admin');
 
 // Add custom CSS

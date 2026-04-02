@@ -126,35 +126,65 @@ class ScanHistoryDB:
         
         # Save findings
         findings = scan_data.get('findings', [])
-        for finding in findings:
+        print(f"\n[DB] ==> SAVING {len(findings)} FINDINGS FOR SCAN: {scan_data['scan_id']}")
+        
+        for i, finding in enumerate(findings, 1):
+            print(f"\n[DB] Finding {i}/{len(findings)}:")
             self._save_finding(scan_data['scan_id'], finding)
         
         self.conn.commit()
+        
+        # Summary
+        cursor.execute("SELECT COUNT(*) FROM findings WHERE scan_id = ?", (scan_data['scan_id'],))
+        actual_count = cursor.fetchone()[0]
+        reported_count = scan_data.get('total_findings', 0)
+        
+        print(f"\n[DB] ==> SAVE SUMMARY")
+        print(f"[DB]     Reported findings: {reported_count}")
+        print(f"[DB]     Actual findings in DB: {actual_count}")
+        
+        if reported_count == actual_count:
+            print(f"[DB]     ✓ MATCH! All findings stored correctly")
+        else:
+            print(f"[DB]     ⚠️ MISMATCH: {reported_count - actual_count} findings missing!")
+        
+        print(f"[DB] \n")
+        
         return scan_db_id
     
     def _save_finding(self, scan_id: str, finding: Dict[str, Any]):
         """Save individual finding to database."""
         cursor = self.conn.cursor()
         
-        # Debug: Check if PoC exists in finding
-        if 'poc' in finding:
-            print(f"[DB] Saving finding WITH PoC: {finding.get('category')}")
+        # DEBUG: Show what we're saving
+        print(f"\n[DB] ==> SAVING FINDING")
+        print(f"[DB]     Category: {finding.get('category')}")
+        print(f"[DB]     Description: {finding.get('description', '')[:60]}...")
+        print(f"[DB]     URL: {finding.get('url', '')}")
+        print(f"[DB]     Severity: {finding.get('severity', 'Unknown')}")
+        
+        # DEBUG: Check evidence field
+        evidence = finding.get('evidence', '')
+        if evidence:
+            print(f"[DB]     Evidence: {evidence[:80]}...")
         else:
-            print(f"[DB] Saving finding WITHOUT PoC: {finding.get('category')}")
+            print(f"[DB]     Evidence: ⚠️ MISSING/EMPTY")
         
         # Generate finding hash for deduplication
         finding_hash = self._generate_finding_hash(finding)
+        print(f"[DB]     Hash: {finding_hash}")
         
-        # Check if finding already exists
+        # Check if THIS EXACT finding already exists in THIS SCAN
+        # Include scan_id in the check to allow same finding across multiple scans
         cursor.execute(
-            "SELECT id, first_seen FROM findings WHERE finding_hash = ?",
-            (finding_hash,)
+            "SELECT id, first_seen FROM findings WHERE finding_hash = ? AND scan_id = ?",
+            (finding_hash, scan_id)
         )
         existing = cursor.fetchone()
         
         if existing:
-            # Update last_seen, metadata, and risk scores
-            print(f"[DB] Finding already exists, updating with new data")
+            # Update last_seen, metadata, and risk scores for same finding in same scan
+            print(f"[DB]     → COLLISION: Hash already exists in this scan (ID={existing[0]}), updating...")
             
             # Prepare metadata - include PoC if present
             metadata = finding.get('metadata', {})
@@ -167,31 +197,29 @@ class ScanHistoryDB:
             # Update with risk scores
             cursor.execute("""
                 UPDATE findings 
-                SET last_seen = ?, scan_id = ?, metadata = ?,
+                SET last_seen = ?, metadata = ?,
                     risk_score = ?, cvss_score = ?, priority = ?
-                WHERE finding_hash = ?
+                WHERE finding_hash = ? AND scan_id = ?
             """, (
                 datetime.utcnow().isoformat(), 
-                scan_id, 
                 json.dumps(metadata),
                 finding.get('risk_score', 0),
                 finding.get('cvss_score', 0),
                 finding.get('priority', 5),
-                finding_hash
+                finding_hash,
+                scan_id
             ))
             print(f"[DB] Updated risk_score={finding.get('risk_score', 0)}, cvss_score={finding.get('cvss_score', 0)}, priority={finding.get('priority', 5)}")
         else:
             # Insert new finding
+            print(f"[DB]     → NEW: Inserting new finding (hash not seen before)")
+            
             # Prepare metadata - include PoC if present
             metadata = finding.get('metadata', {})
             if 'poc' in finding:
                 metadata['poc'] = finding['poc']
-                print(f"[DB] Added PoC to metadata for {finding.get('category')}")
             if 'recommendation' in finding:
                 metadata['recommendation'] = finding['recommendation']
-            
-            print(f"[DB] Final metadata keys: {list(metadata.keys())}")
-            print(f"[DB] Metadata JSON length: {len(json.dumps(metadata))}")
             
             cursor.execute("""
                 INSERT INTO findings (
@@ -214,14 +242,26 @@ class ScanHistoryDB:
                 datetime.utcnow().isoformat(),
                 json.dumps(metadata)
             ))
+            print(f"[DB]     ✓ Inserted successfully")
     
     def _generate_finding_hash(self, finding: Dict[str, Any]) -> str:
         """Generate unique hash for finding deduplication."""
         import hashlib
         
-        # Use category + description + url for uniqueness
-        key = f"{finding.get('category')}:{finding.get('description')}:{finding.get('url', '')}"
-        return hashlib.md5(key.encode()).hexdigest()
+        # Use category + description + url + evidence for better uniqueness
+        # This prevents identical vulnerability types on different pages from collapsing into one
+        cat = finding.get('category', '')
+        desc = finding.get('description', '')
+        url = finding.get('url', '')
+        evidence = finding.get('evidence', '')
+        
+        key = f"{cat}:{desc}:{url}:{evidence}"
+        hash_val = hashlib.md5(key.encode()).hexdigest()
+        
+        # DEBUG: Show hash input composition
+        print(f"[DB]     Hash input: {cat[:30]}... : {desc[:30]}... : {url[:40]}... : {evidence[:40] if evidence else 'EMPTY'}...")
+        
+        return hash_val
     
     def get_trend_data(self, days: int = 30) -> Dict[str, Any]:
         """

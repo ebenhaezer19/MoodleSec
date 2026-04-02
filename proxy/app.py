@@ -3,7 +3,7 @@ FastAPI reverse proxy for Moodle with logging and DAST scanning capabilities.
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -23,6 +23,7 @@ from database.scheduler_db import SchedulerDB
 from reporting.pdf_generator import PDFReportGenerator
 from integrations.integration_manager import IntegrationManager
 from ml.ml_manager import MLManager
+from ml.model_retrainer import ModelRetrainer
 
 
 app = FastAPI(
@@ -63,6 +64,9 @@ integration_manager = IntegrationManager()
 
 # Initialize ML Manager
 ml_manager = MLManager(enable_ml=True)
+
+# Initialize ML Model Retrainer
+model_retrainer = ModelRetrainer()
 
 # Initialize Phishing Detector
 MOODLE_BASE_DOMAIN = "localhost"  # Change to your actual domain
@@ -105,6 +109,29 @@ class NativeAuthScanRequest(BaseModel):
     max_pages: int = Field(default=50, description="Maximum pages to scan")
     username: str = Field(default="admin", description="Username for authentication")
     password: str = Field(default="Admin@1234", description="Password for authentication")
+
+
+@app.get("/")
+async def root_index() -> Dict[str, Any]:
+    """
+    Root API endpoint with service information.
+    
+    Returns:
+        Dictionary with API information
+    """
+    return {
+        "service": "Moodle Security Dashboard Proxy",
+        "version": "2.0.0",
+        "status": "running",
+        "endpoints": {
+            "health": "/health",
+            "scanners": "/scanners/status",
+            "logs": "/logs",
+            "scans": "/scan-full",
+            "reports": "/reports/executive-summary",
+            "ml_status": "/ml/status"
+        }
+    }
 
 
 @app.get("/health")
@@ -894,8 +921,8 @@ async def scan_authentication() -> Dict[str, Any]:
     from auth.rbac_tester import RBACTester
     from auth.oauth_tester import OAuthTester
     
-    scan_id = f"auth_scan_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
-    timestamp = datetime.utcnow().isoformat() + "Z"
+    scan_id = f"auth_scan_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     
     print(f"[Auth Scan] Starting authentication security scan: {scan_id}")
     
@@ -1034,8 +1061,8 @@ async def test_rbac(request: Dict[str, Any]) -> Dict[str, Any]:
     # Get base URL from request or use default
     base_url = request.get('base_url', MOODLE_URL)
     
-    scan_id = f"rbac_test_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
-    timestamp = datetime.utcnow().isoformat() + "Z"
+    scan_id = f"rbac_test_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     
     print(f"[RBAC Test] Starting RBAC security test: {scan_id}")
     print(f"[RBAC Test] Target: {base_url}")
@@ -1123,8 +1150,8 @@ async def scan_api() -> Dict[str, Any]:
     from api.rest_scanner import RESTScanner
     from api.api_discovery import APIDiscovery
     
-    scan_id = f"api_scan_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
-    timestamp = datetime.utcnow().isoformat() + "Z"
+    scan_id = f"api_scan_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     
     print(f"[API Scan] Starting API security scan: {scan_id}")
     
@@ -1566,6 +1593,256 @@ async def provide_ml_feedback(
                 }
 
 
+@app.post("/ml/retrain")
+async def retrain_ml_models():
+    """
+    Start ML models retraining with recent scan data.
+    
+    This endpoint:
+    1. Collects recent scan findings from the database
+    2. Aggregates data according to the training format
+    3. Retrains each model with its specific algorithm:
+       - False Positive Reducer: Calibrated Random Forest
+       - Severity Predictor: Gradient Boosting
+       - Anomaly Detector: Isolation Forest
+       - Rate Limiter: Adaptive rate limiting
+    4. Updates models on disk
+    5. Returns progress status
+    
+    Returns:
+        Retraining status and confirmation
+    """
+    result = model_retrainer.start_retrain_async()
+    return result
+
+
+@app.get("/ml/retrain/status")
+async def get_retrain_status():
+    """
+    Get current retraining status and progress.
+    
+    Returns:
+        Current retraining status including:
+        - status: idle, running, completed, failed
+        - progress: 0-100%
+        - current_model: Currently retraining model name
+        - message: Current status message
+        - models_results: Results for each model
+        - total_progress: Completed/Total models
+    """
+    return model_retrainer.get_status()
+
+
+@app.get("/ml/training/statistics")
+async def get_training_statistics():
+    """
+    Get ML model training statistics including:
+    - Total findings loaded
+    - Data distribution by model
+    - Last training timestamp
+    - Model performance metrics
+    
+    Returns:
+        Training statistics and model info
+    """
+    result = {
+        'timestamp': datetime.utcnow().isoformat() + 'Z',
+        'models': {},
+        'data_sources': {
+            'native_scans': 0,
+            'zap_findings': 0,
+            'total_findings': 0
+        }
+    }
+    
+    try:
+        # Get training data aggregator info
+        agg = model_retrainer.aggregator
+        agg_data = agg.get_aggregated_data()
+        
+        # Compile data statistics
+        for model_name in ['false_positive', 'severity', 'anomaly', 'rate_limiter']:
+            data = agg_data.get(model_name, {})
+            result['models'][model_name] = {
+                'samples_count': len(data.get('data', [])),
+                'label_distribution': None
+            }
+            
+            # Calculate label distribution
+            labels = data.get('labels', [])
+            if labels:
+                from collections import Counter
+                label_counts = Counter(labels)
+                result['models'][model_name]['label_distribution'] = dict(label_counts)
+        
+        # Get model info
+        result['models']['false_positive_reducer'] = ml_manager.false_positive_reducer.get_model_info() if ml_manager.false_positive_reducer else None
+        result['models']['severity_predictor'] = ml_manager.severity_predictor.get_model_info() if ml_manager.severity_predictor else None
+        result['models']['anomaly_detector'] = ml_manager.anomaly_detector.get_model_info() if ml_manager.anomaly_detector else None
+        result['models']['rate_limiter'] = ml_manager.rate_limiter.get_model_info() if ml_manager.rate_limiter else None
+        
+        return result
+    
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to get training statistics: {str(e)}',
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        }
+
+
+@app.get("/ml/dashboard/recent-scans")
+async def get_recent_scans_data():
+    """
+    Get recent scan data for ML dashboard.
+    
+    Returns:
+        Recent scan findings aggregated for dashboard display including:
+        - Recent native scans with findings details
+        - ZAP findings summary
+        - Proxy transactions summary
+        - ML filtering results
+    """
+    import os
+    import json
+    from datetime import datetime, timedelta
+    
+    result = {
+        'success': True,
+        'timestamp': datetime.utcnow().isoformat() + 'Z',
+        'recent_scans': [],
+        'proxy_traffic': {
+            'total_transactions': 0,
+            'transactions_with_findings': 0
+        },
+        'zap_summary': {
+            'total_findings': 0,
+            'files_loaded': 0,
+            'by_severity': {}
+        },
+        'ml_filtering': {
+            'total_raw': 0,
+            'false_positives_removed': 0,
+            'actual_vulnerabilities': 0
+        }
+    }
+    
+    try:
+        # 1. Get recent native scans from database
+        recent_scans = scan_history_db.get_scan_history(limit=20)  # Last 20 scans
+        
+        for scan_meta in recent_scans:
+            scan_id = scan_meta.get('scan_id', 'unknown')
+            scan_type = scan_meta.get('scan_type', 'unknown')
+            timestamp = scan_meta.get('timestamp', datetime.utcnow().isoformat())
+            
+            # Get full scan with findings
+            scan_data = scan_history_db.get_scan_with_findings(scan_id)
+            findings = scan_data.get('findings', []) if scan_data else []
+            
+            # Calculate ML filtering stats
+            fp_count = sum(1 for f in findings if f.get('is_false_positive', 0))
+            actual_vulns = len(findings) - fp_count
+            
+            # Group findings by severity
+            severity_counts = {}
+            for finding in findings:
+                sev = finding.get('severity', 'medium')
+                severity_counts[sev] = severity_counts.get(sev, 0) + 1
+            
+            scan_entry = {
+                'scan_id': scan_id,
+                'scan_type': scan_type,
+                'timestamp': timestamp,
+                'findings_count': len(findings),
+                'severity_breakdown': severity_counts,
+                'ml_filtering': {
+                    'raw_findings': len(findings),
+                    'false_positives_removed': fp_count,
+                    'actual_vulnerabilities': actual_vulns
+                }
+            }
+            
+            # Include findings details if not too many
+            if len(findings) <= 10:
+                scan_entry['findings'] = findings
+            else:
+                scan_entry['findings'] = findings[:10]  # Limit to first 10 for display
+                scan_entry['findings_truncated'] = True
+            
+            result['recent_scans'].append(scan_entry)
+            
+            # Accumulate stats
+            result['ml_filtering']['total_raw'] += len(findings)
+            result['ml_filtering']['false_positives_removed'] += fp_count
+            result['ml_filtering']['actual_vulnerabilities'] += actual_vulns
+            
+            # Count by scan type
+            if 'proxy_transaction' in scan_type.lower():
+                result['proxy_traffic']['total_transactions'] += 1
+                if findings:
+                    result['proxy_traffic']['transactions_with_findings'] += 1
+        
+        # 2. Load ZAP findings summary
+        zap_dir = 'ml/training_data/OWASP_ZAP_Data'
+        if os.path.exists(zap_dir):
+            import glob
+            zap_files = glob.glob(os.path.join(zap_dir, '*.json'))
+            result['zap_summary']['files_loaded'] = len(zap_files)
+            
+            for zap_file in zap_files[:10]:  # Show info for first 10 files
+                try:
+                    with open(zap_file, 'r') as f:
+                        zap_data = json.load(f)
+                    
+                    # Count all findings in ZAP report
+                    total_zap_findings = 0
+                    severity_map = {}
+                    
+                    sites = zap_data.get('site', [])
+                    if not isinstance(sites, list):
+                        sites = [sites] if sites else []
+                    
+                    for site in sites:
+                        alerts = site.get('alerts', [])
+                        for alert in alerts:
+                            instances = alert.get('instances', [])
+                            for instance in instances:
+                                total_zap_findings += 1
+                                
+                                # Map risk code to severity
+                                risk_code = alert.get('riskcode', 0)
+                                if isinstance(risk_code, str):
+                                    risk_code = int(risk_code) if risk_code.isdigit() else 0
+                                
+                                sev_map = {3: 'high', 2: 'medium', 1: 'low', 0: 'info'}
+                                sev = sev_map.get(risk_code, 'medium')
+                                severity_map[sev] = severity_map.get(sev, 0) + 1
+                    
+                    result['zap_summary']['total_findings'] += total_zap_findings
+                    
+                    # Merge severity breakdown
+                    for sev, count in severity_map.items():
+                        result['zap_summary']['by_severity'][sev] = result['zap_summary']['by_severity'].get(sev, 0) + count
+                
+                except Exception as e:
+                    print(f"[Dashboard] Error loading ZAP file {zap_file}: {e}")
+                    continue
+        
+        return result
+    
+    except Exception as e:
+        import traceback
+        print(f"[Dashboard] Error: {str(e)}")
+        traceback.print_exc()
+        return {
+            'success': False,
+            'error': f'Failed to load recent scan data: {str(e)}',
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        }
+
+
+
 @app.post("/api/check-phishing")
 async def check_phishing(request: Request):
     """
@@ -1853,7 +2130,7 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
         "query_params": dict(request.query_params),
         "headers": {k: v for k, v in headers.items() if k.lower() not in ["authorization", "cookie"]},
         "body_size": len(body),
-        "timestamp": datetime.utcnow().isoformat() + "Z"
+        "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     }
     
     try:
@@ -1874,7 +2151,7 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
             "target_url": target_url,
             "status_code": response.status_code,
             "response_size": len(response.content),
-            "timestamp": datetime.utcnow().isoformat() + "Z"
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         }
         append_log(LOG_DIR, {**request_log, **response_log, "type": "proxy_transaction"})
         

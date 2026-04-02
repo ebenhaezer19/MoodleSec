@@ -304,16 +304,172 @@ echo html_writer::end_tag('style');
 // Add JavaScript
 echo html_writer::start_tag('script');
 ?>
+// Store proxy URL from Moodle config
+const proxyUrl = '<?php echo get_config('local_security_dashboard', 'proxy_url'); ?>' || 'http://localhost:8999';
+
 function retrainModels() {
-    if (confirm('Are you sure you want to retrain all ML models? This may take several minutes.')) {
-        alert('Model retraining initiated. This feature will be implemented in the next update.');
-        // TODO: Implement actual retraining via API
+    if (confirm('Are you sure you want to retrain all ML models with recent scan data? This may take several minutes.')) {
+        showRetrainingModal();
+        startRetraining();
+    }
+}
+
+function showRetrainingModal() {
+    // Create modal HTML
+    const modalHtml = `
+        <div id="retrainingModal" class="modal fade show" style="display: block; background: rgba(0,0,0,0.5);">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">🔄 ML Models Retraining</h5>
+                    </div>
+                    <div class="modal-body">
+                        <div class="retraining-info mb-3">
+                            <p id="retrainingStatus">Initializing retraining process...</p>
+                            <div class="progress" style="height: 25px;">
+                                <div id="retrainingProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                            </div>
+                        </div>
+                        <div id="retrainingDetails" style="background: #f8f9fa; padding: 10px; border-radius: 5px; max-height: 300px; overflow-y: auto;">
+                            <small id="retrainingLog">Waiting to start...</small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" id="closeRetrainingBtn" disabled>Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Remove existing modal if any
+    const existing = document.getElementById('retrainingModal');
+    if (existing) existing.remove();
+    
+    // Add modal to page
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function startRetraining() {
+    try {
+        const logElement = document.getElementById('retrainingLog');
+        const statusElement = document.getElementById('retrainingStatus');
+        const progressBar = document.getElementById('retrainingProgressBar');
+        const closeBtn = document.getElementById('closeRetrainingBtn');
+        
+        // Add log entry function
+        const addLog = (message) => {
+            const timestamp = new Date().toLocaleTimeString();
+            logElement.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            logElement.parentElement.scrollTop = logElement.parentElement.scrollHeight;
+        };
+        
+        addLog('🟢 Starting retraining process...');
+        
+        // Step 1: Trigger retraining
+        addLog('📊 Requesting retraining from server...');
+        const retrainResponse = await fetch(`${proxyUrl}/ml/retrain`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+        
+        if (!retrainResponse.ok) {
+            throw new Error(`Retraining request failed: ${retrainResponse.statusText}`);
+        }
+        
+        const retrainData = await retrainResponse.json();
+        addLog('✅ Retraining initiated');
+        addLog(`Status: ${retrainData.message}`);
+        
+        // Step 2: Monitor progress
+        let isComplete = false;
+        let checkCount = 0;
+        const maxChecks = 120; // Max 2 minutes (60 checks * 2 seconds)
+        
+        statusElement.textContent = 'Monitoring retraining progress...';
+        
+        while (!isComplete && checkCount < maxChecks) {
+            checkCount++;
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+            
+            try {
+                const statusResponse = await fetch(`${proxyUrl}/ml/retrain/status`);
+                const statusData = await statusResponse.json();
+                
+                // Update UI with status
+                const progress = statusData.progress || 0;
+                progressBar.style.width = progress + '%';
+                progressBar.textContent = progress + '%';
+                progressBar.setAttribute('aria-valuenow', progress);
+                
+                statusElement.textContent = statusData.message || 'Processing...';
+                
+                // Add current model info
+                if (statusData.current_model) {
+                    const modelName = statusData.current_model.replace(/_/g, ' ').toUpperCase();
+                    addLog(`⚙️ Retraining ${modelName}...`);
+                }
+                
+                // Check if complete
+                if (statusData.status === 'completed') {
+                    isComplete = true;
+                    addLog('✅ Retraining completed successfully!');
+                    
+                    // Show results
+                    if (statusData.models_results) {
+                        for (const [model, result] of Object.entries(statusData.models_results)) {
+                            const modelName = model.replace(/_/g, ' ').toUpperCase();
+                            if (result.success) {
+                                addLog(`✅ ${modelName}: ${result.message}`);
+                                if (result.samples_used) {
+                                    addLog(`   └─ Samples used: ${result.samples_used}`);
+                                }
+                            } else {
+                                addLog(`❌ ${modelName}: ${result.message}`);
+                            }
+                        }
+                    }
+                    
+                    // Update dashboard
+                    addLog('🔄 Refreshing dashboard...');
+                    setTimeout(() => location.reload(), 2000);
+                    
+                } else if (statusData.status === 'failed') {
+                    isComplete = true;
+                    addLog(`❌ Retraining failed: ${statusData.message}`);
+                }
+            } catch (e) {
+                addLog(`⚠️ Status check error: ${e.message}`);
+            }
+        }
+        
+        if (!isComplete) {
+            addLog('⚠️ Retraining timeout - still processing');
+        }
+        
+        // Enable close button
+        closeBtn.disabled = false;
+        closeBtn.onclick = () => {
+            document.getElementById('retrainingModal').remove();
+        };
+        
+    } catch (error) {
+        const logElement = document.getElementById('retrainingLog');
+        const errorMsg = `❌ Error: ${error.message}`;
+        logElement.innerHTML += `<div style="color: red;">${errorMsg}</div>`;
+        
+        // Enable close button
+        const closeBtn = document.getElementById('closeRetrainingBtn');
+        closeBtn.disabled = false;
+        closeBtn.onclick = () => {
+            document.getElementById('retrainingModal').remove();
+        };
     }
 }
 
 function exportModels() {
+    // TODO: Implement model export feature
     alert('Model export feature will be implemented in the next update.');
-    // TODO: Implement model export
 }
 <?php
 echo html_writer::end_tag('script');
