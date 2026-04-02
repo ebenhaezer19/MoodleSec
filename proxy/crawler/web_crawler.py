@@ -15,7 +15,14 @@ import httpx
 class WebCrawler:
     """Crawl web applications to discover endpoints and forms."""
     
-    def __init__(self, base_url: str, max_depth: int = 3, max_pages: int = 100):
+    def __init__(
+        self,
+        base_url: str,
+        max_depth: int = 3,
+        max_pages: int = 100,
+        client: Optional[httpx.AsyncClient] = None,
+        session_cookies: Optional[Dict[str, str]] = None
+    ):
         """
         Initialize web crawler.
         
@@ -23,10 +30,15 @@ class WebCrawler:
             base_url: Base URL to start crawling from
             max_depth: Maximum depth to crawl
             max_pages: Maximum number of pages to crawl
+            client: Optional authenticated httpx.AsyncClient (for authenticated crawling)
+            session_cookies: Optional dictionary of session cookies
         """
         self.base_url = base_url.rstrip('/')
         self.max_depth = max_depth
         self.max_pages = max_pages
+        self.client = client  # Store authenticated client if provided
+        self.session_cookies = session_cookies or {}
+        self.is_authenticated = client is not None
         
         # Parsed base URL
         self.base_domain = urlparse(base_url).netloc
@@ -36,6 +48,8 @@ class WebCrawler:
         self.discovered_endpoints: List[Dict[str, Any]] = []
         self.discovered_forms: List[Dict[str, Any]] = []
         self.site_map: Dict[str, Any] = {}
+        self.authenticated_endpoints: List[str] = []  # Track endpoints found while authenticated
+        self.unauthenticated_endpoints: List[str] = []  # Track endpoints without auth
         
         # Exclusions
         self.excluded_extensions = {
@@ -58,16 +72,21 @@ class WebCrawler:
         Returns:
             Dictionary containing discovered endpoints, forms, and site map
         """
-        print(f"[Crawler] Starting crawl of {self.base_url}")
+        auth_label = " [AUTHENTICATED]" if self.is_authenticated else ""
+        print(f"[Crawler] Starting crawl{auth_label} of {self.base_url}")
         print(f"[Crawler] Max depth: {self.max_depth}, Max pages: {self.max_pages}")
         
         # Start crawling from base URL
-        await self._crawl_url(self.base_url, depth=0)
+        start_url = f"{self.base_url}/my/" if self.is_authenticated else self.base_url
+        await self._crawl_url(start_url, depth=0)
         
         print(f"[Crawler] Crawl complete!")
         print(f"[Crawler] Visited {len(self.visited_urls)} pages")
         print(f"[Crawler] Discovered {len(self.discovered_endpoints)} endpoints")
         print(f"[Crawler] Found {len(self.discovered_forms)} forms")
+        
+        # Get auth statistics if available
+        auth_stats = self.get_auth_comparison()
         
         return {
             'base_url': self.base_url,
@@ -78,7 +97,9 @@ class WebCrawler:
             'statistics': {
                 'total_pages': len(self.visited_urls),
                 'total_endpoints': len(self.discovered_endpoints),
-                'total_forms': len(self.discovered_forms)
+                'total_forms': len(self.discovered_forms),
+                'is_authenticated': self.is_authenticated,
+                'auth_comparison': auth_stats
             }
         }
     
@@ -112,24 +133,36 @@ class WebCrawler:
         if not self._is_same_domain(url):
             return
         
-        print(f"[Crawler] Crawling: {url} (depth: {depth})")
+        auth_label = " [AUTH]" if self.is_authenticated else ""
+        print(f"[Crawler] Crawling{auth_label}: {url} (depth: {depth})")
         
         # Mark as visited
         self.visited_urls.add(url)
         
+        # Track endpoint authentication status
+        if self.is_authenticated:
+            self.authenticated_endpoints.append(url)
+        else:
+            self.unauthenticated_endpoints.append(url)
+        
         try:
-            # Fetch page
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-                response = await client.get(url)
-                
-                if response.status_code != 200:
-                    return
-                
-                content_type = response.headers.get('content-type', '')
-                if 'text/html' not in content_type:
-                    return
-                
-                html_content = response.text
+            # Use provided authenticated client, or create temporary unauthenticated one
+            if self.client:
+                # Use the authenticated client provided
+                response = await self.client.get(url)
+            else:
+                # Create temporary unauthenticated client
+                async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as temp_client:
+                    response = await temp_client.get(url)
+            
+            if response.status_code != 200:
+                return
+            
+            content_type = response.headers.get('content-type', '')
+            if 'text/html' not in content_type:
+                return
+            
+            html_content = response.text
             
             # Parse HTML
             soup = BeautifulSoup(html_content, 'html.parser')
@@ -295,6 +328,26 @@ class WebCrawler:
             })
         
         return scan_targets
+    
+    def get_auth_comparison(self) -> Dict[str, Any]:
+        """
+        Get comparison statistics between authenticated and unauthenticated endpoints.
+        Useful for acceptance testing to verify authenticated crawling finds more endpoints.
+        
+        Returns:
+            Dictionary with authentication statistics and comparison
+        """
+        return {
+            'authenticated_endpoint_count': len(set(self.authenticated_endpoints)),
+            'unauthenticated_endpoint_count': len(set(self.unauthenticated_endpoints)),
+            'is_authenticated': self.is_authenticated,
+            'authenticated_endpoints': list(set(self.authenticated_endpoints)),
+            'endpoint_increase_percentage': (
+                ((len(set(self.authenticated_endpoints)) - len(set(self.unauthenticated_endpoints))) / 
+                 max(len(set(self.unauthenticated_endpoints)), 1)) * 100
+                if self.is_authenticated else 0
+            )
+        }
     
     def export_site_map(self, format: str = 'json') -> str:
         """

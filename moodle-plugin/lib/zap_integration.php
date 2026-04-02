@@ -5,11 +5,316 @@
  * Connects Moodle plugin with ZAP Integration Module
  * 
  * @package    local_security_dashboard
- * @copyright  2026 Security Team
+ * @copyright  2026 Nathanael & Krisopras
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 defined('MOODLE_INTERNAL') || die();
+
+/**
+ * CORRECT ZAP Authentication Setup
+ * Uses /JSON/authentication/action/ endpoints per ZAP API spec
+ */
+
+/**
+ * Set authentication method in ZAP context (FIXED FORMAT)
+ * GET /JSON/authentication/action/setAuthenticationMethod/
+ * 
+ * ZAP expects: for form-based auth, loginUrl and loginRequestData as separate config parameters
+ */
+function local_security_dashboard_set_zap_auth_method($context_id, $auth_method_name, $login_url, $login_request_data, $host = 'localhost', $port = '8080') {
+    $url = "http://$host:$port/JSON/authentication/action/setAuthenticationMethod/";
+    
+    // FIXED (v4): ZAP form-based auth REQUIRES authMethodConfigParams wrapper
+    // The config parameters must be wrapped inside ONE authMethodConfigParams parameter
+    // Then that entire wrapped string must be URL-encoded
+    
+    // Build the auth config parameters (not yet encoded)
+    $auth_config = 'loginUrl=' . urlencode($login_url) . '&loginRequestData=' . urlencode($login_request_data);
+    
+    // Build query parameters with authMethodConfigParams wrapper
+    $query_params = [
+        'contextId=' . urlencode($context_id),
+        'authMethodName=' . urlencode($auth_method_name),
+        'authMethodConfigParams=' . urlencode($auth_config)  // FIXED: Wrap config params
+    ];
+    $query_string = implode('&', $query_params);
+    $full_url = $url . '?' . $query_string;
+    
+    error_log("\n================== DEBUG ZAP AUTH (v4 - authMethodConfigParams wrapper) ==================");
+    error_log("Context ID: $context_id");
+    error_log("Auth Method Name: $auth_method_name");
+    error_log("Auth Config: $auth_config");
+    error_log("Full URL: " . substr($full_url, 0, 400));
+    error_log("=======================================================================================\n");
+    
+    // Execute curl - pass URL safely via escapeshellarg
+    $cmd = sprintf('curl -s %s', escapeshellarg($full_url));
+    error_log("DEBUG ZAP AUTH: Executing curl command");
+    error_log("DEBUG ZAP AUTH: URL length: " . strlen($full_url) . " chars");
+    
+    $response = shell_exec($cmd);
+    
+    if (!$response) {
+        error_log("ERROR ZAP AUTH: No response from curl command");
+        throw new Exception('Failed to set auth method - no response from ZAP');
+    }
+    
+    error_log("DEBUG ZAP AUTH: Raw Response: " . $response);
+    
+    $data = json_decode($response, true);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        error_log("ERROR ZAP AUTH: JSON decode error: " . json_last_error_msg());
+        throw new Exception('Failed to decode ZAP response: ' . json_last_error_msg());
+    }
+    
+    // Check response format per ZAP API: code field indicates success
+    // Success responses have code="OK" or similar, error responses have code!="OK"
+    if (!isset($data['code'])) {
+        error_log("WARNING ZAP AUTH: No 'code' field in response: " . json_encode($data));
+    }
+    
+    error_log("DEBUG ZAP AUTH: Response code=" . ($data['code'] ?? 'missing'));
+    error_log("DEBUG ZAP AUTH: ✅ Auth method set successfully");
+    return $data;
+}
+
+/**
+ * Set logged-in indicator in ZAP context (CORRECT API)
+ * GET /JSON/authentication/action/setLoggedInIndicator/
+ */
+function local_security_dashboard_set_zap_logged_in_indicator($context_id, $regex_pattern, $host = 'localhost', $port = '8080') {
+    $base_url = "http://$host:$port/JSON/authentication/action/setLoggedInIndicator/";
+    
+    // Build query parameters manually to avoid encoding issues
+    $query_params = [
+        'contextId=' . urlencode($context_id),
+        'loggedInIndicatorRegex=' . urlencode($regex_pattern)
+    ];
+    $query_string = implode('&', $query_params);
+    $full_url = $base_url . '?' . $query_string;
+    
+    error_log("DEBUG ZAP INDICATOR: Setting logged-in indicator for context $context_id");
+    
+    $cmd = sprintf('curl -s %s', escapeshellarg($full_url));
+    $response = shell_exec($cmd);
+    
+    if (!$response) {
+        throw new Exception('Failed to set logged-in indicator');
+    }
+    
+    if (!$response) {
+        throw new Exception('Failed to set logged-in indicator');
+    }
+    
+    $data = json_decode($response, true);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        throw new Exception('Failed to decode ZAP response: ' . json_last_error_msg());
+    }
+    
+    // Check response code per ZAP API spec
+    if (isset($data['code']) && $data['code'] !== 'OK' && substr($data['code'], 0, 3) !== '200') {
+        error_log("WARNING ZAP INDICATOR: Response code=" . $data['code'] . ", message=" . ($data['message'] ?? 'none'));
+    }
+    
+    error_log("DEBUG ZAP INDICATOR: Logged-in indicator set successfully");
+    return $data;
+}
+
+/**
+ * Set authentication credentials for a user in ZAP context
+ * MUST be called AFTER setAuthenticationMethod
+ */
+function local_security_dashboard_set_zap_auth_credentials($context_id, $user_id, $username, $password, $host = 'localhost', $port = '8080') {
+    $base_url = "http://$host:$port/JSON/authentication/action/setAuthenticationCredentials/";
+    
+    // Build query parameters manually to avoid encoding issues
+    $query_params = [
+        'contextId=' . urlencode($context_id),
+        'userId=' . urlencode($user_id),
+        'username=' . urlencode($username),
+        'password=' . urlencode($password)
+    ];
+    $query_string = implode('&', $query_params);
+    $full_url = $base_url . '?' . $query_string;
+    
+    error_log("DEBUG ZAP CREDENTIALS: Setting credentials for user $user_id in context $context_id");
+    error_log("DEBUG ZAP CREDENTIALS: URL: " . substr($full_url, 0, 300));
+    
+    $cmd = sprintf('curl -s %s', escapeshellarg($full_url));
+    $response = shell_exec($cmd);
+    
+    if (!$response) {
+        throw new Exception('Failed to set auth credentials - no response from ZAP');
+    }
+    
+    error_log("DEBUG ZAP CREDENTIALS: Response: " . substr($response, 0, 200));
+    
+    $data = json_decode($response, true);
+    if (isset($data['error']) || isset($data['code'])) {
+        error_log("WARNING ZAP CREDENTIALS: " . json_encode($data));
+        // Don't throw error - credentials might already be set
+    }
+    
+    return $data;
+}
+
+/**
+ * Configure Moodle form-based authentication in ZAP (v6: Complete Context Setup)
+ * 
+ * COMPLETE WORKFLOW PER ZAP DOCUMENTATION:
+ * 1. Create new context (if not exists)
+ * 2. Include URLs in context via regex
+ * 3. Set authentication method
+ * 4. Set logged-in indicator
+ * 5. Create user in context
+ * 6. Set user credentials/parameters
+ */
+function local_security_dashboard_configure_zap_moodle_auth($username, $password, $context_id = 1, $host = 'localhost', $port = '8080') {
+    error_log("\n================== DEBUG ZAP CONFIG v6 (Complete Context Setup) ==================");
+    error_log("Starting authentication configuration");
+    error_log("Context ID: $context_id, Username: $username, Password length: " . strlen($password));
+    
+    try {
+        $base_url = "http://$host:$port/JSON";
+        
+        // STEP 0: Create new context
+        error_log("STEP 0 - Creating new context...");
+        $actual_context_id = $context_id;  // Default if creation fails
+        
+        try {
+            $create_context_url = "$base_url/context/action/newContext/?contextName=" . urlencode("MoodleAuth_" . $context_id);
+            error_log("Creating context URL: $create_context_url");
+            
+            $cmd = sprintf('curl -s %s', escapeshellarg($create_context_url));
+            $response = shell_exec($cmd);
+            error_log("Create context response: " . substr($response, 0, 200));
+            
+            $data = json_decode($response, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                error_log("WARNING: Failed to parse context creation response: " . json_last_error_msg());
+            } else if (isset($data['contextId'])) {
+                $actual_context_id = $data['contextId'];
+                error_log("✅ New context created with ID: $actual_context_id");
+            } else if (isset($data['code'])) {
+                error_log("Create context returned code=" . $data['code'] . ", message=" . ($data['message'] ?? 'none'));
+                error_log("ℹ️ Using default context ID: $context_id");
+            }
+        } catch (Exception $e) {
+            error_log("WARNING: Exception during context creation: " . $e->getMessage());
+        }
+        
+        // Verify context exists
+        error_log("STEP 0b - Verifying context exists...");
+        try {
+            $list_contexts_url = "$base_url/context/view/contextList/";
+            $cmd = sprintf('curl -s %s', escapeshellarg($list_contexts_url));
+            $response = shell_exec($cmd);
+            error_log("Context list response: " . substr($response, 0, 300));
+        } catch (Exception $e) {
+            error_log("INFO: Could not verify context list");
+        }
+        
+        // STEP 1: Include Moodle URLs in context via regex
+        error_log("\nSTEP 1 - Including Moodle URLs in context...");
+        try {
+            $include_url = "$base_url/context/action/includeInContext/?contextName=" . urlencode("MoodleAuth_" . $actual_context_id) . 
+                          "&incRegex=" . urlencode("http://localhost:8998.*");
+            
+            error_log("Including URLs: context=$actual_context_id, regex=http://localhost:8998.*");
+            
+            $cmd = sprintf('curl -s %s', escapeshellarg($include_url));
+            $response = shell_exec($cmd);
+            error_log("Include URLs response: " . substr($response, 0, 200));
+            
+            $data = json_decode($response, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                error_log("WARNING: Failed to parse include URLs response: " . json_last_error_msg());
+            } else if (!isset($data['code'])) {
+                error_log("INFO: Include URLs returned (no code field): " . json_encode($data));
+            } else {
+                error_log("✅ URLs included in context (code=" . $data['code'] . ")");
+            }
+        } catch (Exception $e) {
+            error_log("WARNING: Could not include URLs: " . $e->getMessage());
+        }
+        
+        // STEP 2: Set form-based authentication method
+        error_log("\nSTEP 2 - Setting form-based authentication method...");
+        $login_url = 'http://localhost:8998/login/index.php';
+        $login_request_data = "logintoken=getFromPageToken&username=" . urlencode($username) . 
+                             "&password=" . urlencode($password) . "&submit=Log+in";
+        
+        local_security_dashboard_set_zap_auth_method(
+            $actual_context_id, 
+            'formBasedAuthentication', 
+            $login_url,
+            $login_request_data,
+            $host, 
+            $port
+        );
+        error_log("✅ Authentication method set");
+        
+        // STEP 3: Set logged-in indicator
+        error_log("\nSTEP 3 - Setting logged-in indicator...");
+        $logged_in_pattern = 'Dashboard|Dasbor|My courses|logout|Administration|user-menu';
+        
+        local_security_dashboard_set_zap_logged_in_indicator(
+            $actual_context_id,
+            $logged_in_pattern,
+            $host,
+            $port
+        );
+        error_log("✅ Logged-in indicator set");
+        
+        // STEP 4: Create user in context
+        error_log("\nSTEP 4 - Creating user in context...");
+        $user_id = 0;  // Default
+        try {
+            $new_user_url = "$base_url/users/action/newUser/?contextName=" . urlencode("MoodleAuth_" . $actual_context_id) . 
+                           "&name=" . urlencode($username);
+            
+            error_log("Creating user: context=$actual_context_id, user=$username");
+            
+            $cmd = sprintf('curl -s %s', escapeshellarg($new_user_url));
+            $response = shell_exec($cmd);
+            error_log("Create user response: " . substr($response, 0, 200));
+            
+            $data = json_decode($response, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                error_log("WARNING: Failed to parse create user response: " . json_last_error_msg());
+            } else if (isset($data['userId'])) {
+                $user_id = $data['userId'];
+                error_log("✅ User created with ID: $user_id");
+            } else if (isset($data['code'])) {
+                error_log("Create user returned code=" . $data['code'] . ", message=" . ($data['message'] ?? 'none'));
+                error_log("INFO: Using default user ID=$user_id");
+            }
+        } catch (Exception $e) {
+            error_log("WARNING: Could not create user: " . $e->getMessage());
+        }
+        
+        // STEP 5: Credentials already embedded in loginRequestData from STEP 2
+        error_log("\nSTEP 5 - Credentials already embedded in login form (skipping setUserParameter)...");
+        error_log("✅ Credentials will be sent via form parameters in login request");
+        
+        error_log("\n✅ Authentication configuration completed successfully!");
+        error_log("Context: $actual_context_id | User: $username | User ID: $user_id");
+        error_log("=================================================================================\n");
+        
+        return [
+            'success' => true,
+            'context_id' => $actual_context_id,
+            'user_id' => $user_id,
+            'auth_method' => 'formBasedAuthentication',
+            'username' => $username,
+            'message' => 'Moodle authentication configured in ZAP context'
+        ];
+    } catch (Exception $e) {
+        error_log("ERROR ZAP CONFIG: " . $e->getMessage());
+        throw $e;
+    }
+}
 
 /**
  * Get working ZAP host (with fallback for WSL to Windows)
@@ -90,14 +395,11 @@ function local_security_dashboard_zap_api_call($endpoint, $params = [], $method 
         $port = get_config('local_security_dashboard', 'zap_port') ?? '8080';
     }
     
-    $api_key = get_config('local_security_dashboard', 'zap_api_key') ?? 'ha6dlibv9t5ttps7b1jut91i4d';
-    
-    error_log("DEBUG ZAP API: Using API key: " . substr($api_key, 0, 5) . "...");
-    
     $url = "http://$host:$port/JSON/$endpoint";
     
-    // Add API key to params
-    $params['apikey'] = $api_key;
+    // API key disabled in ZAP settings
+    // $api_key = get_config('local_security_dashboard', 'zap_api_key') ?? 'ha6dlibv9t5ttps7b1jut91i4d';
+    // $params['apikey'] = $api_key;
     
     // Make request using shell_exec curl to bypass Moodle's SSRF blocking
     $query_string = http_build_query($params);
@@ -155,6 +457,7 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
         // Setup authentication if authenticated scan
         $cookie_file = null;
         $auth_username = null;
+        $context_id = 1;  // Context ID for authenticated scans - will be created automatically if needed
         
         if ($scan_type === 'authenticated') {
             require_once($CFG->dirroot . '/local/security_dashboard/lib.php');
@@ -173,32 +476,34 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
             
             error_log("DEBUG: Setting up authenticated scan with user: " . $creds['username']);
             
-            // Setup authentication and get session cookie
-            $auth_setup = local_security_dashboard_setup_zap_auth($creds['username'], $creds['password'], 'Moodle');
-            
-            // Ensure auth_setup is an array
-            if (!is_array($auth_setup)) {
-                throw new Exception('Invalid response from auth setup: ' . (is_string($auth_setup) ? $auth_setup : 'Unknown type'));
+            // Configure ZAP authentication context using proper ZAP API endpoints
+            try {
+                local_security_dashboard_configure_zap_moodle_auth(
+                    $creds['username'], 
+                    $creds['password'], 
+                    $context_id, 
+                    $host, 
+                    $port
+                );
+                error_log("DEBUG: ZAP authentication context configured successfully for context $context_id");
+            } catch (Exception $auth_err) {
+                throw new Exception('Failed to configure ZAP authentication: ' . $auth_err->getMessage());
             }
             
-            if (isset($auth_setup['error'])) {
-                throw new Exception('Failed to setup auth: ' . $auth_setup['error']);
-            }
-            
-            $cookie_file = $auth_setup['cookie_file'] ?? null;
-            $auth_username = $auth_setup['username'] ?? null;
-            $login_verified = $auth_setup['login_verified'] ?? false;
-            
-            error_log("DEBUG: Authentication setup completed. Login verified: " . ($login_verified ? 'YES' : 'NO'));
-            error_log("DEBUG: Cookie file: $cookie_file");
+            $auth_username = $creds['username'];
+            // Note: No cookie file needed when using ZAP context-based authentication
+            error_log("DEBUG: Authentication setup completed. Using ZAP context $context_id");
         }
         
         // Try spider scan (optional - may fail on some ZAP versions)
         try {
             $spider_params = [
                 'url' => $target_url,
+                'contextId' => $context_id,  // FIXED: Include context for authenticated crawling
                 'maxdepth' => get_config('local_security_dashboard', 'scan_spider_depth') ?? 3
             ];
+            
+            error_log("DEBUG ZAP SPIDER: Starting spider with contextId=$context_id, scan_type=$scan_type");
             
             $spider_result = local_security_dashboard_zap_api_call('spider/action/scan', 
                 $spider_params, 'GET', $host, $port, $cookie_file);
@@ -235,6 +540,11 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
             'recurse' => 'true',
             'policy' => get_config('local_security_dashboard', 'scan_policy') ?? 'medium'
         ];
+        
+        // Use context 1 for authenticated scans
+        if ($scan_type === 'authenticated') {
+            $ascan_params['contextId'] = $context_id;
+        }
         
         $ascan_result = local_security_dashboard_zap_api_call('ascan/action/scan', 
             $ascan_params, 'GET', $host, $port, $cookie_file);

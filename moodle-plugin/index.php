@@ -53,6 +53,11 @@ if (isset($logs_data['error'])) {
         ['class' => 'btn btn-success mr-2']
     );
     echo html_writer::link(
+        new moodle_url('/local/security_dashboard/native_auth_scan.php'),
+        '<i class="fa fa-user-check"></i> Authenticated Scan',
+        ['class' => 'btn btn-info mr-2']
+    );
+    echo html_writer::link(
         new moodle_url('/local/security_dashboard/auth_scan.php'),
         '<i class="fa fa-lock"></i> Auth & API Scan',
         ['class' => 'btn btn-primary mr-2']

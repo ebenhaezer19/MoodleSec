@@ -274,6 +274,56 @@ function local_security_dashboard_trigger_full_scan($max_depth = 2, $max_pages =
 }
 
 /**
+ * Trigger native authenticated full-site vulnerability scan
+ * 
+ * Performs authenticated scanning as admin user, allowing discovery of
+ * endpoints and vulnerabilities that are only visible when logged in.
+ *
+ * @param int $max_depth Maximum crawl depth
+ * @param int $max_pages Maximum pages to crawl
+ * @param string $username Username for authentication (default: admin)
+ * @param string $password Password for authentication (default: Admin@1234)
+ * @return array Scan results including findings and statistics
+ */
+function local_security_dashboard_trigger_native_auth_scan($max_depth = 2, $max_pages = 50, $username = 'admin', $password = 'Admin@1234') {
+    $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    
+    if (empty($proxy_url)) {
+        return ['error' => 'Proxy URL not configured'];
+    }
+    
+    // Call the new native authenticated scan endpoint
+    $url = rtrim($proxy_url, '/') . '/api/scan-native-auth';
+    
+    try {
+        $curl = new curl();
+        $response = $curl->post($url, json_encode([
+            'max_depth' => $max_depth,
+            'max_pages' => $max_pages,
+            'username' => $username,
+            'password' => $password
+        ]), [
+            'CURLOPT_HTTPHEADER' => ['Content-Type: application/json'],
+            'CURLOPT_TIMEOUT' => 600  // 10 minutes timeout for full authenticated scan
+        ]);
+        
+        if ($curl->get_errno()) {
+            return ['error' => 'Connection error: ' . $curl->error];
+        }
+        
+        $result = json_decode($response, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return ['error' => 'Invalid response from proxy service'];
+        }
+        
+        return $result;
+    } catch (Exception $e) {
+        return ['error' => $e->getMessage()];
+    }
+}
+
+/**
  * Create a scheduled scan
  *
  * @param string $target_url Target URL to scan
@@ -1092,34 +1142,63 @@ function local_security_dashboard_setup_zap_auth($username, $password, $context_
         // Step 3: Extract CSRF token from login form
         $logintoken = null;
         
-        // Try multiple patterns for CSRF token extraction
-        if (preg_match('/<input[^>]*name=["\']logintoken["\'][^>]*value=["\']([^"\']+)["\']/', $page, $matches)) {
+        // Try multiple patterns - order of HTML attributes shouldn't matter
+        
+        // Pattern 1: name comes before value - e.g., name="logintoken" ... value="TOKEN"
+        if (preg_match('/name=["\']logintoken["\'][^>]*value=["\']([^"\']+)["\']/', $page, $matches)) {
             $logintoken = $matches[1];
-            error_log("DEBUG: Found logintoken");
-        } elseif (preg_match('/name=["\']logintoken["\'][^>]*value=["\']([^"\']+)["\']/', $page, $matches)) {
+            error_log("DEBUG: Token extracted via Pattern 1 (name before value)");
+        }
+        
+        // Pattern 2: value comes before name - e.g., value="TOKEN" ... name="logintoken"
+        if (!$logintoken && preg_match('/value=["\']([^"\']+)["\'][^>]*name=["\']logintoken["\']/', $page, $matches)) {
             $logintoken = $matches[1];
-            error_log("DEBUG: Found logintoken (alt pattern)");
+            error_log("DEBUG: Token extracted via Pattern 2 (value before name)");
+        }
+        
+        // Pattern 3: no quotes around values - e.g., name=logintoken value=TOKEN
+        if (!$logintoken && preg_match('/name=logintoken[^>]*value=([^\s>]+)/', $page, $matches)) {
+            $logintoken = trim($matches[1], '"\'');
+            error_log("DEBUG: Token extracted via Pattern 3 (unquoted values)");
+        }
+        
+        // Pattern 4: Just look for value after any mention of logintoken
+        if (!$logintoken && preg_match('/logintoken[^>]*value=["\']?([^\s"\'>[]+)["\']?/', $page, $matches)) {
+            $logintoken = trim($matches[1], '"\'');
+            error_log("DEBUG: Token extracted via Pattern 4 (flexible search)");
         }
         
         if (!$logintoken) {
             error_log("WARNING: Could not extract CSRF token - proceeding without it");
+            error_log("DEBUG: First 500 chars of login page: " . substr($page, 0, 500));
             $logintoken = '';
+        } else {
+            error_log("DEBUG: Extracted logintoken = " . substr($logintoken, 0, 30) . "... (length: " . strlen($logintoken) . ")");
         }
         
         // Step 4: Perform login with credentials
         error_log("DEBUG: Attempting login for user: $username");
         
-        $post_data = array(
-            'username' => $username,
-            'password' => $password,
-            'submit' => 'Log in'
-        );
+        // IMPORTANT: Order matters! Logintoken must come FIRST
+        $post_data = array();
         
         if (!empty($logintoken)) {
             $post_data['logintoken'] = $logintoken;
         }
         
+        $post_data['username'] = $username;
+        $post_data['password'] = $password;
+        $post_data['submit'] = 'Log in';
+        
         $post_string = http_build_query($post_data);
+        
+        // Debug log the POST data
+        error_log("DEBUG POST DATA:");
+        foreach ($post_data as $key => $val) {
+            $display_val = ($key === 'password') ? str_repeat('*', strlen($val)) : substr($val, 0, 30);
+            error_log("  $key => $display_val");
+        }
+        error_log("DEBUG POST STRING (first 120 chars): " . substr($post_string, 0, 120));
         
         // Login with curl, save cookies and follow redirects
         $cmd = "curl -s -b " . escapeshellarg($cookie_file) . 
@@ -1129,8 +1208,16 @@ function local_security_dashboard_setup_zap_auth($username, $password, $context_
                " " . escapeshellarg($login_url) . 
                " 2>&1 | head -c 5000";
         
+        error_log("DEBUG: Executing curl login command");
+        error_log("DEBUG: Login URL: $login_url");
+        error_log("DEBUG: Command flags: -s -b <cookie> -c <cookie> -L -X POST -d <post_data>");
+
         $login_response = shell_exec($cmd);
         error_log("DEBUG: Login response received, size: " . strlen($login_response) . " bytes");
+        
+        if (is_null($login_response)) {
+            throw new Exception('Login command via shell_exec returned null - command execution failed');
+        }
         
         // Step 5: Verify login success
         $success_patterns = array(
@@ -1145,13 +1232,16 @@ function local_security_dashboard_setup_zap_auth($username, $password, $context_
         foreach ($success_patterns as $pattern) {
             if (preg_match($pattern, $login_response)) {
                 $login_verified = true;
-                error_log("DEBUG: Login verified - found success indicator: $pattern");
+                error_log("DEBUG: Login verified ✓ - found success indicator: $pattern");
                 break;
             }
         }
         
         if (!$login_verified) {
-            error_log("WARNING: Could not verify login success, but proceeding with cookies");
+            error_log("WARNING: Could not verify login success using response patterns");
+            error_log("DEBUG: Response contains 'logout': " . (strpos($login_response, 'logout') !== false ? 'YES' : 'NO'));
+            error_log("DEBUG: Response contains 'Dasbor': " . (strpos($login_response, 'Dasbor') !== false ? 'YES' : 'NO'));
+            error_log("DEBUG: Response first 300 chars: " . substr($login_response, 0, 300));
         }
         
         // Step 6: Verify cookies were saved

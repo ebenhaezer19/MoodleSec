@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import httpx
-from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi import FastAPI, Request, Response, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -97,6 +97,14 @@ class ScanResult(BaseModel):
     timestamp: str
     findings: List[ScanFinding]
     summary: Dict[str, int]
+
+
+class NativeAuthScanRequest(BaseModel):
+    """Request model for native authenticated scan."""
+    max_depth: int = Field(default=2, description="Maximum crawl depth")
+    max_pages: int = Field(default=50, description="Maximum pages to scan")
+    username: str = Field(default="admin", description="Username for authentication")
+    password: str = Field(default="Admin@1234", description="Password for authentication")
 
 
 @app.get("/health")
@@ -1184,6 +1192,303 @@ async def scan_api() -> Dict[str, Any]:
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"API scan failed: {str(e)}")
+
+
+@app.post("/api/scan-native-auth")
+async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str, Any]:
+    """
+    Native authenticated full-site vulnerability scan.
+
+    Process:
+    1. Authenticate as specified user
+    2. Crawl authenticated areas of the application
+    3. Scan discovered endpoints with authenticated session
+    4. Enrich findings with risk scores
+    5. Filter false positives using ML
+    6. Save results to database
+
+    Args:
+        request: NativeAuthScanRequest with credentials and options
+
+    Returns:
+        Complete authenticated scan results with findings and statistics
+    """
+    # Extract parameters from request
+    max_depth = request.max_depth
+    max_pages = request.max_pages
+    username = request.username
+    password = request.password
+    scan_id = f"native_auth_scan_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    timestamp = datetime.now().isoformat() + "Z"
+    
+    print(f"\n{'='*80}")
+    print(f"[Native Auth Scan] Starting authenticated vulnerability scan: {scan_id}")
+    print(f"[Native Auth Scan] Target: {MOODLE_URL}")
+    print(f"[Native Auth Scan] User: {username}")
+    print(f"[Native Auth Scan] Max depth: {max_depth}, Max pages: {max_pages}")
+    print(f"{'='*80}\n")
+    
+    try:
+        # Step 1: Authenticate
+        print(f"[Native Auth Scan] STEP 1: Authenticating as {username}...")
+        auth_client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
+        
+        # Get login page to extract logintoken
+        login_page_url = f"{MOODLE_URL}/login/index.php"
+        login_response = await auth_client.get(login_page_url)
+        login_html = login_response.text
+        
+        # Extract logintoken
+        import re
+        token_match = re.search(r'name=["\']logintoken["\'].*?value=["\']([^"\']+)["\']', login_html)
+        if not token_match:
+            raise ValueError("Failed to extract logintoken from login page")
+        
+        logintoken = token_match.group(1)
+        print(f"[Native Auth Scan] Extracted logintoken: {logintoken[:20]}...")
+        
+        # Perform login
+        login_data = {
+            'username': username,
+            'password': password,
+            'logintoken': logintoken,
+            'rememberusername': 1
+        }
+        
+        login_post_response = await auth_client.post(login_page_url, data=login_data)
+        
+        # Check if login successful (look for redirect or absence of login form in response)
+        if 'login' in login_post_response.text.lower() and len(login_post_response.text) < 5000:
+            # If response is still showing login form and is small, login might have failed
+            print(f"[Native Auth Scan] ⚠️  WARNING: Login response appears to be login page")
+            print(f"[Native Auth Scan] Response length: {len(login_post_response.text)}")
+            print(f"[Native Auth Scan] Response preview: {login_post_response.text[:500]}")
+        else:
+            print(f"[Native Auth Scan] ✓ Login successful (redirected, session established)")
+        
+        # Step 2: Crawl authenticated site
+        print(f"\n[Native Auth Scan] STEP 2: Crawling authenticated site...")
+        
+        # Create a custom crawler that uses the authenticated session
+        targets = []
+        visited_urls = set()
+        discovered_endpoints = []
+        
+        async def crawl_authenticated_url(url: str, depth: int = 0):
+            """Recursively crawl with authenticated session."""
+            if depth > max_depth or len(visited_urls) >= max_pages:
+                return
+            
+            if url in visited_urls:
+                return
+            
+            visited_urls.add(url)
+            
+            try:
+                print(f"[Native Auth Scan] Crawling: {url} (depth {depth})")
+                
+                response = await auth_client.get(url)
+                
+                # Extract links from response
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                for link in soup.find_all('a', href=True):
+                    href = link['href']
+                    
+                    # Normalize URL
+                    from urllib.parse import urljoin
+                    next_url = urljoin(MOODLE_URL, href)
+                    
+                    # Only follow internal links
+                    if MOODLE_URL in next_url and next_url not in visited_urls:
+                        # Save as endpoint to scan
+                        if next_url not in [t['url'] for t in targets]:
+                            targets.append({
+                                'url': next_url,
+                                'method': 'GET',
+                                'parameters': {}
+                            })
+                        
+                        # Continue crawling if we haven't hit limits
+                        if len(visited_urls) < max_pages and depth < max_depth:
+                            await crawl_authenticated_url(next_url, depth + 1)
+                
+                # Also extract form inputs for POST endpoints
+                for form in soup.find_all('form'):
+                    form_url = form.get('action', url)
+                    form_url = urljoin(MOODLE_URL, form_url)
+                    form_method = form.get('method', 'GET').upper()
+                    
+                    # Extract form fields
+                    form_params = {}
+                    for input_field in form.find_all('input'):
+                        field_name = input_field.get('name')
+                        field_value = input_field.get('value', '')
+                        if field_name:
+                            form_params[field_name] = field_value
+                    
+                    if form_url not in [t['url'] for t in targets]:
+                        targets.append({
+                            'url': form_url,
+                            'method': form_method,
+                            'parameters': form_params
+                        })
+                    
+            except Exception as e:
+                print(f"[Native Auth Scan] Error crawling {url}: {str(e)}")
+        
+        # Start crawling from Moodle dashboard
+        dashboard_url = f"{MOODLE_URL}/my/"
+        await crawl_authenticated_url(dashboard_url)
+        
+        print(f"[Native Auth Scan] Crawl complete! Visited {len(visited_urls)} pages")
+        print(f"[Native Auth Scan] Discovered {len(targets)} endpoints to scan")
+        
+        # Step 3: Scan endpoints with authenticated session
+        print(f"\n[Native Auth Scan] STEP 3: Scanning {len(targets)} endpoints...")
+        
+        all_findings = []
+        scanned_count = 0
+        
+        # Limit scanning to avoid timeout
+        targets_to_scan = targets[:max_pages] if len(targets) > max_pages else targets
+        
+        for i, target in enumerate(targets_to_scan, 1):
+            try:
+                print(f"[Native Auth Scan] Scanning {i}/{len(targets_to_scan)}: {target['url'][:80]}...")
+                
+                # Make request with authenticated session
+                if target['method'] == 'GET':
+                    response = await auth_client.get(target['url'], params=target.get('parameters'))
+                else:
+                    response = await auth_client.post(target['url'], data=target.get('parameters'))
+                
+                # Scan endpoint
+                response_body = response.text
+                response_headers = dict(response.headers)
+                status_code = response.status_code
+                
+                scan_results = scanner_engine.scan(
+                    url=target['url'],
+                    method=target['method'],
+                    params=target.get('parameters'),
+                    response_body=response_body,
+                    response_headers=response_headers,
+                    status_code=status_code
+                )
+                
+                # Enrich findings with risk scores
+                enriched_findings = risk_scorer.batch_enrich_findings(scan_results['findings'])
+                all_findings.extend(enriched_findings)
+                scanned_count += 1
+                
+                if scan_results['findings']:
+                    print(f"[Native Auth Scan]   → Found {len(scan_results['findings'])} vulnerabilities")
+                
+            except Exception as e:
+                print(f"[Native Auth Scan] Error scanning {target['url']}: {str(e)}")
+                continue
+        
+        # Step 4: ML-Enhanced Processing
+        print(f"\n[Native Auth Scan] STEP 4: ML-Enhanced Processing...")
+        print(f"[Native Auth Scan] BEFORE ML: {len(all_findings)} findings")
+        
+        # Apply ML filtering
+        ml_results = ml_manager.filter_findings(all_findings, context={
+            'environment': 'production',
+            'auth_status': 'authenticated',
+            'scan_type': 'native'
+        })
+        filtered_findings = ml_results['findings']
+        
+        print(f"[Native Auth Scan] AFTER ML: {len(filtered_findings)} findings")
+        print(f"[Native Auth Scan] ML Stats: {ml_results['filtered_count']} FPs filtered, "
+              f"{ml_results['severity_adjusted_count']} severities adjusted")
+        
+        # Step 5: Aggregate results
+        filtered_findings.sort(key=lambda x: x.get('risk_score', 0), reverse=True)
+        
+        summary = {
+            'critical': sum(1 for f in filtered_findings if f.get('severity', '').lower() == 'critical'),
+            'high': sum(1 for f in filtered_findings if f.get('severity', '').lower() == 'high'),
+            'medium': sum(1 for f in filtered_findings if f.get('severity', '').lower() == 'medium'),
+            'low': sum(1 for f in filtered_findings if f.get('severity', '').lower() == 'low'),
+            'info': sum(1 for f in filtered_findings if f.get('severity', '').lower() == 'info')
+        }
+        
+        # Step 6: Save to database
+        print(f"\n[Native Auth Scan] STEP 5: Saving results to database...")
+        scan_data = {
+            'scan_id': scan_id,
+            'scan_type': 'native_authenticated',
+            'target_url': MOODLE_URL,
+            'username': username,
+            'timestamp': timestamp,
+            'pages_visited': len(visited_urls),
+            'endpoints_discovered': len(targets),
+            'endpoints_scanned': scanned_count,
+            'total_findings': len(filtered_findings),
+            'summary': summary,
+            'findings': filtered_findings,
+            'ml_stats': ml_results
+        }
+        scan_history_db.save_scan(scan_data)
+        print(f"[Native Auth Scan] ✓ Results saved to database")
+        
+        # Send Slack notification if enabled
+        if slack_notifier and len(filtered_findings) > 0:
+            try:
+                await slack_notifier.send_scan_complete({
+                    'scan_id': scan_id,
+                    'target_url': MOODLE_URL,
+                    'endpoints_scanned': scanned_count,
+                    'total_findings': len(filtered_findings),
+                    'summary': summary,
+                    'authenticated': True,
+                    'username': username
+                })
+            except Exception as e:
+                print(f"[Slack] Notification failed: {str(e)}")
+        
+        # Prepare final result
+        result = {
+            'scan_id': scan_id,
+            'timestamp': timestamp,
+            'target_url': MOODLE_URL,
+            'username': username,
+            'authenticated': True,
+            'pages_visited': len(visited_urls),
+            'endpoints_discovered': len(targets),
+            'endpoints_scanned': scanned_count,
+            'total_findings': len(filtered_findings),
+            'summary': summary,
+            'findings': filtered_findings,
+            'ml_stats': {
+                'original_count': ml_results['original_count'],
+                'filtered_count': ml_results['filtered_count'],
+                'severity_adjusted_count': ml_results['severity_adjusted_count'],
+                'final_count': ml_results['final_count']
+            }
+        }
+        
+        print(f"\n{'='*80}")
+        print(f"[Native Auth Scan] SUCCESS! Scan complete")
+        print(f"[Native Auth Scan] Pages visited: {len(visited_urls)}")
+        print(f"[Native Auth Scan] Endpoints discovered: {len(targets)}")
+        print(f"[Native Auth Scan] Endpoints scanned: {scanned_count}")
+        print(f"[Native Auth Scan] Total findings: {len(filtered_findings)}")
+        print(f"[Native Auth Scan] Summary: Critical={summary['critical']}, High={summary['high']}, "
+              f"Medium={summary['medium']}, Low={summary['low']}, Info={summary['info']}")
+        print(f"{'='*80}\n")
+        
+        await auth_client.aclose()
+        return result
+        
+    except Exception as e:
+        print(f"\n[Native Auth Scan] ERROR: {str(e)}\n")
+        await auth_client.aclose()
+        raise HTTPException(status_code=500, detail=f"Native authenticated scan failed: {str(e)}")
 
 
 def _generate_finding_summary(findings: List[Dict[str, Any]]) -> Dict[str, int]:
