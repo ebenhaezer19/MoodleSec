@@ -8,9 +8,35 @@ Handles:
 - Retrieving payload statistics
 """
 
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from typing import Dict, Any, Optional
 from database.payload_repository import PayloadRepositoryManager
+
+# Request/Response Models
+class ImportFromZAPRequest(BaseModel):
+    zap_host: str = "localhost"
+    zap_port: int = 8080
+    zap_api_key: Optional[str] = None
+
+class ReloadCategoryRequest(BaseModel):
+    category: str
+    force_reload: Optional[bool] = True
+
+class CustomPayloadRequest(BaseModel):
+    category: str
+    payload: str
+    description: Optional[str] = None
+    tags: Optional[list] = None
+    priority: Optional[int] = 1
+
+class PayloadConfigRequest(BaseModel):
+    enable_auto_reuse: Optional[bool] = False
+    min_success_rate: Optional[int] = 50
+    min_effectiveness: Optional[int] = 50
+    max_payloads_per_category: Optional[int] = 100
+    auto_import_zap: Optional[bool] = False
+    deduplicate: Optional[bool] = True
 
 router = APIRouter(prefix="/api/payloads", tags=["payloads"])
 
@@ -57,33 +83,32 @@ async def get_import_status() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/import-from-zap")
-async def import_payloads_from_zap(
-    zap_host: str = Body("localhost"),
-    zap_port: int = Body(8080),
-    zap_api_key: str = Body("")
-) -> Dict[str, Any]:
+async def import_payloads_from_zap(request: ImportFromZAPRequest) -> Dict[str, Any]:
     """
     Import payloads from ZAP API.
     
     Args:
-        zap_host: ZAP server hostname
-        zap_port: ZAP server port
-        zap_api_key: ZAP API key (optional)
+        request: ImportFromZAPRequest containing:
+            - zap_host: ZAP server hostname (default: localhost)
+            - zap_port: ZAP server port (default: 8080)
+            - zap_api_key: ZAP API key (optional)
     """
     if not payload_repo:
         raise HTTPException(status_code=503, detail="Payload repository not initialized")
     
     try:
         result = payload_repo.import_from_zap_api(
-            zap_host=zap_host,
-            zap_port=zap_port,
-            zap_api_key=zap_api_key if zap_api_key else None
+            zap_host=request.zap_host,
+            zap_port=request.zap_port,
+            limit=200
         )
         return {
             "status": "success",
             "data": result
         }
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/reload")
@@ -105,24 +130,22 @@ async def reload_all_payloads() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/reload-category")
-async def reload_payloads_by_category(
-    category: str = Body(...),
-    force_reload: bool = Body(True)
-) -> Dict[str, Any]:
+async def reload_payloads_by_category(request: ReloadCategoryRequest) -> Dict[str, Any]:
     """
     Reload payloads for a specific category.
     
     Args:
-        category: Vulnerability category (XSS, SQLi, CSRF, etc.)
-        force_reload: Force reload even if recently cached
+        request: ReloadCategoryRequest containing:
+            - category: Vulnerability category (XSS, SQLi, CSRF, etc.)
+            - force_reload: Force reload even if recently cached (default: True)
     """
     if not payload_repo:
         raise HTTPException(status_code=503, detail="Payload repository not initialized")
     
     try:
         result = payload_repo.reload_payloads_by_category(
-            category=category,
-            force_reload=force_reload
+            category=request.category,
+            force_reload=request.force_reload
         )
         return {
             "status": "success",
@@ -184,24 +207,18 @@ async def reset_all_payloads() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/custom")
-async def add_custom_payload(
-    category: str = Body(...),
-    payload: str = Body(...),
-    description: str = Body(""),
-    tags: list = Body(default_factory=list),
-    priority: int = Body(1)
-) -> Dict[str, Any]:
+async def add_custom_payload(request: CustomPayloadRequest) -> Dict[str, Any]:
     """Add a custom payload to the repository."""
     if not payload_repo:
         raise HTTPException(status_code=503, detail="Payload repository not initialized")
     
     try:
         result = payload_repo.add_custom_payload(
-            category=category,
-            payload=payload,
-            description=description,
-            tags=tags,
-            priority=priority
+            category=request.category,
+            payload=request.payload,
+            description=request.description or "",
+            tags=request.tags or [],
+            priority=request.priority or 1
         )
         return {
             "status": "success",
@@ -234,26 +251,19 @@ async def get_payload_config() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/config")
-async def update_payload_config(
-    enable_auto_reuse: bool = Body(...),
-    min_success_rate: int = Body(60),
-    min_effectiveness: int = Body(70),
-    max_payloads_per_category: int = Body(20),
-    auto_import_zap: bool = Body(True),
-    deduplicate: bool = Body(True)
-) -> Dict[str, Any]:
+async def update_payload_config(request: PayloadConfigRequest) -> Dict[str, Any]:
     """Update payload management configuration."""
     if not payload_repo:
         raise HTTPException(status_code=503, detail="Payload repository not initialized")
     
     try:
         config = {
-            "enable_auto_reuse": enable_auto_reuse,
-            "min_success_rate": min_success_rate,
-            "min_effectiveness": min_effectiveness,
-            "max_payloads_per_category": max_payloads_per_category,
-            "auto_import_zap": auto_import_zap,
-            "deduplicate": deduplicate
+            "enable_auto_reuse": request.enable_auto_reuse,
+            "min_success_rate": request.min_success_rate,
+            "min_effectiveness": request.min_effectiveness,
+            "max_payloads_per_category": request.max_payloads_per_category,
+            "auto_import_zap": request.auto_import_zap,
+            "deduplicate": request.deduplicate
         }
         # TODO: Save configuration to database or config file
         return {
