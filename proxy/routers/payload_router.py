@@ -50,12 +50,15 @@ def set_payload_repo(repo: PayloadRepositoryManager):
 
 @router.get("/stats")
 async def get_payload_stats() -> Dict[str, Any]:
-    """Get payload repository statistics."""
+    """Get payload repository statistics and list of payloads."""
     if not payload_repo:
         raise HTTPException(status_code=503, detail="Payload repository not initialized")
     
     try:
         stats = payload_repo.get_stats()
+        # Add payloads list to response
+        payloads = payload_repo.get_all_payloads()
+        stats["payloads"] = payloads
         return {
             "status": "success",
             "data": stats

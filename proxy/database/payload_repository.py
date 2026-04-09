@@ -211,6 +211,27 @@ class PayloadRepositoryManager:
         conn.close()
         
         return payloads
+
+    def get_all_payloads(self, limit: int = 500) -> List[Dict]:
+        """Get all payloads from repository."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, payload_text as payload, category, payload_type,
+                   severity, success_rate, total_uses as used_count,
+                   effectiveness_score as effectiveness, last_used,
+                   created_at, is_vulnerable
+            FROM payloads
+            ORDER BY id DESC
+            LIMIT ?
+        """, (limit,))
+        
+        payloads = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        return payloads
     
     def record_usage(self, payload_id: int, scan_id: str, 
                     target_url: str, parameter: str, 
