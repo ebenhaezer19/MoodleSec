@@ -18,6 +18,7 @@ from utils.payload_debug_logger import PayloadDebugLogger
 from utils.debug_endpoints import setup_debug_endpoints
 from scanners.scanner_engine import ScannerEngine
 from scanners.phishing_detector import PhishingDetector
+from routers import payload_router, scanner_router
 from crawler.web_crawler import WebCrawler
 from risk.risk_scorer import RiskScorer
 from database.scan_history import ScanHistoryDB
@@ -74,9 +75,24 @@ scheduler_db = SchedulerDB()
 try:
     payload_repo = PayloadRepositoryManager()
     print("[✓] Payload Repository initialized successfully")
+    
+    # Set payload repo for routers
+    payload_router.set_payload_repo(payload_repo)
+    print("[✓] Payload router configured")
 except Exception as e:
     print(f"[!] Payload Repository initialization failed: {e}")
     payload_repo = None
+
+# Configure scanner router
+try:
+    scanner_router.set_scanner_engine(scanner_engine)
+    print("[✓] Scanner router configured")
+except Exception as e:
+    print(f"[!] Scanner router configuration failed: {e}")
+
+# Include routers
+app.include_router(payload_router.router)
+app.include_router(scanner_router.router)
 
 # Initialize PDF generator
 pdf_generator = PDFReportGenerator()

@@ -80,6 +80,14 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
     
+    // Add Advanced Payload Manager UI
+    $ADMIN->add('local_security_dashboard', new admin_externalpage(
+        'local_security_dashboard_payload_manager_ui',
+        '⚙️ Payload Manager (Advanced)',
+        new moodle_url('/local/security_dashboard/payload_manager_ui.php'),
+        'moodle/site:config'
+    ));
+    
     // Add Settings page at the end
     $settingspage = new admin_settingpage('local_security_dashboard_settings', 
         'Settings');
