@@ -228,7 +228,7 @@ if (empty($proxy_url)) {
                                     <select id="custom-category" class="form-control" required>
                                         <option value="">Select category</option>
                                         <option value="XSS">XSS</option>
-                                        <option value="SQLi">SQL Injection</option>
+                                        <option value="SQL Injection">SQL Injection</option>
                                         <option value="CSRF">CSRF</option>
                                         <option value="RFI">RFI</option>
                                         <option value="XXE">XXE</option>

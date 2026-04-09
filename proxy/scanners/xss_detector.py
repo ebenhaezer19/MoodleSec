@@ -39,6 +39,7 @@ class XSSDetector:
         self.smart_payloads = []
         if self.payload_repo:
             try:
+                print(f"[Scanner] XSS: Loading top payloads from repository...")
                 smart_xss = self.payload_repo.get_top_payloads("XSS", limit=20)
                 self.smart_payloads = [p.get('payload_text', '') for p in smart_xss if p.get('payload_text')]
                 print(f"[✓] Loaded {len(self.smart_payloads)} smart XSS payloads from repository")

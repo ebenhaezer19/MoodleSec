@@ -194,10 +194,18 @@ class PayloadRepositoryManager:
     
     def get_top_payloads(self, category: str, limit: int = 10) -> List[Dict]:
         """Get top performing payloads for category."""
+        print(f"[DB] get_top_payloads() called: category='{category}', limit={limit}")
+        
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
+        # First, let's check all records in payloads table to debug
+        cursor.execute("SELECT COUNT(*) FROM payloads WHERE category = ?", (category,))
+        count_all = cursor.fetchone()[0]
+        print(f"[DB] Total payloads with category '{category}': {count_all}")
+        
+        # Now get vulnerable ones
         cursor.execute("""
             SELECT id, payload_text, payload_type, severity,
                    success_rate, total_uses, effectiveness_score
@@ -208,6 +216,8 @@ class PayloadRepositoryManager:
         """, (category, limit))
         
         payloads = [dict(row) for row in cursor.fetchall()]
+        print(f"[DB] Returned {len(payloads)} vulnerable payloads for category '{category}'")
+        
         conn.close()
         
         return payloads
@@ -492,6 +502,8 @@ class PayloadRepositoryManager:
                           tags: list = None, priority: int = 1) -> Dict[str, Any]:
         """Add a custom payload to the repository."""
         try:
+            print(f"[DB] add_custom_payload() called: category={category}, payload_len={len(payload)}")
+            
             payload_hash = self._calculate_payload_hash(payload, category)
             
             conn = sqlite3.connect(self.db_path)
@@ -510,6 +522,14 @@ class PayloadRepositoryManager:
             conn.commit()
             cursor.execute("SELECT last_insert_rowid()")
             payload_id = cursor.fetchone()[0]
+            
+            print(f"[DB] Payload inserted successfully: id={payload_id}, category={category}, is_vulnerable=1")
+            
+            # Verify payload was saved
+            cursor.execute("SELECT id, category, is_vulnerable FROM payloads WHERE id = ?", (payload_id,))
+            verify = cursor.fetchone()
+            print(f"[DB] Verification query result: {verify}")
+            
             conn.close()
             
             return {
@@ -518,6 +538,7 @@ class PayloadRepositoryManager:
                 "message": f"Custom payload added to {category}"
             }
         except Exception as e:
+            print(f"[DB] Error in add_custom_payload: {str(e)}")
             return {"status": "error", "message": str(e)}
     
     def delete_payload(self, payload_id: int) -> Dict[str, Any]:

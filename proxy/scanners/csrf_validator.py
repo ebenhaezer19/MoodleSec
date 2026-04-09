@@ -37,6 +37,7 @@ class CSRFValidator:
         self.smart_payloads = []
         if self.payload_repo:
             try:
+                print(f"[Scanner] CSRF: Loading top payloads from repository...")
                 smart_csrf = self.payload_repo.get_top_payloads("CSRF", limit=20)
                 self.smart_payloads = [p.get('payload_text', '') for p in smart_csrf if p.get('payload_text')]
                 print(f"[✓] Loaded {len(self.smart_payloads)} smart CSRF payloads from repository")

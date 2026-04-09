@@ -38,6 +38,7 @@ class SQLInjectionDetector:
         self.smart_payloads = []
         if self.payload_repo:
             try:
+                print(f"[Scanner] SQLi: Loading top payloads from repository...")
                 smart_sql = self.payload_repo.get_top_payloads("SQL Injection", limit=20)
                 self.smart_payloads = [p.get('payload_text', '') for p in smart_sql if p.get('payload_text')]
                 print(f"[✓] Loaded {len(self.smart_payloads)} smart SQL injection payloads from repository")
