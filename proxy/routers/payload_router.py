@@ -126,15 +126,24 @@ async def reload_all_payloads() -> Dict[str, Any]:
     Reload all payloads from repository and reinitialize scanners.
     Recalculates effectiveness scores and refreshes scanner in-memory cache.
     """
+    print("[API] POST /api/payloads/reload called - reloading payloads and scanners")
+    
     if not payload_repo:
+        print("[ERROR] Payload repository not initialized")
         raise HTTPException(status_code=503, detail="Payload repository not initialized")
     
     try:
+        print("[DEBUG] Calling payload_repo.reload_all_payloads()")
         result = payload_repo.reload_all_payloads()
+        print(f"[DEBUG] Payloads reloaded. Result: {result}")
         
         # Also reinitialize scanners to reload their payloads from database
         if scanner_engine:
+            print("[DEBUG] Reinitializing scanners with new payloads...")
             scanner_engine.initialize_scanners()
+            print("[OK] Scanner engine reinitialized successfully")
+        else:
+            print("[WARNING] Scanner engine not available for reinitialization")
         
         return {
             "status": "success",
@@ -142,6 +151,9 @@ async def reload_all_payloads() -> Dict[str, Any]:
             "data": result
         }
     except Exception as e:
+        print(f"[ERROR] Reload failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/reload-category")
@@ -224,10 +236,14 @@ async def reset_all_payloads() -> Dict[str, Any]:
 @router.post("/custom")
 async def add_custom_payload(request: CustomPayloadRequest) -> Dict[str, Any]:
     """Add a custom payload to the repository."""
+    print(f"[API] POST /api/payloads/custom called - adding custom payload: {request.category}")
+    
     if not payload_repo:
+        print("[ERROR] Payload repository not initialized")
         raise HTTPException(status_code=503, detail="Payload repository not initialized")
     
     try:
+        print(f"[DEBUG] Adding custom payload to repository: category={request.category}, payload_length={len(request.payload)}")
         result = payload_repo.add_custom_payload(
             category=request.category,
             payload=request.payload,
@@ -235,12 +251,16 @@ async def add_custom_payload(request: CustomPayloadRequest) -> Dict[str, Any]:
             tags=request.tags or [],
             priority=request.priority or 1
         )
+        print(f"[OK] Custom payload added successfully. Result: {result}")
         return {
             "status": "success",
             "message": "Custom payload added",
             "data": result
         }
     except Exception as e:
+        print(f"[ERROR] Failed to add custom payload: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/config")

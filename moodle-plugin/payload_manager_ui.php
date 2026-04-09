@@ -543,8 +543,10 @@ async function loadPayloads() {
         }
     } catch (error) {
         console.error('Error loading payloads:', error);
-        document.getElementById('payloads-tbody').innerHTML = 
-            '<tr><td colspan="8" class="text-danger">Error loading payloads</td></tr>';
+        const tbody = document.getElementById('payloads-tbody');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-danger">Error loading payloads</td></tr>';
+        }
     }
 }
 
@@ -578,8 +580,10 @@ function renderPayloadsTable() {
         `;
     });
     
-    document.getElementById('payloads-tbody').innerHTML = html || 
-        '<tr><td colspan="8" class="text-center">No payloads found</td></tr>';
+    const tbody = document.getElementById('payloads-tbody');
+    if (tbody) {
+        tbody.innerHTML = html || '<tr><td colspan="8" class="text-center">No payloads found</td></tr>';
+    }
 }
 
 // View payload details
@@ -683,29 +687,52 @@ async function saveCustomPayload(e) {
     };
     
     try {
+        console.log('[DEBUG] Saving custom payload:', payload.category);
+        
         const response = await fetch(API_PAYLOADS + '/custom', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload)
         });
         
+        console.log('[DEBUG] Custom payload save response status:', response.status);
+        
         if (response.ok) {
+            const data = await response.json();
+            console.log('[OK] Custom payload saved:', data);
+            
             alert('Custom payload saved');
             document.getElementById('custom-payload-form').reset();
             
-            // Reload payloads to refresh the UI
-            await loadPayloads();
+            // Reload payloads to refresh the UI (only if we're on the list tab)
+            try {
+                console.log('[DEBUG] Reloading payloads from database...');
+                await loadPayloads();
+                console.log('[OK] Payloads reloaded');
+            } catch (e) {
+                console.log('[DEBUG] loadPayloads error (expected if not on list tab):', e.message);
+            }
             
             // Reload scanner payloads to make new payload available for scanning
+            console.log('[DEBUG] Calling reload endpoint to reinitialize scanners...');
             try {
-                await fetch(API_PAYLOADS + '/reload', {
+                const reloadResponse = await fetch(API_PAYLOADS + '/reload', {
                     method: 'POST'
                 });
+                const reloadData = await reloadResponse.json();
+                console.log('[OK] Reload endpoint response:', reloadData);
+                alert('Scanner reloaded with new payloads!');
             } catch (e) {
-                console.log('Reload endpoint response:', e);
+                console.error('[ERROR] Reload endpoint failed:', e);
+                alert('Payload saved but reload endpoint failed: ' + e.message);
             }
+        } else {
+            const errorData = await response.json();
+            console.error('[ERROR] Custom payload save failed:', response.status, errorData);
+            alert('Error saving payload: ' + (errorData.detail || 'Unknown error'));
         }
     } catch (error) {
+        console.error('[ERROR] Save custom payload error:', error);
         alert('Error saving payload: ' + error);
     }
 }
