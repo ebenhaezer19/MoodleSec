@@ -61,6 +61,15 @@ if (isset($logs_data['error'])) {
         '<i class="fa fa-user-crown"></i> Admin Area Scan',
         ['class' => 'btn btn-info mr-2']
     );
+    
+    // Reload Scanner button
+    echo html_writer::tag('button',
+        '<i class="fa fa-cogs"></i> Reload Scanner',
+        ['class' => 'btn btn-warning mr-2', 'id' => 'btn-reload-scanner-dashboard', 
+         'onclick' => 'reloadScannerDashboard()', 'type' => 'button',
+         'title' => 'Reload scanner with latest payloads (without proxy restart)']
+    );
+    
     echo html_writer::link(
         new moodle_url('/local/security_dashboard/scheduler.php'),
         '<i class="fa fa-clock-o"></i> Scheduler',
@@ -220,6 +229,37 @@ echo html_writer::link(
 
 echo html_writer::end_div();
 echo html_writer::end_div();
+
+// Add JavaScript for reload scanner functionality
+echo html_writer::script(<<<'JS'
+function reloadScannerDashboard() {
+    const btn = document.getElementById('btn-reload-scanner-dashboard');
+    const proxyUrl = 'http://localhost:8999';
+    
+    btn.disabled = true;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Reloading...';
+    
+    fetch(proxyUrl + '/api/payloads/reload', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        btn.innerHTML = '<i class="fa fa-check"></i> Reloaded!';
+        setTimeout(() => {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            alert('Scanner reloaded successfully! All payloads are now available.');
+        }, 1500);
+    })
+    .catch(error => {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        alert('Error reloading scanner: ' + error.message);
+    });
+}
+JS
+);
 
 // Display footer
 echo $OUTPUT->footer();

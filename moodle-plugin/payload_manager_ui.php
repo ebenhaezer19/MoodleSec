@@ -83,7 +83,10 @@ if (empty($proxy_url)) {
             <div class="card">
                 <div class="card-header">
                     <h5>Payload Repository
-                        <button class="btn btn-sm btn-info float-right" id="btn-refresh-stats">
+                        <button class="btn btn-sm btn-warning float-right" id="btn-reload-scanner" title="Reload scanner with latest payloads">
+                            <i class="fa fa-cogs"></i> Reload Scanner
+                        </button>
+                        <button class="btn btn-sm btn-info float-right mr-2" id="btn-refresh-stats">
                             <i class="fa fa-refresh"></i> Refresh Stats
                         </button>
                         <button class="btn btn-sm btn-danger float-right mr-2" id="btn-reset-all">
@@ -481,6 +484,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.getElementById('btn-refresh-stats')?.addEventListener('click', loadPayloadStats);
     document.getElementById('btn-reset-all')?.addEventListener('click', resetAllPayloads);
+    document.getElementById('btn-reload-scanner')?.addEventListener('click', reloadScanner);
     document.getElementById('btn-import-zap')?.addEventListener('click', importFromZAP);
     document.getElementById('custom-payload-form')?.addEventListener('submit', saveCustomPayload);
     document.getElementById('btn-save-config')?.addEventListener('click', saveConfiguration);
@@ -755,6 +759,41 @@ async function reloadPayloads() {
         }
     } catch (error) {
         alert('Error reloading payloads: ' + error);
+    }
+}
+
+// Reload scanner with latest payloads (without restart)
+async function reloadScanner() {
+    const btn = document.getElementById('btn-reload-scanner');
+    const originalText = btn.innerHTML;
+    
+    try {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Reloading...';
+        
+        const response = await fetch(API_PAYLOADS + '/reload', {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.status === 'success') {
+            btn.innerHTML = '<i class="fa fa-check"></i> Reloaded!';
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                alert('Scanner reloaded successfully! All payloads are now available.');
+            }, 1500);
+            
+            // Refresh stats to show latest
+            loadPayloadStats();
+        } else {
+            throw new Error(data?.detail || 'Failed to reload scanner');
+        }
+    } catch (error) {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        alert('Error reloading scanner: ' + error.message);
     }
 }
 
