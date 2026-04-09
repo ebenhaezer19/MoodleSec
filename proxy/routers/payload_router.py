@@ -42,11 +42,17 @@ router = APIRouter(prefix="/api/payloads", tags=["payloads"])
 
 # Shared payload repo instance (will be injected from app.py)
 payload_repo: Optional[PayloadRepositoryManager] = None
+scanner_engine: Optional[object] = None
 
 def set_payload_repo(repo: PayloadRepositoryManager):
     """Set the payload repository instance."""
     global payload_repo
     payload_repo = repo
+
+def set_scanner_engine(engine):
+    """Set the scanner engine instance for reloading scanners."""
+    global scanner_engine
+    scanner_engine = engine
 
 @router.get("/stats")
 async def get_payload_stats() -> Dict[str, Any]:
@@ -117,16 +123,22 @@ async def import_payloads_from_zap(request: ImportFromZAPRequest) -> Dict[str, A
 @router.post("/reload")
 async def reload_all_payloads() -> Dict[str, Any]:
     """
-    Reload all payloads from repository.
-    Recalculates effectiveness scores and refreshes in-memory cache.
+    Reload all payloads from repository and reinitialize scanners.
+    Recalculates effectiveness scores and refreshes scanner in-memory cache.
     """
     if not payload_repo:
         raise HTTPException(status_code=503, detail="Payload repository not initialized")
     
     try:
         result = payload_repo.reload_all_payloads()
+        
+        # Also reinitialize scanners to reload their payloads from database
+        if scanner_engine:
+            scanner_engine.initialize_scanners()
+        
         return {
             "status": "success",
+            "message": "Payloads and scanners reloaded",
             "data": result
         }
     except Exception as e:

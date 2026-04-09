@@ -688,7 +688,18 @@ async function saveCustomPayload(e) {
         if (response.ok) {
             alert('Custom payload saved');
             document.getElementById('custom-payload-form').reset();
-            loadCustomPayloads();
+            
+            // Reload payloads to refresh the UI
+            await loadPayloads();
+            
+            // Reload scanner payloads to make new payload available for scanning
+            try {
+                await fetch(API_PAYLOADS + '/reload', {
+                    method: 'POST'
+                });
+            } catch (e) {
+                console.log('Reload endpoint response:', e);
+            }
         }
     } catch (error) {
         alert('Error saving payload: ' + error);

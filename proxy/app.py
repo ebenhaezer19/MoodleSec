@@ -78,6 +78,7 @@ try:
     
     # Set payload repo for routers
     payload_router.set_payload_repo(payload_repo)
+    payload_router.set_scanner_engine(scanner_engine)
     print("[✓] Payload router configured")
 except Exception as e:
     print(f"[!] Payload Repository initialization failed: {e}")
