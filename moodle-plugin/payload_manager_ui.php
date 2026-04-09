@@ -19,7 +19,7 @@ require_once($CFG->libdir . '/adminlib.php');
 require_once($CFG->libdir . '/tablelib.php');
 
 require_login();
-require_capability('local/security_dashboard:manage', context_system::instance());
+require_capability('local/security_dashboard:scan', context_system::instance());
 
 $PAGE->set_url(new moodle_url('/local/security_dashboard/payload_manager_ui.php'));
 $PAGE->set_context(context_system::instance());
