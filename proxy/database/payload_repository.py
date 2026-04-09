@@ -222,7 +222,7 @@ class PayloadRepositoryManager:
             SELECT id, payload_text as payload, category, payload_type,
                    severity, success_rate, total_uses as used_count,
                    effectiveness_score as effectiveness, last_used,
-                   created_at, is_vulnerable
+                   first_discovered as created_at, is_vulnerable
             FROM payloads
             ORDER BY id DESC
             LIMIT ?
