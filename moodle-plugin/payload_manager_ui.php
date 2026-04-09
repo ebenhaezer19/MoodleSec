@@ -27,9 +27,8 @@ $PAGE->set_title('Payload Management');
 $PAGE->set_heading('Payload Management');
 $PAGE->set_pagelayout('admin');
 
-// Add CSS and JS
+// Add CSS
 $PAGE->requires->css(new moodle_url('/local/security_dashboard/styles.css'));
-$PAGE->requires->js(new moodle_url('/local/security_dashboard/js/payload_manager.js'));
 
 echo $OUTPUT->header();
 
