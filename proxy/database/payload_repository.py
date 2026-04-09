@@ -296,20 +296,34 @@ class PayloadRepositoryManager:
         total = cursor.execute("SELECT COUNT(*) FROM payloads").fetchone()[0]
         vulnerable = cursor.execute("SELECT COUNT(*) FROM payloads WHERE is_vulnerable = 1").fetchone()[0]
         
+        # Get averages
+        avg_result = cursor.execute("""
+            SELECT AVG(effectiveness_score), AVG(success_rate)
+            FROM payloads
+        """).fetchone()
+        avg_effectiveness = (avg_result[0] or 0) * 100
+        avg_success_rate = avg_result[1] or 0
+        
+        # Get by category
         cursor.execute("""
             SELECT category, COUNT(*) as count, AVG(success_rate) as avg_rate
             FROM payloads
             GROUP BY category
+            ORDER BY count DESC
         """)
         
         by_category = {row[0]: {"count": row[1], "avg_rate": row[2]} for row in cursor.fetchall()}
+        category_count = len(by_category)
         
         conn.close()
         
         return {
             "total_payloads": total,
             "vulnerable_payloads": vulnerable,
-            "by_category": by_category
+            "by_category": by_category,
+            "category_count": category_count,
+            "avg_effectiveness": avg_effectiveness,
+            "avg_success_rate": avg_success_rate
         }
     
     def reload_payloads_by_category(self, category: str, force_reload: bool = True) -> Dict[str, int]:
@@ -471,5 +485,66 @@ class PayloadRepositoryManager:
                 "by_category": by_category
             }
         
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    def add_custom_payload(self, category: str, payload: str, description: str = "", 
+                          tags: list = None, priority: int = 1) -> Dict[str, Any]:
+        """Add a custom payload to the repository."""
+        try:
+            payload_hash = self._calculate_payload_hash(payload, category)
+            
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                INSERT OR IGNORE INTO payloads (
+                    payload_hash, category, payload_type, payload_text,
+                    description, severity, source, is_vulnerable
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                payload_hash, category, "custom", payload,
+                description, "Medium", "custom_manual", 1
+            ))
+            
+            conn.commit()
+            cursor.execute("SELECT last_insert_rowid()")
+            payload_id = cursor.fetchone()[0]
+            conn.close()
+            
+            return {
+                "status": "success",
+                "payload_id": payload_id,
+                "message": f"Custom payload added to {category}"
+            }
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    def delete_payload(self, payload_id: int) -> Dict[str, Any]:
+        """Delete a payload from repository."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute("DELETE FROM payloads WHERE id = ?", (payload_id,))
+            conn.commit()
+            conn.close()
+            
+            return {"status": "success", "message": f"Payload {payload_id} deleted"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    
+    def reset_database(self) -> Dict[str, Any]:
+        """Reset/clear all payloads from database."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute("DELETE FROM payloads")
+            cursor.execute("DELETE FROM payload_usage_log")
+            conn.commit()
+            conn.close()
+            
+            return {"status": "success", "message": "Database reset"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
