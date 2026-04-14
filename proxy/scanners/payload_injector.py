@@ -113,13 +113,12 @@ class PayloadInjector:
                     if self.debug_logger:
                         self.debug_logger.log_injection_attempt(
                             scan_id=scan_id,
-                            payload_id=payload_id,
+                            target_url=url,
                             category=category,
                             payload_text=payload_text,
                             injection_point=f"parameter:{param_name}",
-                            target_url=url,
                             status="success" if response else "failed",
-                            response_code=response.status_code if response else 0
+                            response_code=response.status_code if response else None
                         )
                     
                     # Check if payload was reflected or caused error
@@ -141,13 +140,12 @@ class PayloadInjector:
                     if self.debug_logger:
                         self.debug_logger.log_injection_attempt(
                             scan_id=scan_id,
-                            payload_id=payload_id,
+                            target_url=url,
                             category=category,
                             payload_text=payload_text,
                             injection_point=f"parameter:{param_name}",
-                            target_url=url,
                             status="error",
-                            error_message=str(e)
+                            error=str(e)
                         )
         
         return findings
@@ -213,12 +211,12 @@ class PayloadInjector:
                     if self.debug_logger:
                         self.debug_logger.log_injection_attempt(
                             scan_id=scan_id,
-                            payload_id=payload_id,
+                            target_url=url,
                             category=category,
                             payload_text=payload_text,
                             injection_point=f"header:{header_name}",
-                            target_url=url,
-                            status="success" if response else "failed"
+                            status="success" if response else "failed",
+                            response_code=response.status_code if response else None
                         )
                     
                     if response:
@@ -236,6 +234,16 @@ class PayloadInjector:
                 
                 except Exception as e:
                     logger.error(f"Error injecting payload to header {header_name}: {e}")
+                    if self.debug_logger:
+                        self.debug_logger.log_injection_attempt(
+                            scan_id=scan_id,
+                            target_url=url,
+                            category=category,
+                            payload_text=payload_text,
+                            injection_point=f"header:{header_name}",
+                            status="error",
+                            error=str(e)
+                        )
         
         return findings
     
@@ -299,15 +307,12 @@ class PayloadInjector:
                 if self.debug_logger:
                     self.debug_logger.log_injection_attempt(
                         scan_id=scan_id,
-                        payload_id=payload_id,
-                        category=category,
-                        payload_text=payload_text,
-                        injection_point="body",
-                        target_url=url,
-                        status="success" if response else "failed"
-                    )
-                
-                if response:
+                            target_url=url,
+                            category=category,
+                            payload_text=payload_text,
+                            injection_point="body",
+                            status="success" if response else "failed",
+                            response_code=response.status_code if response else None
                     finding = self._check_injection_result(
                         response=response,
                         payload_text=payload_text,
@@ -322,6 +327,16 @@ class PayloadInjector:
             
             except Exception as e:
                 logger.error(f"Error injecting payload to body: {e}")
+                if self.debug_logger:
+                    self.debug_logger.log_injection_attempt(
+                        scan_id=scan_id,
+                        target_url=url,
+                        category=category,
+                        payload_text=payload_text,
+                        injection_point="body",
+                        status="error",
+                        error=str(e)
+                    )
         
         return findings
     

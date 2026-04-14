@@ -115,21 +115,19 @@ class TestPayloadReuse:
         # Log a few injection attempts
         test_injections = [
             {
-                "payload_id": 1,
+                "target_url": "http://example.com/user?id=1",
                 "category": "SQL Injection",
                 "payload_text": "' OR '1'='1",
                 "injection_point": "parameter:id",
-                "target_url": "http://example.com/user?id=1",
-                "status": "success",
+                "status": "ATTEMPT",
                 "response_code": 200
             },
             {
-                "payload_id": 2,
+                "target_url": "http://example.com/search?q=test",
                 "category": "XSS",
                 "payload_text": "<img src=x onerror=\"alert('xss')\">",
                 "injection_point": "parameter:search",
-                "target_url": "http://example.com/search?q=test",
-                "status": "success",
+                "status": "ATTEMPT",
                 "response_code": 200
             },
         ]

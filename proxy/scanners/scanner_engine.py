@@ -482,12 +482,11 @@ class ScannerEngine:
                     if self.debug_logger:
                         self.debug_logger.log_injection_attempt(
                             scan_id=scan_id,
-                            payload_id=payload_id,
+                            target_url=url,
                             category=category,
                             payload_text=payload_text,
                             injection_point=f"parameter:{param_name}",
-                            target_url=url,
-                            status="tested"
+                            status="ATTEMPT"
                         )
                     
                     # For now, just log the injection attempts
