@@ -11,7 +11,7 @@ Responsible for:
 import asyncio
 import re
 from typing import List, Dict, Any, Optional
-from urllib.parse import urlencode, urlparse, parse_qs
+from urllib.parse import urlencode, urlparse, parse_qs, quote
 import logging
 
 logger = logging.getLogger(__name__)
@@ -127,10 +127,10 @@ class PayloadInjector:
         client: Any,
         category: str,
         scan_id: str = "",
-        max_payloads: int = 10
+        max_payloads: int = 50
     ) -> List[Dict[str, Any]]:
         """
-        Inject payloads from repository to each parameter with proper encoding.
+        Inject payloads from repository to each parameter with proper URL encoding.
         
         Args:
             url: Target URL
@@ -138,7 +138,7 @@ class PayloadInjector:
             client: HTTP client (aiohttp or requests)
             category: Payload category (XSS, SQL Injection, etc.)
             scan_id: ID of current scan for tracking
-            max_payloads: Max payloads to test per parameter
+            max_payloads: Max payloads to test per parameter (default 50 for comprehensive testing)
             
         Returns:
             List of findings from payload injection
@@ -148,16 +148,18 @@ class PayloadInjector:
         if not self.payload_repo or not params:
             return findings
         
-        # Get payloads for this category
+        # Get payloads for this category - use all available (up to max_payloads)
         available_payloads = self.payload_repo.get_top_payloads(category, limit=max_payloads)
         if not available_payloads:
             print(f"[PayloadInjector] No payloads found for category: {category}")
             return findings
         
-        print(f"[PayloadInjector] Testing {len(params)} parameters with {len(available_payloads)} payloads")
+        print(f"[PayloadInjector] Testing {len(params)} parameters with {len(available_payloads)} {category} payloads")
         
         # Test each parameter with each payload
         for param_name, param_value in params.items():
+            print(f"[PayloadInjector] Injecting payloads to parameter: {param_name}")
+            
             for payload_obj in available_payloads:
                 payload_text = payload_obj.get('payload_text', '')
                 payload_id = payload_obj.get('id', 'unknown')
@@ -167,14 +169,17 @@ class PayloadInjector:
                 
                 try:
                     # Create test request with injected payload
-                    # URL encoding handles these automatically
+                    # URL encoding is handled by httpx/requests library automatically
                     test_params = params.copy()
                     test_params[param_name] = payload_text
                     
-                    # Make request
+                    # Log the payload being tested with URL-encoded preview
+                    encoded_preview = quote(payload_text, safe='')
+                    print(f"[PayloadInjector] Payload ID {payload_id} -> {param_name}={encoded_preview[:80]}{'...' if len(encoded_preview) > 80 else ''}")
+                    
+                    # Make request with injected payload
                     response = await self._make_request(url, test_params, client)
                     
-                    # Log injection attempt
                     if self.debug_logger:
                         self.debug_logger.log_injection_attempt(
                             scan_id=scan_id,
