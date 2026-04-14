@@ -76,6 +76,13 @@ try:
     payload_repo = PayloadRepositoryManager()
     print("[✓] Payload Repository initialized successfully")
     
+    # Update scanner engine with payload repo and debug logger
+    scanner_engine.payload_repo = payload_repo
+    scanner_engine.debug_logger = debug_logger
+    # Reinitialize scanners with payload repo
+    scanner_engine.initialize_scanners()
+    print("[✓] Scanner engine configured with payload repository")
+    
     # Set payload repo for routers
     payload_router.set_payload_repo(payload_repo)
     payload_router.set_scanner_engine(scanner_engine)

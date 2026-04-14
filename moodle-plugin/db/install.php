@@ -3,7 +3,7 @@
  * Database Schema for Security Dashboard Plugin
  * 
  * @package    local_security_dashboard
- * @copyright  2026 Security Team
+ * @copyright  2026 Krisopras & Nathanael
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
