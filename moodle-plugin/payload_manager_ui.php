@@ -562,53 +562,63 @@ function renderPayloadsTable() {
     const endIdx = startIdx + ITEMS_PER_PAGE;
     const pagePayloads = currentPayloads.slice(startIdx, endIdx);
     
+    console.log('[renderPayloadsTable] Rendering', pagePayloads.length, 'of', currentPayloads.length, 'payloads (page', currentPage, ')');
+    
     let html = '';
-    pagePayloads.forEach(payload => {
-        const preview = payload.payload.substring(0, 50) + (payload.payload.length > 50 ? '...' : '');
-        
-        // Determine confidence tier badge color
-        let tierColor = 'secondary';
-        if (payload.confidence_tier) {
-            if (payload.confidence_tier.includes('TIER1')) tierColor = 'success';
-            else if (payload.confidence_tier.includes('TIER2')) tierColor = 'info';
-            else if (payload.confidence_tier.includes('TIER3')) tierColor = 'warning';
+    pagePayloads.forEach((payload, idx) => {
+        try {
+            const payloadText = payload.payload || payload.payload_text || '';
+            const preview = payloadText.substring(0, 50) + (payloadText.length > 50 ? '...' : '');
+            
+            // Determine confidence tier badge color
+            let tierColor = 'secondary';
+            if (payload.confidence_tier) {
+                if (payload.confidence_tier.includes('TIER1')) tierColor = 'success';
+                else if (payload.confidence_tier.includes('TIER2')) tierColor = 'info';
+                else if (payload.confidence_tier.includes('TIER3')) tierColor = 'warning';
+            }
+            
+            // Determine created method display
+            const createdMethod = payload.created_method || 'unknown';
+            const methodLabel = createdMethod
+                .replace(/_/g, ' ')
+                .split(' ')
+                .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+                .join(' ');
+            
+            html += `
+                <tr>
+                    <td>${payload.id || '-'}</td>
+                    <td><span class="badge badge-info">${payload.category || '-'}</span></td>
+                    <td><code>${preview}</code></td>
+                    <td><span class="badge badge-${tierColor}">${(payload.confidence_tier || 'Unknown').replace(/TIER/g, 'T')}</span></td>
+                    <td>${((payload.confidence_score || 0) * 100).toFixed(0)}%</td>
+                    <td><small>${methodLabel}</small></td>
+                    <td>${(payload.effectiveness || 0).toFixed(1)}%</td>
+                    <td>${(payload.success_rate || 0).toFixed(1)}%</td>
+                    <td>${payload.used_count || 0}</td>
+                    <td>${payload.last_used || 'Never'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-info" onclick="viewPayload(${payload.id})">
+                            View
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deletePayload(${payload.id})">
+                            Delete
+                        </button>
+                    </td>
+                </tr>
+            `;
+        } catch (e) {
+            console.error('Error rendering payload', payload.id, ':', e);
         }
-        
-        // Determine created method display
-        const createdMethod = payload.created_method || 'unknown';
-        const methodLabel = createdMethod
-            .replace('_', ' ')
-            .split(' ')
-            .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(' ');
-        
-        html += `
-            <tr>
-                <td>${payload.id || '-'}</td>
-                <td><span class="badge badge-info">${payload.category || '-'}</span></td>
-                <td><code>${preview}</code></td>
-                <td><span class="badge badge-${tierColor}">${(payload.confidence_tier || 'Unknown').replace('TIER', 'T')}</span></td>
-                <td>${((payload.confidence_score || 0) * 100).toFixed(0)}%</td>
-                <td><small>${methodLabel}</small></td>
-                <td>${(payload.effectiveness || 0).toFixed(1)}%</td>
-                <td>${(payload.success_rate || 0).toFixed(1)}%</td>
-                <td>${payload.used_count || 0}</td>
-                <td>${payload.last_used || 'Never'}</td>
-                <td>
-                    <button class="btn btn-sm btn-info" onclick="viewPayload(${payload.id})">
-                        View
-                    </button>
-                    <button class="btn btn-sm btn-danger" onclick="deletePayload(${payload.id})">
-                        Delete
-                    </button>
-                </td>
-            </tr>
-        `;
     });
     
     const tbody = document.getElementById('payloads-tbody');
     if (tbody) {
         tbody.innerHTML = html || '<tr><td colspan="11" class="text-center">No payloads found</td></tr>';
+        console.log('[renderPayloadsTable] Table updated with HTML length:', html.length);
+    } else {
+        console.error('[renderPayloadsTable] Table tbody not found!');
     }
 }
 
