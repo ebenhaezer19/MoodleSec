@@ -306,7 +306,9 @@ class PayloadRepositoryManager:
             SELECT id, payload_text as payload, category, payload_type,
                    severity, success_rate, total_uses as used_count,
                    effectiveness_score as effectiveness, last_used,
-                   first_discovered as created_at, is_vulnerable
+                   first_discovered as created_at, is_vulnerable,
+                   confidence_score, confidence_tier, created_method,
+                   validation_status, source_metadata, source, description
             FROM payloads
             ORDER BY id DESC
             LIMIT ?
@@ -501,6 +503,7 @@ class PayloadRepositoryManager:
             version_response = requests.get(f"{zap_url}/JSON/core/view/version", timeout=10)
             
             if version_response.status_code != 200:
+                print(f"[ZAP Import] ERROR: ZAP not accessible at {zap_url}")
                 return {"status": "error", "message": f"ZAP not accessible at {zap_url}"}
             
             zap_version = version_response.json().get('version', 'unknown')
@@ -514,21 +517,28 @@ class PayloadRepositoryManager:
             )
             
             if alerts_response.status_code != 200:
+                print(f"[ZAP Import] ERROR: Failed to fetch ZAP alerts (status {alerts_response.status_code})")
                 return {"status": "error", "message": "Failed to fetch ZAP alerts"}
             
             alerts = alerts_response.json().get('alerts', [])
+            print(f"[ZAP Import] Fetched {len(alerts)} alerts from ZAP")
+            
             imported = 0
+            failed = 0
             by_category = {}
             
             # Process each alert
-            for alert in alerts:
+            for idx, alert in enumerate(alerts):
                 try:
                     category = alert.get('alert', 'Unknown')
                     severity = alert.get('riskcode', '2')
                     evidence = alert.get('evidence', '')
                     url = alert.get('url', '')
                     
+                    print(f"[ZAP Import] Alert {idx+1}: category={category}, has_evidence={len(evidence) > 0}, url={url[:50] if url else 'none'}")
+                    
                     if not evidence or len(evidence) < 2:
+                        print(f"[ZAP Import]   -> Skipped (evidence too short or empty)")
                         continue
                     
                     # Normalize category
@@ -545,7 +555,7 @@ class PayloadRepositoryManager:
                     severity_str = severity_map.get(str(severity), 'Medium')
                     
                     # Add payload
-                    self.add_payload(
+                    payload_id = self.add_payload(
                         payload_text=evidence[:1000],
                         category=norm_cat,
                         payload_type=category,
@@ -558,21 +568,32 @@ class PayloadRepositoryManager:
                         source_metadata=f'{{"zap_alert": "{category}", "severity": "{severity_str}"}}'
                     )
                     
+                    print(f"[ZAP Import]   -> Added as payload_id={payload_id}, category={norm_cat}")
+                    
                     imported += 1
                     by_category[norm_cat] = by_category.get(norm_cat, 0) + 1
                 
                 except Exception as e:
+                    print(f"[ZAP Import] ERROR processing alert {idx+1}: {str(e)}")
+                    failed += 1
                     continue
             
-            return {
+            result = {
                 "status": "success",
                 "zap_version": zap_version,
                 "alerts_fetched": len(alerts),
                 "payloads_imported": imported,
+                "payloads_failed": failed,
                 "by_category": by_category
             }
+            
+            print(f"[ZAP Import] SUMMARY: imported={imported}, failed={failed}, by_category={by_category}")
+            return result
         
         except Exception as e:
+            print(f"[ZAP Import] FATAL ERROR: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {"status": "error", "message": str(e)}
     
     def add_custom_payload(self, category: str, payload: str, description: str = "", 
@@ -581,6 +602,8 @@ class PayloadRepositoryManager:
         try:
             print(f"[DB] add_custom_payload() called: category={category}, payload_len={len(payload)}")
             
+            # Normalize category
+            category = self._normalize_category(category)
             payload_hash = self._calculate_payload_hash(payload, category)
             
             # Calculate tier for manual input
@@ -608,17 +631,24 @@ class PayloadRepositoryManager:
             ))
             
             conn.commit()
-            cursor.execute("SELECT last_insert_rowid()")
-            payload_id = cursor.fetchone()[0]
             
-            print(f"[DB] Payload inserted successfully: id={payload_id}, category={category}, is_vulnerable=1")
+            # Get the payload ID (works for both new inserts and existing duplicates)
+            cursor.execute("SELECT id FROM payloads WHERE payload_hash = ?", (payload_hash,))
+            result = cursor.fetchone()
+            payload_id = result[0] if result else 0
             
-            # Verify payload was saved
-            cursor.execute("SELECT id, category, is_vulnerable FROM payloads WHERE id = ?", (payload_id,))
-            verify = cursor.fetchone()
-            print(f"[DB] Verification query result: {verify}")
+            print(f"[DB] Payload processed: id={payload_id}, category={category}, hash={payload_hash}")
+            
+            # Verify payload exists in database
+            if payload_id > 0:
+                cursor.execute("SELECT id, category, is_vulnerable FROM payloads WHERE id = ?", (payload_id,))
+                verify = cursor.fetchone()
+                print(f"[DB] Verification query result: {verify}")
             
             conn.close()
+            
+            if payload_id <= 0:
+                return {"status": "error", "message": "Failed to insert payload"}
             
             return {
                 "status": "success",
@@ -627,6 +657,8 @@ class PayloadRepositoryManager:
             }
         except Exception as e:
             print(f"[DB] Error in add_custom_payload: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {"status": "error", "message": str(e)}
     
     def delete_payload(self, payload_id: int) -> Dict[str, Any]:
