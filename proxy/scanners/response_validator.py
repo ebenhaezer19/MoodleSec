@@ -52,18 +52,28 @@ class SmartResponseValidator:
     
     # Common SQL error patterns (database-agnostic)
     SQL_ERROR_PATTERNS = {
-        # MySQL
+        # MySQL/MariaDB
         r"(?i)(?:mysql_fetch|mysql_error|mysql_num_rows|SQL syntax|unexpected end of file)",
+        r"(?i)(?:Data too long for column|BIGINT UNSIGNED|Out of range value)",
+        r"(?i)(?:Incorrect integer value|syntax error in SQL statement)",
         # PostgreSQL
         r"(?i)(?:PostgreSQL|pgerror|syntax error at|column.*not exist)",
+        r"(?i)(?:FATAL|PANIC|ERROR:|invalid text representation)",
         # Oracle
-        r"(?i)(?:Oracle|ORA-\d+|invalid column name)",
+        r"(?i)(?:Oracle|ORA-\d+|invalid column name|not enough values)",
         # MSSQL
         r"(?i)(?:Conversion failed|syntax error|unclosed quotation|server side SQL error)",
-        # Generic SQL
-        r"(?i)(?:SQL Error|database error|query syntax|You have an error in your SQL)",
+        r"(?i)(?:Incorrect syntax near|Cannot insert the value NULL)",
+        # Generic SQL + Database errors
+        r"(?i)(?:SQL Error|database error|Error writing to database|DB Error)",
+        r"(?i)(?:query syntax|You have an error in your SQL|Exception encountered)",
+        r"(?i)(?:INSERT INTO|DELETE FROM|UPDATE.*SET|SELECT.*FROM).*(?:error|failed|exception)",
+        # Moodle-specific errors
+        r"(?i)(?:Moodle|dml_exception|DataObject.*error|mdl_.*error)",
+        # Stack traces that indicate SQL execution
+        r"(?i)(?:line \d+ of.*\.php|at line \d+|call to.*->)",
         # Command injection patterns
-        r"(?i)(?:command not found|No such file|cannot execute|permission denied)",
+        r"(?i)(?:command not found|No such file|cannot execute|permission denied|Unknown command)",
     }
     
     # Union-based SQL detection patterns
