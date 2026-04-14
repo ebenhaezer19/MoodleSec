@@ -1631,8 +1631,8 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
                     client=auth_client
                 )
                 
-                # === SPECIAL HANDLING FOR AUTH ENDPOINTS ===
-                if is_auth_endpoint and target['method'] == 'POST':
+                # === SPECIAL HANDLING FOR AUTH ENDPOINTS (GET & POST) ===
+                if is_auth_endpoint:
                     # Test auth-specific parameters with SQL injection payloads
                     auth_params = ['username', 'password', 'email', 'logintoken']
                     
@@ -1644,37 +1644,57 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
                         for param_name in auth_params:
                             for payload in sqli_payloads:
                                 try:
-                                    # Create test data with injected payload
-                                    test_params = target.get('parameters', {}).copy()
-                                    test_params[param_name] = payload.get('payload', payload) if isinstance(payload, dict) else payload
+                                    payload_str = payload.get('payload', payload) if isinstance(payload, dict) else payload
                                     
-                                    # Send request with payload
-                                    auth_response = await auth_client.post(target['url'], data=test_params)
+                                    # Test both GET and POST methods for auth endpoints
+                                    test_methods = []
                                     
-                                    # Use response validator to check for vulnerabilities
-                                    validator = SmartResponseValidator()
-                                    validator.set_baseline(response.text)
-                                    detection = validator.validate_response(auth_response.text, auth_response.headers, auth_response.elapsed.total_seconds())
+                                    # Always test GET with query params for auth endpoints
+                                    test_methods.append(('GET', {param_name: payload_str}, None))
                                     
-                                    if detection['is_vulnerable']:
-                                        finding = {
-                                            'category': 'SQL Injection',
-                                            'severity': 'Critical' if detection['confidence'] > 0.8 else 'High',
-                                            'description': f"SQL Injection in parameter '{param_name}' on {target['url']}",
-                                            'url': target['url'],
-                                            'parameter': param_name,
-                                            'payload': payload.get('payload') if isinstance(payload, dict) else payload,
-                                            'evidence': f"Detection methods: {detection['detection_types']}",
-                                            'confidence': detection['confidence'],
-                                            'detection_types': list(detection['detection_types'])
-                                        }
-                                        enriched = risk_scorer.batch_enrich_findings([finding])
-                                        all_findings.extend(enriched)
-                                        print(f"[Native Auth Scan]   → ⚠️  FOUND SQLI: {param_name} (confidence: {detection['confidence']:.2f})")
-                                        scanned_count += 1
-                                        break  # Move to next param after finding one
+                                    # Always test POST with body for auth endpoints
+                                    test_methods.append(('POST', None, {param_name: payload_str}))
+                                    
+                                    for test_method, test_params, test_data in test_methods:
+                                        try:
+                                            # Send request with payload
+                                            if test_method == 'GET':
+                                                auth_response = await auth_client.get(target['url'], params=test_params)
+                                            else:
+                                                auth_response = await auth_client.post(target['url'], data=test_data)
+                                            
+                                            # Use response validator to check for vulnerabilities
+                                            validator = SmartResponseValidator()
+                                            validator.set_baseline(response.text)
+                                            detection = validator.validate_response(
+                                                auth_response.text,
+                                                auth_response.headers,
+                                                auth_response.elapsed.total_seconds()
+                                            )
+                                            
+                                            if detection['is_vulnerable']:
+                                                finding = {
+                                                    'category': 'SQL Injection',
+                                                    'severity': 'Critical' if detection['confidence'] > 0.8 else 'High',
+                                                    'description': f"SQL Injection in {test_method} parameter '{param_name}' on {target['url']}",
+                                                    'url': target['url'],
+                                                    'parameter': param_name,
+                                                    'method': test_method,
+                                                    'payload': payload_str,
+                                                    'evidence': f"Detection methods: {detection['detection_types']}",
+                                                    'confidence': detection['confidence'],
+                                                    'detection_types': list(detection['detection_types'])
+                                                }
+                                                enriched = risk_scorer.batch_enrich_findings([finding])
+                                                all_findings.extend(enriched)
+                                                print(f"[Native Auth Scan]   → ⚠️  FOUND SQLI: {test_method} {param_name} (confidence: {detection['confidence']:.2f})")
+                                                scanned_count += 1
+                                                break  # Move to next param after finding one
+                                        except Exception as e:
+                                            pass  # Continue testing other methods/payloads
+                                            
                                 except Exception as e:
-                                    pass  # Continue testing other payloads
+                                    pass  # Continue to next payload
                                     
                     except Exception as e:
                         print(f"[Native Auth Scan] ⚠️  Auth parameter testing failed: {str(e)}")
