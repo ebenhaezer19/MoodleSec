@@ -1721,15 +1721,10 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
                                                 print(f"[Native Auth Scan] [DEBUG] {test_method} {param_name}: Not detected (confidence={detection.confidence:.2f}, types={detection.detection_types})")
                                         except Exception as e:
                                             print(f"[Native Auth Scan] [ERROR] {test_method} {param_name} exception: {str(e)}")
-                                            import traceback
-                                            traceback.print_exc()
                                             continue
                                             
                                 except Exception as e:
                                     pass  # Continue to next payload
-                                    
-                    except Exception as e:
-                        print(f"[Native Auth Scan] ⚠️  Auth parameter testing failed: {str(e)}")
                     else:
                         print(f"[Native Auth Scan] ⚠️  No SQLi payloads available for auth endpoint testing!")
                 
