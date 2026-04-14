@@ -86,7 +86,9 @@ try:
             category=payload['category'],
             payload_type=payload['type'],
             severity=payload['severity'],
-            source=payload['source']
+            source=payload['source'],
+            created_method="manual_test",
+            source_metadata='{"test": true}'
         )
         added_ids.append(pid)
         print(f"[✓] Added payload: {payload['category']} - {payload['text'][:40]}... (ID: {pid})")

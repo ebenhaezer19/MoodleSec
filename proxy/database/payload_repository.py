@@ -50,7 +50,14 @@ class PayloadRepositoryManager:
                 last_successful TIMESTAMP,
                 found_in_scan_id TEXT,
                 found_in_url TEXT,
-                notes TEXT
+                notes TEXT,
+                confidence_score REAL DEFAULT 0.5,
+                confidence_tier TEXT DEFAULT 'TIER3_UNVERIFIED',
+                validation_status TEXT DEFAULT 'unverified',
+                validated_by TEXT,
+                validated_at TIMESTAMP,
+                created_method TEXT,
+                source_metadata TEXT
             )
         ''')
         
@@ -98,15 +105,72 @@ class PayloadRepositoryManager:
         combined = f"{payload_text}:{category}"
         return hashlib.md5(combined.encode()).hexdigest()
     
+    def _calculate_confidence_tier(self, source: str, ml_confidence: float = None,
+                                   validation_status: str = "unverified") -> tuple:
+        """
+        Calculate confidence tier and score based on source and validation.
+        
+        Returns: (tier, confidence_score)
+        
+        Tier 1: SCAN EXTRACTION (Confidence 60-95%)
+            ├─ Lolos ML filter → 95% (TIER1_ML_HIGH)
+            ├─ Medium ML score → 85% (TIER1_ML_MEDIUM)
+            └─ FP Candidate → 40% (TIER1_FP_CANDIDATE)
+        
+        Tier 2: ZAP IMPORT (Confidence 70-85%)
+            ├─ Standard library → 80% (TIER2_ZAP_STANDARD)
+            └─ Custom ZAP → 70% (TIER2_ZAP_CUSTOM)
+        
+        Tier 3: MANUAL INPUT (Confidence 50-85%)
+            ├─ Unverified → 50% (TIER3_UNVERIFIED)
+            └─ Verified by user → 85% (TIER3_VERIFIED)
+        """
+        
+        if source == "scan_extraction":
+            # TIER 1: SCAN EXTRACTION
+            if ml_confidence is None:
+                ml_confidence = 0.85
+            
+            if ml_confidence >= 0.90:
+                return ("TIER1_ML_HIGH", 0.95)
+            elif ml_confidence >= 0.70:
+                return ("TIER1_ML_MEDIUM", 0.85)
+            else:
+                return ("TIER1_FP_CANDIDATE", 0.40)
+        
+        elif source == "zap_import":
+            # TIER 2: ZAP IMPORT
+            if ml_confidence is not None and ml_confidence < 0.70:
+                return ("TIER2_ZAP_CUSTOM", 0.70)
+            else:
+                return ("TIER2_ZAP_STANDARD", 0.80)
+        
+        else:  # Manual or custom
+            # TIER 3: MANUAL INPUT
+            if validation_status == "verified":
+                return ("TIER3_VERIFIED", 0.85)
+            else:
+                return ("TIER3_UNVERIFIED", 0.50)
+    
     def add_payload(self, payload_text: str, category: str, 
-                   payload_type: str, severity: str = "Medium",
+                   payload_type: str = "custom", severity: str = "Medium",
                    source: str = "custom", description: str = "",
-                   scan_id: str = "", url: str = "") -> int:
-        """Add payload to repository."""
+                   scan_id: str = "", url: str = "",
+                   ml_confidence: float = None,
+                   created_method: str = None,
+                   source_metadata: str = None) -> int:
+        """Add payload to repository with tier-based confidence scoring."""
         # Normalize category
         category = self._normalize_category(category)
         
         payload_hash = self._calculate_payload_hash(payload_text, category)
+        
+        # Calculate confidence tier and score
+        tier, confidence_score = self._calculate_confidence_tier(
+            source=source,
+            ml_confidence=ml_confidence,
+            validation_status="unverified"
+        )
         
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -115,10 +179,14 @@ class PayloadRepositoryManager:
             cursor.execute("""
                 INSERT INTO payloads 
                 (payload_hash, category, payload_type, payload_text, 
-                 severity, source, found_in_scan_id, found_in_url)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 severity, source, found_in_scan_id, found_in_url,
+                 confidence_score, confidence_tier, validation_status,
+                 created_method, source_metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (payload_hash, category, payload_type, payload_text,
-                  severity, source, scan_id, url))
+                  severity, source, scan_id, url,
+                  confidence_score, tier, "unverified",
+                  created_method or "system", source_metadata or "{}"))
             payload_id = cursor.lastrowid
         except sqlite3.IntegrityError:
             payload_id = cursor.execute(
@@ -153,7 +221,10 @@ class PayloadRepositoryManager:
                     severity=severity,
                     source="scan_extraction",
                     scan_id=scan_id,
-                    url=url
+                    url=url,
+                    ml_confidence=finding.get("ml_confidence", 0.75),
+                    created_method="scan_extraction",
+                    source_metadata=f'{{"scan_id": "{scan_id}", "severity": "{severity}"}}'
                 )
                 added.append(pid)
         
@@ -478,7 +549,10 @@ class PayloadRepositoryManager:
                         severity=severity_str,
                         source="ZAP_API_import",
                         description=f"From ZAP: {category}",
-                        url=url
+                        url=url,
+                        ml_confidence=None,
+                        created_method="zap_api_import",
+                        source_metadata=f'{{"zap_alert": "{category}", "severity": "{severity_str}"}}'
                     )
                     
                     imported += 1
@@ -506,17 +580,28 @@ class PayloadRepositoryManager:
             
             payload_hash = self._calculate_payload_hash(payload, category)
             
+            # Calculate tier for manual input
+            tier, confidence_score = self._calculate_confidence_tier(
+                source="custom_manual",
+                ml_confidence=None,
+                validation_status="unverified"
+            )
+            
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
             cursor.execute("""
                 INSERT OR IGNORE INTO payloads (
                     payload_hash, category, payload_type, payload_text,
-                    description, severity, source, is_vulnerable
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    description, severity, source, is_vulnerable,
+                    confidence_score, confidence_tier, validation_status,
+                    created_method, source_metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 payload_hash, category, "custom", payload,
-                description, "Medium", "custom_manual", 1
+                description, "Medium", "custom_manual", 1,
+                confidence_score, tier, "unverified",
+                "manual_input", f'{{"priority": {priority}}}'
             ))
             
             conn.commit()

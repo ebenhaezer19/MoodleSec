@@ -95,7 +95,9 @@ class ZAPSessionImporter:
                         payload_type=alert_name,
                         severity=severity,
                         source="ZAP_session_file",
-                        description=f"From ZAP: {alert_name}"
+                        description=f"From ZAP: {alert_name}",
+                        created_method="zap_session_file",
+                        source_metadata=f'{{"zap_alert": "{alert_name}", "severity": "{severity}"}}'
                     )
                     
                     imported += 1

@@ -205,7 +205,10 @@ class ZAPPayloadImporterDirect:
                     severity=severity_str,
                     source="ZAP_scan_history",
                     description=f"From ZAP: {category}",
-                    url=url
+                    url=url,
+                    ml_confidence=None,
+                    created_method="zap_scan_history",
+                    source_metadata=f'{{"zap_alert": "{category}", "severity": "{severity_str}"}}'
                 )
                 
                 imported_count += 1

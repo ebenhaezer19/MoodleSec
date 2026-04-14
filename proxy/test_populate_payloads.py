@@ -49,7 +49,9 @@ def populate_payloads():
                 payload_type="JavaScript Injection",
                 severity="High",
                 source="test_script",
-                description=f"Test XSS payload: {payload[:30]}..."
+                description=f"Test XSS payload: {payload[:30]}...",
+                created_method="manual_test",
+                source_metadata='{"test": true}'
             )
             print(f"[✓] Added XSS payload: {payload[:40]}...")
             count += 1
@@ -65,7 +67,9 @@ def populate_payloads():
                 payload_type="SQL Injection",
                 severity="Critical",
                 source="test_script",
-                description=f"Test SQLi payload: {payload[:30]}..."
+                description=f"Test SQLi payload: {payload[:30]}...",
+                created_method="manual_test",
+                source_metadata='{"test": true}'
             )
             print(f"[✓] Added SQLi payload: {payload[:40]}...")
             count += 1
@@ -81,7 +85,9 @@ def populate_payloads():
                 payload_type="CSRF",
                 severity="Medium",
                 source="test_script",
-                description=f"Test CSRF payload"
+                description=f"Test CSRF payload",
+                created_method="manual_test",
+                source_metadata='{"test": true}'
             )
             print(f"[✓] Added CSRF payload: {payload[:40]}...")
             count += 1

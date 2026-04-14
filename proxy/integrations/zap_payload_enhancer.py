@@ -305,7 +305,9 @@ class ZAPPayloadEnhancer:
                             payload_type='zap_extracted',
                             severity=payload['severity'],
                             source='ZAP',
-                            description=payload['description']
+                            description=payload['description'],
+                            created_method="zap_enhancer_extraction",
+                            source_metadata=f'{{"severity": "{payload.get("severity", "Unknown")}"}}'
                         )
                         results['payloads_added'] += 1
                     except Exception as e:
