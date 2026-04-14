@@ -126,7 +126,10 @@ class PayloadRepositoryManager:
             └─ Verified by user → 85% (TIER3_VERIFIED)
         """
         
-        if source == "scan_extraction":
+        # Normalize source for comparison
+        source_lower = source.lower() if source else ""
+        
+        if "scan" in source_lower and "extract" in source_lower:
             # TIER 1: SCAN EXTRACTION
             if ml_confidence is None:
                 ml_confidence = 0.85
@@ -138,14 +141,14 @@ class PayloadRepositoryManager:
             else:
                 return ("TIER1_FP_CANDIDATE", 0.40)
         
-        elif source == "zap_import":
+        elif "zap" in source_lower and "import" in source_lower:
             # TIER 2: ZAP IMPORT
             if ml_confidence is not None and ml_confidence < 0.70:
                 return ("TIER2_ZAP_CUSTOM", 0.70)
             else:
                 return ("TIER2_ZAP_STANDARD", 0.80)
         
-        else:  # Manual or custom
+        else:  # Manual or custom (default)
             # TIER 3: MANUAL INPUT
             if validation_status == "verified":
                 return ("TIER3_VERIFIED", 0.85)

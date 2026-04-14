@@ -125,6 +125,9 @@ if (empty($proxy_url)) {
                                     <th>ID</th>
                                     <th>Category</th>
                                     <th>Payload Preview</th>
+                                    <th>Confidence Tier</th>
+                                    <th>Confidence Score</th>
+                                    <th>Created Method</th>
                                     <th>Effectiveness</th>
                                     <th>Success Rate</th>
                                     <th>Used Count</th>
@@ -134,7 +137,7 @@ if (empty($proxy_url)) {
                             </thead>
                             <tbody id="payloads-tbody">
                                 <tr>
-                                    <td colspan="8" class="text-center">Loading payloads...</td>
+                                    <td colspan="11" class="text-center">Loading payloads...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -421,10 +424,13 @@ if (empty($proxy_url)) {
                 <div class="row">
                     <div class="col-md-6">
                         <p><strong>Category:</strong> <span id="modal-category"></span></p>
-                        <p><strong>Effectiveness:</strong> <span id="modal-effectiveness"></span></p>
-                        <p><strong>Success Rate:</strong> <span id="modal-success-rate"></span></p>
+                        <p><strong>Confidence Tier:</strong> <span id="modal-confidence-tier"></span></p>
+                        <p><strong>Confidence Score:</strong> <span id="modal-confidence-score"></span></p>
+                        <p><strong>Created Method:</strong> <span id="modal-created-method"></span></p>
                     </div>
                     <div class="col-md-6">
+                        <p><strong>Effectiveness:</strong> <span id="modal-effectiveness"></span></p>
+                        <p><strong>Success Rate:</strong> <span id="modal-success-rate"></span></p>
                         <p><strong>Used Count:</strong> <span id="modal-used-count"></span></p>
                         <p><strong>Last Used:</strong> <span id="modal-last-used"></span></p>
                     </div>
@@ -559,11 +565,31 @@ function renderPayloadsTable() {
     let html = '';
     pagePayloads.forEach(payload => {
         const preview = payload.payload.substring(0, 50) + (payload.payload.length > 50 ? '...' : '');
+        
+        // Determine confidence tier badge color
+        let tierColor = 'secondary';
+        if (payload.confidence_tier) {
+            if (payload.confidence_tier.includes('TIER1')) tierColor = 'success';
+            else if (payload.confidence_tier.includes('TIER2')) tierColor = 'info';
+            else if (payload.confidence_tier.includes('TIER3')) tierColor = 'warning';
+        }
+        
+        // Determine created method display
+        const createdMethod = payload.created_method || 'unknown';
+        const methodLabel = createdMethod
+            .replace('_', ' ')
+            .split(' ')
+            .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' ');
+        
         html += `
             <tr>
                 <td>${payload.id || '-'}</td>
                 <td><span class="badge badge-info">${payload.category || '-'}</span></td>
                 <td><code>${preview}</code></td>
+                <td><span class="badge badge-${tierColor}">${(payload.confidence_tier || 'Unknown').replace('TIER', 'T')}</span></td>
+                <td>${((payload.confidence_score || 0) * 100).toFixed(0)}%</td>
+                <td><small>${methodLabel}</small></td>
                 <td>${(payload.effectiveness || 0).toFixed(1)}%</td>
                 <td>${(payload.success_rate || 0).toFixed(1)}%</td>
                 <td>${payload.used_count || 0}</td>
@@ -582,7 +608,7 @@ function renderPayloadsTable() {
     
     const tbody = document.getElementById('payloads-tbody');
     if (tbody) {
-        tbody.innerHTML = html || '<tr><td colspan="8" class="text-center">No payloads found</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="11" class="text-center">No payloads found</td></tr>';
     }
 }
 
@@ -599,6 +625,22 @@ function viewPayload(id) {
         document.getElementById('modal-last-used').textContent = payload.last_used || 'Never';
         document.getElementById('modal-payload').textContent = payload.payload;
         document.getElementById('modal-tags-content').textContent = (payload.tags || []).join(', ') || 'None';
+        
+        // Add confidence tier information
+        const tierEl = document.getElementById('modal-confidence-tier');
+        const tierLabel = (payload.confidence_tier || 'Unknown').replace('TIER', 'T');
+        tierEl.innerHTML = `<span class="badge badge-info">${tierLabel}</span>`;
+        
+        const scoreEl = document.getElementById('modal-confidence-score');
+        scoreEl.textContent = ((payload.confidence_score || 0) * 100).toFixed(0) + '%';
+        
+        const methodEl = document.getElementById('modal-created-method');
+        const methodLabel = (payload.created_method || 'unknown')
+            .replace('_', ' ')
+            .split(' ')
+            .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' ');
+        methodEl.textContent = methodLabel;
         
         jQuery('#payload-modal').modal('show');
     }
