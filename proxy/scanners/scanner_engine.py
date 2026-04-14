@@ -86,13 +86,14 @@ class ScannerEngine:
         except Exception as e:
             print(f"[Scanner Engine] Error reinitializing scanners: {e}")
     
-    def scan(self, url: str, method: str = 'GET', 
+    async def scan(self, url: str, method: str = 'GET', 
              params: Optional[Dict[str, Any]] = None,
              request_body: str = "",
              response_body: str = "",
              request_headers: Optional[Dict[str, str]] = None,
              response_headers: Optional[Dict[str, str]] = None,
-             status_code: int = 200) -> Dict[str, Any]:
+             status_code: int = 200,
+             client=None) -> Dict[str, Any]:
         """
         Perform comprehensive security scan.
         
@@ -105,6 +106,7 @@ class ScannerEngine:
             request_headers: Request headers
             response_headers: Response headers
             status_code: HTTP status code
+            client: HTTP client for payload injection testing
             
         Returns:
             Scan results with all findings
@@ -207,11 +209,12 @@ class ScannerEngine:
         # Test each vulnerability category with payloads
         if self.payload_injector:
             print(f"[Scanner Engine] Starting active payload injection testing...")
-            payload_findings = self._test_payloads_against_endpoints(
+            payload_findings = await self._test_payloads_against_endpoints(
                 url=url,
                 params=params,
                 method=method,
-                scan_id=scan_id
+                scan_id=scan_id,
+                client=client
             )
             all_findings.extend(payload_findings)
             scanner_results['payload_injection'] = {
@@ -359,12 +362,13 @@ class ScannerEngine:
             }
         return status
     
-    def _test_payloads_against_endpoints(
+    async def _test_payloads_against_endpoints(
         self,
         url: str,
         params: Dict[str, Any],
         method: str,
-        scan_id: str
+        scan_id: str,
+        client=None
     ) -> List[Dict[str, Any]]:
         """
         Test payloads from repository against endpoints.
@@ -377,6 +381,7 @@ class ScannerEngine:
             params: Request parameters
             method: HTTP method
             scan_id: Scan ID for tracking
+            client: HTTP client for injection testing
             
         Returns:
             List of findings from payload injection
@@ -390,11 +395,12 @@ class ScannerEngine:
         if self.scanners['sql_injection']['enabled']:
             try:
                 print("[Scanner Engine] Testing SQL Injection payloads...")
-                sql_findings = self._test_payload_category(
+                sql_findings = await self._test_payload_category(
                     url=url,
                     params=params,
                     category="SQL Injection",
-                    scan_id=scan_id
+                    scan_id=scan_id,
+                    client=client
                 )
                 findings.extend(sql_findings)
                 print(f"[Scanner Engine] Found {len(sql_findings)} SQL Injection findings")
@@ -405,11 +411,12 @@ class ScannerEngine:
         if self.scanners['xss']['enabled']:
             try:
                 print("[Scanner Engine] Testing XSS payloads...")
-                xss_findings = self._test_payload_category(
+                xss_findings = await self._test_payload_category(
                     url=url,
                     params=params,
                     category="XSS",
-                    scan_id=scan_id
+                    scan_id=scan_id,
+                    client=client
                 )
                 findings.extend(xss_findings)
                 print(f"[Scanner Engine] Found {len(xss_findings)} XSS findings")
@@ -420,11 +427,12 @@ class ScannerEngine:
         if self.scanners['csrf']['enabled']:
             try:
                 print("[Scanner Engine] Testing CSRF payloads...")
-                csrf_findings = self._test_payload_category(
+                csrf_findings = await self._test_payload_category(
                     url=url,
                     params=params,
                     category="CSRF",
-                    scan_id=scan_id
+                    scan_id=scan_id,
+                    client=client
                 )
                 findings.extend(csrf_findings)
                 print(f"[Scanner Engine] Found {len(csrf_findings)} CSRF findings")
@@ -433,12 +441,13 @@ class ScannerEngine:
         
         return findings
     
-    def _test_payload_category(
+    async def _test_payload_category(
         self,
         url: str,
         params: Dict[str, Any],
         category: str,
-        scan_id: str
+        scan_id: str,
+        client=None
     ) -> List[Dict[str, Any]]:
         """
         Test specific payload category against parameters.
@@ -448,13 +457,14 @@ class ScannerEngine:
             params: Parameters to test
             category: Payload category (SQL Injection, XSS, etc.)
             scan_id: Scan ID
+            client: HTTP client for actual injection testing
             
         Returns:
             List of findings
         """
         findings = []
         
-        if not self.payload_repo:
+        if not self.payload_repo or not self.payload_injector:
             return findings
         
         # Get payloads for this category
@@ -465,35 +475,35 @@ class ScannerEngine:
         
         print(f"[Scanner Engine] Testing {len(payloads)} {category} payloads on {len(params)} parameters")
         
-        # Test each parameter with each payload
-        for param_name, param_value in params.items():
-            if not isinstance(param_value, str):
-                continue
+        try:
+            # Use PayloadInjector to test payloads against parameters
+            injection_findings = await self.payload_injector.inject_payloads_to_parameters(
+                url=url,
+                params=params,
+                client=client,
+                category=category,
+                scan_id=scan_id,
+                max_payloads=10
+            )
+            findings.extend(injection_findings)
+            print(f"[Scanner Engine] ✓ Parameter injection testing complete for {category}")
             
-            for payload_obj in payloads:
-                payload_text = payload_obj.get('payload_text', '')
-                payload_id = payload_obj.get('id', 'unknown')
+            # Also test headers if client is available
+            if client and category in ["XSS", "SQL Injection"]:
+                header_findings = await self.payload_injector.inject_payloads_to_headers(
+                    url=url,
+                    headers={"User-Agent": "MoodleSec-Scanner"},
+                    client=client,
+                    category=category,
+                    scan_id=scan_id,
+                    max_payloads=5
+                )
+                findings.extend(header_findings)
+                print(f"[Scanner Engine] ✓ Header injection testing complete for {category}")
                 
-                if not payload_text:
-                    continue
-                
-                try:
-                    # Log injection attempt
-                    if self.debug_logger:
-                        self.debug_logger.log_injection_attempt(
-                            scan_id=scan_id,
-                            target_url=url,
-                            category=category,
-                            payload_text=payload_text,
-                            injection_point=f"parameter:{param_name}",
-                            status="ATTEMPT"
-                        )
-                    
-                    # For now, just log the injection attempts
-                    # In a real scenario, you would make actual requests here
-                    # and check responses for vulnerability indicators
-                    
-                except Exception as e:
-                    print(f"[Scanner Engine] Error testing {category} payload: {e}")
+        except Exception as e:
+            print(f"[Scanner Engine] Error testing {category} payload: {e}")
+            import traceback
+            traceback.print_exc()
         
         return findings

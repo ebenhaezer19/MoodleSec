@@ -236,13 +236,13 @@ async def trigger_scan(scan_request: ScanRequest) -> ScanResult:
     """
     target_url = f"{MOODLE_URL}{scan_request.path}"
     
-    # Fetch the target page to analyze
+    # Fetch the target page to analyze with persistent client
     response_body = ""
     response_headers = {}
     status_code = 200
     
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
             response = await client.request(
                 method=scan_request.method,
                 url=target_url,
@@ -252,19 +252,21 @@ async def trigger_scan(scan_request: ScanRequest) -> ScanResult:
             response_body = response.text
             response_headers = dict(response.headers)
             status_code = response.status_code
-    except Exception as e:
-        # If request fails, still run scanners on URL/params
-        pass
-    
-    # Run comprehensive scan using scanner engine
-    scan_results = scanner_engine.scan(
-        url=target_url,
-        method=scan_request.method,
-        params=scan_request.parameters,
-        response_body=response_body,
-        response_headers=response_headers,
-        status_code=status_code
-    )
+        except Exception as e:
+            # If request fails, still run scanners on URL/params
+            print(f"[Scan Trigger] Failed to fetch target page: {e}")
+            pass
+        
+        # Run comprehensive scan using scanner engine with client for payload injection
+        scan_results = await scanner_engine.scan(
+            url=target_url,
+            method=scan_request.method,
+            params=scan_request.parameters,
+            response_body=response_body,
+            response_headers=response_headers,
+            status_code=status_code,
+            client=client
+        )
     
     # Convert findings to ScanFinding objects
     findings = [
@@ -428,10 +430,10 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
         all_findings = []
         scanned_count = 0
         
-        for target in targets[:50]:  # Limit to 50 endpoints to avoid timeout
-            try:
-                # Fetch target page
-                async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for target in targets[:50]:  # Limit to 50 endpoints to avoid timeout
+                try:
+                    # Fetch target page
                     response = await client.request(
                         method=target['method'],
                         url=target['url'],
@@ -442,24 +444,25 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
                     response_headers = dict(response.headers)
                     status_code = response.status_code
                 
-                # Scan endpoint
-                scan_results = scanner_engine.scan(
-                    url=target['url'],
-                    method=target['method'],
-                    params=target.get('parameters'),
-                    response_body=response_body,
-                    response_headers=response_headers,
-                    status_code=status_code
-                )
+                    # Scan endpoint with payload injection
+                    scan_results = await scanner_engine.scan(
+                        url=target['url'],
+                        method=target['method'],
+                        params=target.get('parameters'),
+                        response_body=response_body,
+                        response_headers=response_headers,
+                        status_code=status_code,
+                        client=client
+                    )
                 
-                # Enrich findings with risk scores
-                enriched_findings = risk_scorer.batch_enrich_findings(scan_results['findings'])
-                all_findings.extend(enriched_findings)
-                scanned_count += 1
+                    # Enrich findings with risk scores
+                    enriched_findings = risk_scorer.batch_enrich_findings(scan_results['findings'])
+                    all_findings.extend(enriched_findings)
+                    scanned_count += 1
                 
-            except Exception as e:
-                print(f"[Full Scan] Error scanning {target['url']}: {str(e)}")
-                continue
+                except Exception as e:
+                    print(f"[Full Scan] Error scanning {target['url']}: {str(e)}")
+                    continue
         
         # Step 3: ML Processing
         print(f"[Full Scan] BEFORE ML: {len(all_findings)} findings")
@@ -1509,13 +1512,14 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
                 response_headers = dict(response.headers)
                 status_code = response.status_code
                 
-                scan_results = scanner_engine.scan(
+                scan_results = await scanner_engine.scan(
                     url=target['url'],
                     method=target['method'],
                     params=target.get('parameters'),
                     response_body=response_body,
                     response_headers=response_headers,
-                    status_code=status_code
+                    status_code=status_code,
+                    client=auth_client
                 )
                 
                 # Enrich findings with risk scores

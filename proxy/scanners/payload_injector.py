@@ -425,7 +425,7 @@ class PayloadInjector:
         Args:
             url: Target URL
             params: Query parameters
-            client: HTTP client
+            client: HTTP client (httpx.AsyncClient or aiohttp.ClientSession)
             headers: Request headers
             data: Request body
             timeout: Request timeout
@@ -435,27 +435,50 @@ class PayloadInjector:
         """
         try:
             if not client:
+                # Create temporary aiohttp client if none provided
                 import aiohttp
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(
+                    method = 'POST' if data else 'GET'
+                    async with session.request(
+                        method,
                         url,
                         params=params,
                         headers=headers,
                         data=data,
-                        timeout=timeout,
+                        timeout=aiohttp.ClientTimeout(total=timeout),
                         ssl=False
                     ) as response:
-                        return response
+                        # Read response text to keep it alive
+                        text = await response.text()
+                        # Create object with common response properties
+                        class SimpleResponse:
+                            def __init__(self, status, text, headers):
+                                self.status_code = status
+                                self.text = text
+                                self.headers = headers
+                        return SimpleResponse(response.status, text, dict(response.headers))
             else:
-                # If client is provided, assume it has proper methods
-                if hasattr(client, 'get'):
-                    return await client.get(url, params=params)
+                # If client is httpx.AsyncClient
+                if hasattr(client, 'request'):
+                    method = 'POST' if data else 'GET'
+                    response = await client.request(
+                        method=method,
+                        url=url,
+                        params=params,
+                        headers=headers,
+                        data=data,
+                        timeout=timeout
+                    )
+                    return response
+                # Fallback for other client types
                 else:
-                    return client.get(url, params=params, timeout=timeout)
+                    return None
         
         except asyncio.TimeoutError:
             logger.warning(f"Request timeout to {url}")
             return None
         except Exception as e:
             logger.error(f"Request error to {url}: {e}")
+            import traceback
+            traceback.print_exc()
             return None
