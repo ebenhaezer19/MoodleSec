@@ -1636,15 +1636,26 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
                     # Test auth-specific parameters with SQL injection payloads
                     auth_params = ['username', 'password', 'email', 'logintoken']
                     
+                    # DEBUG
+                    print(f"[Native Auth Scan] DEBUG: is_auth_endpoint=True, payload_repo={'available' if payload_repo else 'None'}")
+                    
                     # Get SQL injection payloads from repository
+                    sqli_payloads = []
                     try:
-                        sqli_payloads = payload_repo.get_top_payloads('SQL Injection', limit=5) if payload_repo else []
+                        if payload_repo:
+                            sqli_payloads = payload_repo.get_top_payloads('SQL Injection', limit=5)
+                        print(f"[Native Auth Scan] 🔍 AUTH ENDPOINT TEST: Retrieved {len(sqli_payloads)} payloads")
+                    except Exception as e:
+                        print(f"[Native Auth Scan] ⚠️  Failed to get payloads: {e}")
+                        sqli_payloads = []
+                    
+                    if sqli_payloads:
                         print(f"[Native Auth Scan] 🔍 AUTH ENDPOINT TEST: Testing {len(auth_params)} auth params with {len(sqli_payloads)} SQLi payloads")
                         
                         for param_name in auth_params:
                             for payload in sqli_payloads:
                                 try:
-                                    payload_str = payload.get('payload', payload) if isinstance(payload, dict) else payload
+                                    payload_str = payload.get('payload', payload) if isinstance(payload, dict) else str(payload)
                                     
                                     # Test both GET and POST methods for auth endpoints
                                     test_methods = []
