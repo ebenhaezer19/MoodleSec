@@ -1561,12 +1561,54 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
         all_findings = []
         scanned_count = 0
         
-        # Limit scanning to avoid timeout
-        targets_to_scan = targets[:max_pages] if len(targets) > max_pages else targets
+        # === AUTHENTICATION ENDPOINT PRIORITIZATION ===
+        # Priority 1: Authentication-related endpoints (ALWAYS scanned)
+        auth_patterns = [
+            r'/login/',
+            r'/auth/',
+            r'/signup',
+            r'/password',
+            r'/reset',
+            r'/forgot',
+            r'/register',
+            r'/logout'
+        ]
+        
+        auth_targets = []
+        non_auth_targets = []
+        
+        for target in targets:
+            is_auth = False
+            for pattern in auth_patterns:
+                if re.search(pattern, target['url'].lower()):
+                    is_auth = True
+                    break
+            
+            if is_auth:
+                auth_targets.append(target)
+            else:
+                non_auth_targets.append(target)
+        
+        # Reorder: Auth endpoints first, then others
+        targets_to_scan = auth_targets + non_auth_targets
+        
+        # Limit scanning to avoid timeout (but always include all auth endpoints)
+        if len(targets_to_scan) > max_pages:
+            # Keep all auth endpoints, then add non-auth up to max_pages
+            if len(auth_targets) <= max_pages:
+                targets_to_scan = auth_targets + non_auth_targets[:max_pages - len(auth_targets)]
+            else:
+                targets_to_scan = auth_targets[:max_pages]
+        
+        print(f"[Native Auth Scan] ⚡ PRIORITY SCANNING: {len(auth_targets)} auth endpoints + {len(targets_to_scan) - len(auth_targets)} others")
         
         for i, target in enumerate(targets_to_scan, 1):
             try:
-                print(f"[Native Auth Scan] Scanning {i}/{len(targets_to_scan)}: {target['url'][:80]}...")
+                # Check if this is an auth endpoint
+                is_auth_endpoint = target in auth_targets
+                
+                print(f"[Native Auth Scan] Scanning {i}/{len(targets_to_scan)}: {target['url'][:80]}..." + 
+                      (" [AUTH ENDPOINT]" if is_auth_endpoint else ""))
                 
                 # Make request with authenticated session
                 if target['method'] == 'GET':
@@ -1588,6 +1630,54 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
                     status_code=status_code,
                     client=auth_client
                 )
+                
+                # === SPECIAL HANDLING FOR AUTH ENDPOINTS ===
+                if is_auth_endpoint and target['method'] == 'POST':
+                    # Test auth-specific parameters with SQL injection payloads
+                    auth_params = ['username', 'password', 'email', 'logintoken']
+                    
+                    # Get SQL injection payloads from repository
+                    try:
+                        sqli_payloads = payload_repo.get_top_payloads('SQL Injection', limit=5) if payload_repo else []
+                        print(f"[Native Auth Scan] 🔍 AUTH ENDPOINT TEST: Testing {len(auth_params)} auth params with {len(sqli_payloads)} SQLi payloads")
+                        
+                        for param_name in auth_params:
+                            for payload in sqli_payloads:
+                                try:
+                                    # Create test data with injected payload
+                                    test_params = target.get('parameters', {}).copy()
+                                    test_params[param_name] = payload.get('payload', payload) if isinstance(payload, dict) else payload
+                                    
+                                    # Send request with payload
+                                    auth_response = await auth_client.post(target['url'], data=test_params)
+                                    
+                                    # Use response validator to check for vulnerabilities
+                                    validator = SmartResponseValidator()
+                                    validator.set_baseline(response.text)
+                                    detection = validator.validate_response(auth_response.text, auth_response.headers, auth_response.elapsed.total_seconds())
+                                    
+                                    if detection['is_vulnerable']:
+                                        finding = {
+                                            'category': 'SQL Injection',
+                                            'severity': 'Critical' if detection['confidence'] > 0.8 else 'High',
+                                            'description': f"SQL Injection in parameter '{param_name}' on {target['url']}",
+                                            'url': target['url'],
+                                            'parameter': param_name,
+                                            'payload': payload.get('payload') if isinstance(payload, dict) else payload,
+                                            'evidence': f"Detection methods: {detection['detection_types']}",
+                                            'confidence': detection['confidence'],
+                                            'detection_types': list(detection['detection_types'])
+                                        }
+                                        enriched = risk_scorer.batch_enrich_findings([finding])
+                                        all_findings.extend(enriched)
+                                        print(f"[Native Auth Scan]   → ⚠️  FOUND SQLI: {param_name} (confidence: {detection['confidence']:.2f})")
+                                        scanned_count += 1
+                                        break  # Move to next param after finding one
+                                except Exception as e:
+                                    pass  # Continue testing other payloads
+                                    
+                    except Exception as e:
+                        print(f"[Native Auth Scan] ⚠️  Auth parameter testing failed: {str(e)}")
                 
                 # Enrich findings with risk scores
                 enriched_findings = risk_scorer.batch_enrich_findings(scan_results['findings'])
