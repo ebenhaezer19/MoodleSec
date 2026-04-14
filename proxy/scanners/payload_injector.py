@@ -257,35 +257,42 @@ class PayloadInjector:
             'X-Rewrite-URL',
         ]
         
-        # Filter payloads for header safety
-        header_safe_payloads = []
-        header_unsafe_payloads = []
+        # Sanitize ALL payloads for header injection (don't skip, sanitize instead)
+        sanitized_payloads = []
+        skipped_payloads = 0
         
         for payload_obj in available_payloads:
             payload_text = payload_obj.get('payload_text', '')
             if not payload_text:
                 continue
             
-            if self._is_header_safe_payload(payload_text):
-                header_safe_payloads.append(payload_obj)
-            else:
-                header_unsafe_payloads.append(payload_obj)
+            # Sanitize the payload for header use
+            sanitized_text = self._sanitize_for_headers(payload_text)
+            
+            # Only skip if sanitization results in empty string
+            if not sanitized_text or sanitized_text.isspace():
+                skipped_payloads += 1
+                continue
+            
+            # Create new payload object with sanitized text
+            sanitized_obj = payload_obj.copy()
+            sanitized_obj['original_payload_text'] = payload_text  # Keep original for logging
+            sanitized_obj['payload_text'] = sanitized_text
+            sanitized_payloads.append(sanitized_obj)
         
-        if header_unsafe_payloads:
-            print(f"[PayloadInjector] ⚠️  Skipping {len(header_unsafe_payloads)} payloads for header injection (contain invalid chars)")
-            for p in header_unsafe_payloads[:3]:  # Show first 3 examples
-                payload_preview = p.get('payload_text', '')[:50]
-                print(f"    - {p.get('id', '?')}: {payload_preview}... (category: {p.get('category', '?')})")
-        
-        if not header_safe_payloads:
-            print(f"[PayloadInjector] No header-safe payloads available for {category}")
+        if not sanitized_payloads:
+            print(f"[PayloadInjector] No payloads available for {category} (all sanitization resulted in empty)")
             return findings
         
-        print(f"[PayloadInjector] Testing {len(test_headers)} headers with {len(header_safe_payloads)} header-safe payloads")
+        if skipped_payloads > 0:
+            print(f"[PayloadInjector] Sanitized {len(sanitized_payloads)} payloads for header injection ({skipped_payloads} became empty)")
+        else:
+            print(f"[PayloadInjector] Testing {len(test_headers)} headers with {len(sanitized_payloads)} sanitized payloads")
         
         for header_name in test_headers:
-            for payload_obj in header_safe_payloads:
+            for payload_obj in sanitized_payloads:
                 payload_text = payload_obj.get('payload_text', '')
+                original_payload = payload_obj.get('original_payload_text', payload_text)
                 payload_id = payload_obj.get('id', 'unknown')
                 
                 if not payload_text:
