@@ -1656,7 +1656,13 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
                         for param_name in auth_params:
                             for payload in sqli_payloads:
                                 try:
-                                    payload_str = payload.get('payload', payload) if isinstance(payload, dict) else str(payload)
+                                    # Extract payload text - from DB it's 'payload_text' key
+                                    if isinstance(payload, dict):
+                                        payload_str = payload.get('payload_text') or payload.get('payload') or str(payload)
+                                    else:
+                                        payload_str = str(payload)
+                                    
+                                    print(f"[Native Auth Scan] [DEBUG] Testing param '{param_name}' with payload: {payload_str[:50]}")
                                     
                                     # Test both GET and POST methods for auth endpoints
                                     test_methods = []
@@ -1728,8 +1734,10 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
                         print(f"[Native Auth Scan] ⚠️  No SQLi payloads available for auth endpoint testing!")
                 
                 # Enrich findings with risk scores
+                before_enrich = len(all_findings)
                 enriched_findings = risk_scorer.batch_enrich_findings(scan_results['findings'])
                 all_findings.extend(enriched_findings)
+                print(f"[Native Auth Scan] [STAT] All findings: {before_enrich} -> {len(all_findings)} (added {len(enriched_findings)} from this endpoint)")
                 scanned_count += 1
                 
                 if scan_results['findings']:
