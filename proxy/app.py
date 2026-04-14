@@ -1636,7 +1636,7 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
                     # Test auth-specific parameters with SQL injection payloads
                     auth_params = ['username', 'password', 'email', 'logintoken']
                     
-                    # DEBUG
+                    # DEBUG  
                     print(f"[Native Auth Scan] DEBUG: is_auth_endpoint=True, payload_repo={'available' if payload_repo else 'None'}")
                     
                     # Get SQL injection payloads from repository
@@ -1647,11 +1647,12 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
                         print(f"[Native Auth Scan] 🔍 AUTH ENDPOINT TEST: Retrieved {len(sqli_payloads)} payloads")
                     except Exception as e:
                         print(f"[Native Auth Scan] ⚠️  Failed to get payloads: {e}")
+                        import traceback
+                        traceback.print_exc()
                         sqli_payloads = []
                     
                     if sqli_payloads:
                         print(f"[Native Auth Scan] 🔍 AUTH ENDPOINT TEST: Testing {len(auth_params)} auth params with {len(sqli_payloads)} SQLi payloads")
-                        
                         for param_name in auth_params:
                             for payload in sqli_payloads:
                                 try:
@@ -1709,14 +1710,22 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
                                                 print(f"[Native Auth Scan]   → ⚠️  FOUND SQLI: {test_method} {param_name} (confidence: {detection.confidence:.2f})")
                                                 scanned_count += 1
                                                 break  # Move to next param after finding one
+                                            else:
+                                                # Log why not detected
+                                                print(f"[Native Auth Scan] [DEBUG] {test_method} {param_name}: Not detected (confidence={detection.confidence:.2f}, types={detection.detection_types})")
                                         except Exception as e:
-                                            pass  # Continue testing other methods/payloads
+                                            print(f"[Native Auth Scan] [ERROR] {test_method} {param_name} exception: {str(e)}")
+                                            import traceback
+                                            traceback.print_exc()
+                                            continue
                                             
                                 except Exception as e:
                                     pass  # Continue to next payload
                                     
                     except Exception as e:
                         print(f"[Native Auth Scan] ⚠️  Auth parameter testing failed: {str(e)}")
+                    else:
+                        print(f"[Native Auth Scan] ⚠️  No SQLi payloads available for auth endpoint testing!")
                 
                 # Enrich findings with risk scores
                 enriched_findings = risk_scorer.batch_enrich_findings(scan_results['findings'])
