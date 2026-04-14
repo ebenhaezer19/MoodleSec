@@ -84,6 +84,47 @@ class PayloadRepositoryManager:
         
         conn.commit()
         conn.close()
+        
+        # Run schema migration to add missing columns
+        self._migrate_schema()
+    
+    def _migrate_schema(self):
+        """Migrate database schema to add missing columns (for backward compatibility)."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Get existing columns in payloads table
+            cursor.execute("PRAGMA table_info(payloads)")
+            existing_columns = {row[1] for row in cursor.fetchall()}
+            
+            # List of columns that should exist
+            required_columns = {
+                'confidence_score': "REAL DEFAULT 0.5",
+                'confidence_tier': "TEXT DEFAULT 'TIER3_UNVERIFIED'",
+                'validation_status': "TEXT DEFAULT 'unverified'",
+                'validated_by': "TEXT",
+                'validated_at': "TIMESTAMP",
+                'created_method': "TEXT",
+                'source_metadata': "TEXT"
+            }
+            
+            # Add missing columns
+            for col_name, col_def in required_columns.items():
+                if col_name not in existing_columns:
+                    try:
+                        cursor.execute(f"ALTER TABLE payloads ADD COLUMN {col_name} {col_def}")
+                        print(f"[DB Migration] Added column: {col_name}")
+                    except sqlite3.OperationalError as e:
+                        print(f"[DB Migration] Column {col_name} might already exist: {str(e)}")
+            
+            conn.commit()
+            conn.close()
+            print("[DB Migration] Schema migration completed successfully")
+        except Exception as e:
+            print(f"[DB Migration] Error during schema migration: {str(e)}")
+            import traceback
+            traceback.print_exc()
     
     def _normalize_category(self, category: str) -> str:
         """Normalize category name for consistency."""
