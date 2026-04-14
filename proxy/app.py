@@ -18,6 +18,8 @@ from utils.payload_debug_logger import PayloadDebugLogger
 from utils.debug_endpoints import setup_debug_endpoints
 from scanners.scanner_engine import ScannerEngine
 from scanners.phishing_detector import PhishingDetector
+from scanners.response_validator import SmartResponseValidator
+from auth.auth_manager import AuthenticationManager, get_auth_manager, cleanup_auth_manager
 from routers import payload_router, scanner_router
 from crawler.web_crawler import WebCrawler
 from risk.risk_scorer import RiskScorer
@@ -398,13 +400,20 @@ async def complete_security_scan(target_url: str) -> Dict[str, Any]:
     }
 
 @app.post("/scan-full")
-async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, Any]:
+async def full_site_scan(
+    max_depth: int = 2,
+    max_pages: int = 30,
+    username: Optional[str] = None,
+    password: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Perform full site scan: crawl + scan all discovered endpoints.
     
     Args:
         max_depth: Maximum crawl depth
         max_pages: Maximum pages to crawl
+        username: Optional username for authenticated scanning
+        password: Optional password for authenticated scanning
         
     Returns:
         Complete scan results with all findings
@@ -426,23 +435,53 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
         
         print(f"[Full Scan] Discovered {len(targets)} endpoints")
         
+        # Step 1b: Initialize authentication and response validator
+        auth_manager = get_auth_manager(MOODLE_URL)
+        response_validator = SmartResponseValidator()
+        client = None
+        is_authenticated = False
+        
+        # Authenticate if credentials provided
+        if username and password:
+            print(f"[Full Scan] Authenticating as {username}...")
+            client = await auth_manager.get_authenticated_client(username, password)
+            if client:
+                is_authenticated = True
+                print(f"[Full Scan] ✓ Successfully authenticated as {username}")
+            else:
+                print(f"[Full Scan] ⚠️  Authentication failed, falling back to unauthenticated scan")
+                client = await auth_manager.get_unauthenticated_client()
+        else:
+            client = await auth_manager.get_unauthenticated_client()
+            print(f"[Full Scan] Running unauthenticated scan")
+        
         # Step 2: Scan all discovered endpoints
         all_findings = []
         scanned_count = 0
         
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
             for target in targets[:50]:  # Limit to 50 endpoints to avoid timeout
                 try:
-                    # Fetch target page
+                    # Fetch target page first (baseline)
                     response = await client.request(
                         method=target['method'],
                         url=target['url'],
                         params=target.get('parameters') if target['method'] == 'GET' else None,
-                        data=target.get('parameters') if target['method'] == 'POST' else None
+                        data=target.get('parameters') if target['method'] == 'POST' else None,
+                        timeout=10.0
                     )
                     response_body = response.text
                     response_headers = dict(response.headers)
                     status_code = response.status_code
+                    response_time = response.elapsed.total_seconds()
+                    
+                    # Record baseline for response validation
+                    response_validator.set_baseline(
+                        endpoint=target['url'],
+                        response_text=response_body,
+                        response_code=status_code,
+                        response_length=len(response_body)
+                    )
                 
                     # Scan endpoint with payload injection
                     scan_results = await scanner_engine.scan(
@@ -455,14 +494,42 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
                         client=client
                     )
                 
+                    # Validate findings with multi-layer detection
+                    validated_findings = []
+                    for finding in scan_results['findings']:
+                        # Use response validator for multi-layer detection
+                        validation_result = response_validator.validate_response(
+                            endpoint=target['url'],
+                            response_text=response_body,
+                            response_code=status_code,
+                            response_time=response_time,
+                            baseline_response_time=0.5,
+                            payload_type=finding.get('category', 'sql_injection')
+                        )
+                        
+                        # Only include findings with sufficient confidence
+                        if validation_result.is_vulnerable or validation_result.confidence >= 0.7:
+                            finding['validation_result'] = {
+                                'is_vulnerable': validation_result.is_vulnerable,
+                                'detection_types': [dt.value for dt in validation_result.detection_types],
+                                'confidence': validation_result.confidence,
+                                'evidence': validation_result.evidence,
+                            }
+                            validated_findings.append(finding)
+                    
                     # Enrich findings with risk scores
-                    enriched_findings = risk_scorer.batch_enrich_findings(scan_results['findings'])
+                    enriched_findings = risk_scorer.batch_enrich_findings(validated_findings)
                     all_findings.extend(enriched_findings)
                     scanned_count += 1
                 
                 except Exception as e:
                     print(f"[Full Scan] Error scanning {target['url']}: {str(e)}")
                     continue
+        
+        finally:
+            # Cleanup auth session
+            if client and is_authenticated:
+                await client.aclose()
         
         # Step 3: ML Processing
         print(f"[Full Scan] BEFORE ML: {len(all_findings)} findings")
