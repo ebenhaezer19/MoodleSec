@@ -1680,22 +1680,22 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
                                                 response_time=auth_response.elapsed.total_seconds()
                                             )
                                             
-                                            if detection['is_vulnerable']:
+                                            if detection.is_vulnerable:
                                                 finding = {
                                                     'category': 'SQL Injection',
-                                                    'severity': 'Critical' if detection['confidence'] > 0.8 else 'High',
+                                                    'severity': 'Critical' if detection.confidence > 0.8 else 'High',
                                                     'description': f"SQL Injection in {test_method} parameter '{param_name}' on {target['url']}",
                                                     'url': target['url'],
                                                     'parameter': param_name,
                                                     'method': test_method,
                                                     'payload': payload_str,
-                                                    'evidence': f"Detection methods: {detection['detection_types']}",
-                                                    'confidence': detection['confidence'],
-                                                    'detection_types': list(detection['detection_types'])
+                                                    'evidence': f"Detection methods: {[str(t) for t in detection.detection_types]}",
+                                                    'confidence': detection.confidence,
+                                                    'detection_types': [str(t) for t in detection.detection_types]
                                                 }
                                                 enriched = risk_scorer.batch_enrich_findings([finding])
                                                 all_findings.extend(enriched)
-                                                print(f"[Native Auth Scan]   → ⚠️  FOUND SQLI: {test_method} {param_name} (confidence: {detection['confidence']:.2f})")
+                                                print(f"[Native Auth Scan]   → ⚠️  FOUND SQLI: {test_method} {param_name} (confidence: {detection.confidence:.2f})")
                                                 scanned_count += 1
                                                 break  # Move to next param after finding one
                                         except Exception as e:
