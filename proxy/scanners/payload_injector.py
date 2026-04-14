@@ -54,7 +54,71 @@ class PayloadInjector:
         self.compiled_sql_patterns = [re.compile(p, re.IGNORECASE) for p in self.sql_error_indicators]
         self.compiled_xss_patterns = [re.compile(p, re.IGNORECASE) for p in self.xss_indicators]
         
+        # Invalid characters for HTTP headers (RFC 7230)
+        self.header_invalid_chars = ['\n', '\r', '\x00', '\t', '&']  # & causes httpx parsing issues
+        
         print("[PayloadInjector] Initialized")
+    
+    def _is_header_safe_payload(self, payload_text: str) -> bool:
+        """
+        Check if a payload is safe to inject into HTTP headers.
+        HTTP headers must comply with RFC 7230 (no control characters).
+        
+        Args:
+            payload_text: Payload string to validate
+            
+        Returns:
+            True if payload is header-safe, False otherwise
+        """
+        if not payload_text:
+            return True
+        
+        # Check for invalid characters
+        for invalid_char in self.header_invalid_chars:
+            if invalid_char in payload_text:
+                return False
+        
+        # Check for control characters (0x00-0x1F except tab/CRLF handled above)
+        for char in payload_text:
+            if ord(char) < 0x20 and char not in ['\t']:
+                return False
+            if ord(char) == 0x7F:  # DEL character
+                return False
+        
+        return True
+    
+    def _sanitize_for_headers(self, payload_text: str) -> str:
+        """
+        Sanitize payload for HTTP header injection.
+        Removes/replaces problematic characters while preserving payload intent.
+        
+        Args:
+            payload_text: Original payload text
+            
+        Returns:
+            Sanitized payload safe for headers
+        """
+        if not payload_text:
+            return payload_text
+        
+        sanitized = payload_text
+        
+        # Replace newlines/carriage returns with spaces
+        sanitized = sanitized.replace('\r', ' ').replace('\n', ' ')
+        
+        # Remove null bytes
+        sanitized = sanitized.replace('\x00', '')
+        
+        # Remove ampersand which causes httpx header parsing issues
+        sanitized = sanitized.replace('&', '%26')
+        
+        # Remove other control characters
+        sanitized = ''.join(
+            char if ord(char) >= 0x20 or char == '\t' else ' '
+            for char in sanitized
+        )
+        
+        return sanitized.strip()
     
     async def inject_payloads_to_parameters(
         self, 
@@ -66,7 +130,7 @@ class PayloadInjector:
         max_payloads: int = 10
     ) -> List[Dict[str, Any]]:
         """
-        Inject payloads from repository to each parameter.
+        Inject payloads from repository to each parameter with proper encoding.
         
         Args:
             url: Target URL
@@ -103,6 +167,7 @@ class PayloadInjector:
                 
                 try:
                     # Create test request with injected payload
+                    # URL encoding handles these automatically
                     test_params = params.copy()
                     test_params[param_name] = payload_text
                     
@@ -160,7 +225,7 @@ class PayloadInjector:
         max_payloads: int = 5
     ) -> List[Dict[str, Any]]:
         """
-        Inject payloads into request headers.
+        Inject payloads into request headers with RFC 7230 compliance.
         
         Args:
             url: Target URL
@@ -192,19 +257,50 @@ class PayloadInjector:
             'X-Rewrite-URL',
         ]
         
-        print(f"[PayloadInjector] Testing {len(test_headers)} headers with {len(available_payloads)} payloads")
+        # Filter payloads for header safety
+        header_safe_payloads = []
+        header_unsafe_payloads = []
+        
+        for payload_obj in available_payloads:
+            payload_text = payload_obj.get('payload_text', '')
+            if not payload_text:
+                continue
+            
+            if self._is_header_safe_payload(payload_text):
+                header_safe_payloads.append(payload_obj)
+            else:
+                header_unsafe_payloads.append(payload_obj)
+        
+        if header_unsafe_payloads:
+            print(f"[PayloadInjector] ⚠️  Skipping {len(header_unsafe_payloads)} payloads for header injection (contain invalid chars)")
+            for p in header_unsafe_payloads[:3]:  # Show first 3 examples
+                payload_preview = p.get('payload_text', '')[:50]
+                print(f"    - {p.get('id', '?')}: {payload_preview}... (category: {p.get('category', '?')})")
+        
+        if not header_safe_payloads:
+            print(f"[PayloadInjector] No header-safe payloads available for {category}")
+            return findings
+        
+        print(f"[PayloadInjector] Testing {len(test_headers)} headers with {len(header_safe_payloads)} header-safe payloads")
         
         for header_name in test_headers:
-            for payload_obj in available_payloads:
+            for payload_obj in header_safe_payloads:
                 payload_text = payload_obj.get('payload_text', '')
                 payload_id = payload_obj.get('id', 'unknown')
                 
                 if not payload_text:
                     continue
                 
+                # Sanitize payload for headers
+                sanitized_payload = self._sanitize_for_headers(payload_text)
+                
+                if not sanitized_payload:
+                    print(f"[PayloadInjector] Payload {payload_id} sanitized to empty, skipping")
+                    continue
+                
                 try:
                     test_headers_dict = headers.copy()
-                    test_headers_dict[header_name] = payload_text
+                    test_headers_dict[header_name] = sanitized_payload
                     
                     response = await self._make_request(url, {}, client, headers=test_headers_dict)
                     
@@ -213,7 +309,7 @@ class PayloadInjector:
                             scan_id=scan_id,
                             target_url=url,
                             category=category,
-                            payload_text=payload_text,
+                            payload_text=sanitized_payload,
                             injection_point=f"header:{header_name}",
                             status="success" if response else "failed",
                             response_code=response.status_code if response else None
@@ -222,7 +318,7 @@ class PayloadInjector:
                     if response:
                         finding = self._check_injection_result(
                             response=response,
-                            payload_text=payload_text,
+                            payload_text=sanitized_payload,
                             param_name=header_name,
                             url=url,
                             category=category,
@@ -239,7 +335,7 @@ class PayloadInjector:
                             scan_id=scan_id,
                             target_url=url,
                             category=category,
-                            payload_text=payload_text,
+                            payload_text=sanitized_payload,
                             injection_point=f"header:{header_name}",
                             status="error",
                             error=str(e)
