@@ -307,12 +307,15 @@ class PayloadInjector:
                 if self.debug_logger:
                     self.debug_logger.log_injection_attempt(
                         scan_id=scan_id,
-                            target_url=url,
-                            category=category,
-                            payload_text=payload_text,
-                            injection_point="body",
-                            status="success" if response else "failed",
-                            response_code=response.status_code if response else None
+                        target_url=url,
+                        category=category,
+                        payload_text=payload_text,
+                        injection_point="body",
+                        status="success" if response else "failed",
+                        response_code=response.status_code if response else None
+                    )
+                
+                if response:
                     finding = self._check_injection_result(
                         response=response,
                         payload_text=payload_text,
