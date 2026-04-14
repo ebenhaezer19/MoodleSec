@@ -457,7 +457,7 @@ if (empty($proxy_url)) {
 const PROXY_URL = '<?php echo $proxy_url; ?>';
 const API_PAYLOADS = PROXY_URL + '/api/payloads';
 const API_SCANNERS = PROXY_URL + '/api/scanners';
-const ITEMS_PER_PAGE = 20;
+const ITEMS_PER_PAGE = 50;
 
 // Global variables
 let currentPayloads = [];
