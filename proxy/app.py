@@ -1665,11 +1665,19 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
                                             
                                             # Use response validator to check for vulnerabilities
                                             validator = SmartResponseValidator()
-                                            validator.set_baseline(response.text)
+                                            # Set baseline with correct parameters
+                                            validator.set_baseline(
+                                                endpoint=target['url'],
+                                                response_text=response_body,
+                                                response_code=status_code,
+                                                response_length=len(response_body)
+                                            )
+                                            # Validate response with payload (correct parameter order)
                                             detection = validator.validate_response(
-                                                auth_response.text,
-                                                auth_response.headers,
-                                                auth_response.elapsed.total_seconds()
+                                                endpoint=target['url'],
+                                                response_text=auth_response.text,
+                                                response_code=auth_response.status_code,
+                                                response_time=auth_response.elapsed.total_seconds()
                                             )
                                             
                                             if detection['is_vulnerable']:
