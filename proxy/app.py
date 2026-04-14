@@ -1604,8 +1604,12 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
         
         for i, target in enumerate(targets_to_scan, 1):
             try:
-                # Check if this is an auth endpoint
-                is_auth_endpoint = target in auth_targets
+                # Check if this is an auth endpoint (by pattern, not object reference)
+                is_auth_endpoint = False
+                for pattern in auth_patterns:
+                    if re.search(pattern, target['url'].lower()):
+                        is_auth_endpoint = True
+                        break
                 
                 print(f"[Native Auth Scan] Scanning {i}/{len(targets_to_scan)}: {target['url'][:80]}..." + 
                       (" [AUTH ENDPOINT]" if is_auth_endpoint else ""))
