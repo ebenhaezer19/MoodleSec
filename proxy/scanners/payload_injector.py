@@ -199,6 +199,15 @@ class PayloadInjector:
                         if finding:
                             findings.append(finding)
                             print(f"[PayloadInjector] ✓ Found vulnerability: {finding['description']}")
+                            
+                            # Update payload stats with successful injection
+                            if self.payload_repo and payload_id != "unknown":
+                                severity = finding.get('severity', 'High')
+                                self.payload_repo.update_payload_stats(
+                                    payload_id=int(payload_id) if isinstance(payload_id, (str, int)) else 0,
+                                    success=True,
+                                    severity=severity
+                                )
                 
                 except Exception as e:
                     logger.error(f"Error injecting payload to {param_name}: {e}")
@@ -334,6 +343,15 @@ class PayloadInjector:
                         )
                         if finding:
                             findings.append(finding)
+                            
+                            # Update payload stats with successful injection
+                            if self.payload_repo and payload_id != "unknown":
+                                severity = finding.get('severity', 'High')
+                                self.payload_repo.update_payload_stats(
+                                    payload_id=int(payload_id) if isinstance(payload_id, (str, int)) else 0,
+                                    success=True,
+                                    severity=severity
+                                )
                 
                 except Exception as e:
                     logger.error(f"Error injecting payload to header {header_name}: {e}")
@@ -430,6 +448,15 @@ class PayloadInjector:
                     )
                     if finding:
                         findings.append(finding)
+                        
+                        # Update payload stats with successful injection
+                        if self.payload_repo and payload_id != "unknown":
+                            severity = finding.get('severity', 'High')
+                            self.payload_repo.update_payload_stats(
+                                payload_id=int(payload_id) if isinstance(payload_id, (str, int)) else 0,
+                                success=True,
+                                severity=severity
+                            )
             
             except Exception as e:
                 logger.error(f"Error injecting payload to body: {e}")
