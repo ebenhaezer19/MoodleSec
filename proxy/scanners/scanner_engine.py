@@ -11,49 +11,89 @@ from .sql_injection import SQLInjectionDetector
 from .xss_detector import XSSDetector
 from .csrf_validator import CSRFValidator
 from .path_traversal import PathTraversalDetector
+from .payload_injector import PayloadInjector
 
 
 class ScannerEngine:
     """Main scanner engine that orchestrates all vulnerability scanners."""
     
-    def __init__(self):
+    def __init__(self, payload_repo=None, debug_logger=None):
         """Initialize scanner engine with all detectors."""
-        self.sql_detector = SQLInjectionDetector()
-        self.xss_detector = XSSDetector()
-        self.csrf_validator = CSRFValidator()
+        self.sql_detector = SQLInjectionDetector(payload_repo)
+        self.xss_detector = XSSDetector(payload_repo)
+        self.csrf_validator = CSRFValidator(payload_repo)
         self.path_traversal_detector = PathTraversalDetector()
+        
+        # Initialize payload injector for active payload testing
+        self.payload_injector = PayloadInjector(payload_repo, debug_logger)
+        self.payload_repo = payload_repo
+        self.debug_logger = debug_logger
         
         # Scanner metadata
         self.scanners = {
             'sql_injection': {
                 'name': 'SQL Injection Scanner',
                 'detector': self.sql_detector,
-                'enabled': True
+                'enabled': True,
+                'category': 'SQL Injection'
             },
             'xss': {
                 'name': 'Cross-Site Scripting Scanner',
                 'detector': self.xss_detector,
-                'enabled': True
+                'enabled': True,
+                'category': 'XSS'
             },
             'csrf': {
                 'name': 'CSRF Protection Validator',
                 'detector': self.csrf_validator,
-                'enabled': True
+                'enabled': True,
+                'category': 'CSRF'
             },
             'path_traversal': {
                 'name': 'Path Traversal Scanner',
                 'detector': self.path_traversal_detector,
-                'enabled': True
+                'enabled': True,
+                'category': 'Path Traversal'
             }
         }
+        
+        print("[Scanner Engine] Initialized with payload injection support")
     
-    def scan(self, url: str, method: str = 'GET', 
+    def initialize_scanners(self):
+        """Reinitialize all scanners with fresh payload data from repository.
+        
+        Useful after importing new payloads from ZAP without restarting.
+        """
+        try:
+            print("[Scanner Engine] Reinitializing scanners with fresh payloads...")
+            
+            # Reinitialize each detector
+            self.sql_detector = SQLInjectionDetector(self.payload_repo)
+            self.xss_detector = XSSDetector(self.payload_repo)
+            self.csrf_validator = CSRFValidator(self.payload_repo)
+            self.path_traversal_detector = PathTraversalDetector()
+            
+            # Reinitialize payload injector
+            self.payload_injector = PayloadInjector(self.payload_repo, self.debug_logger)
+            
+            # Update scanner references
+            self.scanners['sql_injection']['detector'] = self.sql_detector
+            self.scanners['xss']['detector'] = self.xss_detector
+            self.scanners['csrf']['detector'] = self.csrf_validator
+            self.scanners['path_traversal']['detector'] = self.path_traversal_detector
+            
+            print("[Scanner Engine] Scanner reinitialization complete")
+        except Exception as e:
+            print(f"[Scanner Engine] Error reinitializing scanners: {e}")
+    
+    async def scan(self, url: str, method: str = 'GET', 
              params: Optional[Dict[str, Any]] = None,
              request_body: str = "",
              response_body: str = "",
              request_headers: Optional[Dict[str, str]] = None,
              response_headers: Optional[Dict[str, str]] = None,
-             status_code: int = 200) -> Dict[str, Any]:
+             status_code: int = 200,
+             client=None) -> Dict[str, Any]:
         """
         Perform comprehensive security scan.
         
@@ -66,6 +106,7 @@ class ScannerEngine:
             request_headers: Request headers
             response_headers: Response headers
             status_code: HTTP status code
+            client: HTTP client for payload injection testing
             
         Returns:
             Scan results with all findings
@@ -163,6 +204,23 @@ class ScannerEngine:
                     'status': 'error',
                     'error': str(e)
                 }
+        
+        # PAYLOAD INJECTION TESTING (Active testing with repository payloads)
+        # Test each vulnerability category with payloads
+        if self.payload_injector:
+            print(f"[Scanner Engine] Starting active payload injection testing...")
+            payload_findings = await self._test_payloads_against_endpoints(
+                url=url,
+                params=params,
+                method=method,
+                scan_id=scan_id,
+                client=client
+            )
+            all_findings.extend(payload_findings)
+            scanner_results['payload_injection'] = {
+                'findings_count': len(payload_findings),
+                'status': 'completed'
+            }
         
         # Calculate summary
         summary = self._calculate_summary(all_findings)
@@ -303,3 +361,149 @@ class ScannerEngine:
                 'enabled': scanner_info['enabled']
             }
         return status
+    
+    async def _test_payloads_against_endpoints(
+        self,
+        url: str,
+        params: Dict[str, Any],
+        method: str,
+        scan_id: str,
+        client=None
+    ) -> List[Dict[str, Any]]:
+        """
+        Test payloads from repository against endpoints.
+        
+        This is the active payload reuse mechanism - uses stored payloads
+        to test parameters and discover vulnerabilities.
+        
+        Args:
+            url: Target URL
+            params: Request parameters
+            method: HTTP method
+            scan_id: Scan ID for tracking
+            client: HTTP client for injection testing
+            
+        Returns:
+            List of findings from payload injection
+        """
+        findings = []
+        
+        if not params or not self.payload_injector:
+            return findings
+        
+        # Test SQL Injection payloads
+        if self.scanners['sql_injection']['enabled']:
+            try:
+                print("[Scanner Engine] Testing SQL Injection payloads...")
+                sql_findings = await self._test_payload_category(
+                    url=url,
+                    params=params,
+                    category="SQL Injection",
+                    scan_id=scan_id,
+                    client=client
+                )
+                findings.extend(sql_findings)
+                print(f"[Scanner Engine] Found {len(sql_findings)} SQL Injection findings")
+            except Exception as e:
+                print(f"[Scanner Engine] Error testing SQL Injection payloads: {e}")
+        
+        # Test XSS payloads
+        if self.scanners['xss']['enabled']:
+            try:
+                print("[Scanner Engine] Testing XSS payloads...")
+                xss_findings = await self._test_payload_category(
+                    url=url,
+                    params=params,
+                    category="XSS",
+                    scan_id=scan_id,
+                    client=client
+                )
+                findings.extend(xss_findings)
+                print(f"[Scanner Engine] Found {len(xss_findings)} XSS findings")
+            except Exception as e:
+                print(f"[Scanner Engine] Error testing XSS payloads: {e}")
+        
+        # Test CSRF payloads
+        if self.scanners['csrf']['enabled']:
+            try:
+                print("[Scanner Engine] Testing CSRF payloads...")
+                csrf_findings = await self._test_payload_category(
+                    url=url,
+                    params=params,
+                    category="CSRF",
+                    scan_id=scan_id,
+                    client=client
+                )
+                findings.extend(csrf_findings)
+                print(f"[Scanner Engine] Found {len(csrf_findings)} CSRF findings")
+            except Exception as e:
+                print(f"[Scanner Engine] Error testing CSRF payloads: {e}")
+        
+        return findings
+    
+    async def _test_payload_category(
+        self,
+        url: str,
+        params: Dict[str, Any],
+        category: str,
+        scan_id: str,
+        client=None
+    ) -> List[Dict[str, Any]]:
+        """
+        Test specific payload category against parameters.
+        
+        Args:
+            url: Target URL
+            params: Parameters to test
+            category: Payload category (SQL Injection, XSS, etc.)
+            scan_id: Scan ID
+            client: HTTP client for actual injection testing
+            
+        Returns:
+            List of findings
+        """
+        findings = []
+        
+        if not self.payload_repo or not self.payload_injector:
+            return findings
+        
+        # Get payloads for this category
+        payloads = self.payload_repo.get_top_payloads(category, limit=10)
+        if not payloads:
+            print(f"[Scanner Engine] No payloads found for {category}")
+            return findings
+        
+        print(f"[Scanner Engine] Testing {len(payloads)} {category} payloads on {len(params)} parameters")
+        
+        try:
+            # Use PayloadInjector to test payloads against parameters
+            injection_findings = await self.payload_injector.inject_payloads_to_parameters(
+                url=url,
+                params=params,
+                client=client,
+                category=category,
+                scan_id=scan_id,
+                max_payloads=10
+            )
+            findings.extend(injection_findings)
+            print(f"[Scanner Engine] ✓ Parameter injection testing complete for {category}")
+            
+            # Also test headers if client is available
+            if client and category in ["XSS", "SQL Injection"]:
+                header_findings = await self.payload_injector.inject_payloads_to_headers(
+                    url=url,
+                    headers={"User-Agent": "MoodleSec-Scanner"},
+                    client=client,
+                    category=category,
+                    scan_id=scan_id,
+                    max_payloads=5
+                )
+                findings.extend(header_findings)
+                print(f"[Scanner Engine] ✓ Header injection testing complete for {category}")
+                
+        except Exception as e:
+            print(f"[Scanner Engine] Error testing {category} payload: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        return findings

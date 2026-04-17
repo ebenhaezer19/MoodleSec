@@ -4,7 +4,7 @@
  * Scans user-generated content (bio, comments) for phishing attempts
  * 
  * @package    local_security_dashboard
- * @copyright  2025 MoodleSec
+ * @copyright  2025 Krisopras & Nathanael
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

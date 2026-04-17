@@ -24,14 +24,6 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
     
-    // Add Auth & API Scan page
-    $ADMIN->add('local_security_dashboard', new admin_externalpage(
-        'local_security_dashboard_auth',
-        'Auth & API Scan',
-        new moodle_url('/local/security_dashboard/auth_scan.php'),
-        'moodle/site:config'
-    ));
-    
     // Add Reports page
     $ADMIN->add('local_security_dashboard', new admin_externalpage(
         'local_security_dashboard_reports',
@@ -77,6 +69,14 @@ if ($hassiteconfig) {
         'local_security_dashboard_ml',
         'ML Dashboard',
         new moodle_url('/local/security_dashboard/ml_dashboard.php'),
+        'moodle/site:config'
+    ));
+    
+    // Add Advanced Payload Manager UI
+    $ADMIN->add('local_security_dashboard', new admin_externalpage(
+        'local_security_dashboard_payload_manager_ui',
+        '⚙️ Payload Manager (Advanced)',
+        new moodle_url('/local/security_dashboard/payload_manager_ui.php'),
         'moodle/site:config'
     ));
     

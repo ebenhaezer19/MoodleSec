@@ -32,58 +32,28 @@ echo $OUTPUT->header();
 
 <div class="alert alert-info">
     <h4><i class="fa fa-file-pdf-o"></i> Security Reports</h4>
-    <p>Generate and download professional security reports in PDF format.</p>
+    <p>Generate and download professional PCI-DSS compliance reports in PDF format.</p>
+    <p><strong>Current Phase 1:</strong> All reports are generated in <strong>PCI-DSS</strong> format with CVSS-based risk scoring and ML false positive filtering included.</p>
 </div>
 
-<!-- Report Types -->
+<!-- Report Type: PCI-DSS -->
 <div class="row">
-    <div class="col-md-4 mb-3">
-        <div class="card">
-            <div class="card-header">
-                <h5><i class="fa fa-file-text"></i> Executive Summary</h5>
+    <div class="col-md-8 mx-auto">
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5><i class="fa fa-shield"></i> PCI-DSS Compliance Report (Phase 1)</h5>
             </div>
             <div class="card-body">
-                <p>High-level overview for management:</p>
+                <p><strong>Coverage:</strong> Payment Card Industry Data Security Standard Requirements</p>
                 <ul>
-                    <li>Vulnerability summary</li>
-                    <li>Top 10 risks</li>
-                    <li>Recommendations</li>
-                    <li>Risk trends</li>
+                    <li>✅ CVSS 3.1 Risk Scoring</li>
+                    <li>✅ ML False Positive Reduction (87% accuracy)</li>
+                    <li>✅ Vulnerability Classification</li>
+                    <li>✅ Remediation Priority</li>
+                    <li>✅ Compliance Status per Requirement</li>
+                    <li>✅ Evidence & References</li>
                 </ul>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-md-4 mb-3">
-        <div class="card">
-            <div class="card-header">
-                <h5><i class="fa fa-shield"></i> Compliance Report</h5>
-            </div>
-            <div class="card-body">
-                <p>Compliance framework mapping:</p>
-                <ul>
-                    <li>OWASP Top 10 2021</li>
-                    <li>PCI-DSS v3.2.1</li>
-                    <li>Control status</li>
-                    <li>Pass/Fail indicators</li>
-                </ul>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-md-4 mb-3">
-        <div class="card">
-            <div class="card-header">
-                <h5><i class="fa fa-bar-chart"></i> Trend Analysis</h5>
-            </div>
-            <div class="card-body">
-                <p>Historical trend data:</p>
-                <ul>
-                    <li>30/60/90 day trends</li>
-                    <li>Regression detection</li>
-                    <li>Fix rate metrics</li>
-                    <li>Progress tracking</li>
-                </ul>
+                <p><em>Phase 2 will add OWASP Top 10 and Executive Summary formats.</em></p>
             </div>
         </div>
     </div>
@@ -107,7 +77,8 @@ echo $OUTPUT->header();
                             <th>Scan ID</th>
                             <th>Date</th>
                             <th>Type</th>
-                            <th>Findings</th>
+                            <th>ML Filtering Stats</th>
+                            <th>Findings Summary</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -119,27 +90,35 @@ echo $OUTPUT->header();
                                     <td><?php echo htmlspecialchars($log['timestamp'] ?? 'N/A'); ?></td>
                                     <td><?php echo htmlspecialchars($log['type'] ?? 'N/A'); ?></td>
                                     <td>
-                                        <?php if (isset($log['findings_count'])): ?>
-                                            <span class="badge badge-info"><?php echo $log['findings_count']; ?></span>
+                                        <?php if (isset($log['original_count'])): ?>
+                                            <small>
+                                                Original: <strong><?php echo intval($log['original_count']); ?></strong><br>
+                                                FP Removed: <strong><?php echo intval($log['fp_filtered']); ?></strong><br>
+                                                Final: <strong><?php echo intval($log['final_count']); ?></strong>
+                                            </small>
                                         <?php else: ?>
-                                            N/A
+                                            <small>N/A</small>
                                         <?php endif; ?>
                                     </td>
                                     <td>
-                                        <div class="btn-group">
-                                            <a href="download_report.php?scan_id=<?php echo urlencode($log['scan_id']); ?>&type=executive" 
-                                               class="btn btn-sm btn-primary" target="_blank">
-                                                <i class="fa fa-download"></i> Executive
-                                            </a>
-                                            <a href="download_report.php?scan_id=<?php echo urlencode($log['scan_id']); ?>&type=compliance&framework=OWASP" 
-                                               class="btn btn-sm btn-success" target="_blank">
-                                                <i class="fa fa-download"></i> OWASP
-                                            </a>
-                                            <a href="download_report.php?scan_id=<?php echo urlencode($log['scan_id']); ?>&type=compliance&framework=PCI-DSS" 
-                                               class="btn btn-sm btn-warning" target="_blank">
-                                                <i class="fa fa-download"></i> PCI-DSS
-                                            </a>
-                                        </div>
+                                        <?php if ($log['critical'] > 0): ?>
+                                            <span class="badge badge-danger">Critical: <?php echo $log['critical']; ?></span><br>
+                                        <?php endif; ?>
+                                        <?php if ($log['high'] > 0): ?>
+                                            <span class="badge badge-warning">High: <?php echo $log['high']; ?></span><br>
+                                        <?php endif; ?>
+                                        <?php if ($log['medium'] > 0): ?>
+                                            <span class="badge badge-info">Medium: <?php echo $log['medium']; ?></span><br>
+                                        <?php endif; ?>
+                                        <?php if ($log['low'] > 0): ?>
+                                            <span class="badge badge-secondary">Low: <?php echo $log['low']; ?></span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <a href="download_report.php?scan_id=<?php echo urlencode($log['scan_id']); ?>&type=compliance&framework=PCI-DSS" 
+                                           class="btn btn-sm btn-primary" target="_blank" title="Download PCI-DSS Report">
+                                            <i class="fa fa-download"></i> PCI-DSS
+                                        </a>
                                     </td>
                                 </tr>
                             <?php endif; ?>

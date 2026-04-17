@@ -55,5 +55,5 @@ try {
 }
 
 echo "<hr>";
-echo "<p><a href='/local/security_dashboard/auth_scan.php'>← Back to Auth & API Scan</a></p>";
+echo "<p><a href='/local/security_dashboard/index.php'>← Back to Dashboard</a></p>";
 ?>

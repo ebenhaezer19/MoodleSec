@@ -16,8 +16,16 @@ require_capability('local/security_dashboard:scan', context_system::instance());
 
 // Get parameters
 $scan_id = required_param('scan_id', PARAM_TEXT);
-$type = required_param('type', PARAM_TEXT); // executive, compliance
-$framework = optional_param('framework', 'OWASP', PARAM_TEXT); // OWASP, PCI-DSS
+$type = optional_param('type', 'compliance', PARAM_TEXT); // Force compliance
+$framework = optional_param('framework', 'PCI-DSS', PARAM_TEXT); // Force PCI-DSS
+
+// Validate and enforce PCI-DSS only
+if ($framework !== 'PCI-DSS') {
+    $framework = 'PCI-DSS';
+}
+if ($type !== 'compliance') {
+    $type = 'compliance';
+}
 
 // Get proxy URL
 $proxy_url = get_config('local_security_dashboard', 'proxy_url');
@@ -27,16 +35,9 @@ if (empty($proxy_url)) {
 }
 
 try {
-    // Build report URL
-    if ($type === 'executive') {
-        $url = rtrim($proxy_url, '/') . '/reports/executive-summary?scan_id=' . urlencode($scan_id);
-        $filename = 'executive_summary_' . $scan_id . '.pdf';
-    } else if ($type === 'compliance') {
-        $url = rtrim($proxy_url, '/') . '/reports/compliance?scan_id=' . urlencode($scan_id) . '&framework=' . urlencode($framework);
-        $filename = 'compliance_' . $framework . '_' . $scan_id . '.pdf';
-    } else {
-        die('Invalid report type');
-    }
+    // Build report URL - PCI-DSS compliance only
+    $url = rtrim($proxy_url, '/') . '/reports/compliance?scan_id=' . urlencode($scan_id) . '&framework=' . urlencode($framework);
+    $filename = 'PCI-DSS_compliance_' . $scan_id . '.pdf';
     
     // Fetch PDF from proxy
     $curl = new curl();

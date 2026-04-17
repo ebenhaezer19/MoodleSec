@@ -37,11 +37,75 @@ function local_security_dashboard_get_logs($limit = 100) {
     global $DB;
     
     $logs = [];
+    $proxy_logs = [];
+    $zap_logs = [];
     
-    // 1. Get logs from proxy service
+    // Get logs from proxy service - NEW endpoint with ML data
     $proxy_url = get_config('local_security_dashboard', 'proxy_url');
     
+    // Fallback to default localhost if not configured
+    if (empty($proxy_url)) {
+        $proxy_url = 'http://localhost:8999';
+    }
+    
+    // ALWAYS TRY TO FETCH FROM PROXY - don't check if logs are empty
     if (!empty($proxy_url)) {
+        // Use new /ml/dashboard/recent-scans endpoint for integrated data
+        $url = rtrim($proxy_url, '/') . '/ml/dashboard/recent-scans';
+        
+        try {
+            $curl = new curl();
+            $response = $curl->get($url);
+            
+            // DEBUG: Log the response
+            error_log('[lib.php] Proxy endpoint response length: ' . strlen($response));
+            
+            if (!$curl->get_errno()) {
+                $proxy_data = json_decode($response, true);
+                error_log('[lib.php] Decoded ' . (isset($proxy_data['recent_scans']) ? count($proxy_data['recent_scans']) : 0) . ' proxy recent scans');
+                
+                if (isset($proxy_data['recent_scans']) && is_array($proxy_data['recent_scans']) && count($proxy_data['recent_scans']) > 0) {
+                    foreach ($proxy_data['recent_scans'] as $scan) {
+                        // Parse ISO 8601 timestamp to Unix timestamp
+                        $timestamp_str = $scan['timestamp'] ?? date('c');
+                        $timestamp_obj = new DateTime($timestamp_str);
+                        $timestamp_int = $timestamp_obj->getTimestamp();
+                        
+                        // Extract severity breakdown
+                        $severity_breakdown = $scan['severity_breakdown'] ?? [];
+                        
+                        // Extract ML filtering stats
+                        $ml_filtering = $scan['ml_filtering'] ?? ['raw_findings' => 0, 'false_positives_removed' => 0, 'actual_vulnerabilities' => 0];
+                        
+                        $proxy_logs[] = [
+                            'type' => $scan['scan_type'] ?? 'security_scan',
+                            'timestamp' => date('Y-m-d H:i:s', $timestamp_int),
+                            'details' => 'Scan ID: ' . ($scan['scan_id'] ?? 'N/A') . ' | Findings: ' . intval($scan['findings_count'] ?? 0),
+                            'url' => $scan['target_url'] ?? '',
+                            'scan_id' => $scan['scan_id'] ?? null,
+                            'findings' => intval($scan['findings_count'] ?? 0),
+                            'critical' => intval($severity_breakdown['Critical'] ?? $severity_breakdown['critical'] ?? 0),
+                            'high' => intval($severity_breakdown['High'] ?? $severity_breakdown['high'] ?? 0),
+                            'medium' => intval($severity_breakdown['Medium'] ?? $severity_breakdown['medium'] ?? 0),
+                            'low' => intval($severity_breakdown['Low'] ?? $severity_breakdown['low'] ?? 0),
+                            'info' => intval($severity_breakdown['Info'] ?? $severity_breakdown['info'] ?? 0),
+                            'original_count' => intval($ml_filtering['raw_findings'] ?? 0),
+                            'fp_filtered' => intval($ml_filtering['false_positives_removed'] ?? 0),
+                            'final_count' => intval($ml_filtering['actual_vulnerabilities'] ?? 0),
+                            'source' => 'proxy'
+                        ];
+                        error_log('[lib.php] Added PROXY: ' . ($scan['scan_type'] ?? 'unknown') . ' [' . ($scan['scan_id'] ?? 'N/A') . ']');
+                    }
+                }
+            }
+        } catch (Exception $e) {
+            // Continue even if proxy fails
+            error_log('Error fetching from /ml/dashboard/recent-scans: ' . $e->getMessage());
+        }
+    }
+    
+    // If proxy new endpoint failed, try old endpoint as fallback (but don't skip ZAP)
+    if (empty($proxy_logs) && !empty($proxy_url)) {
         $url = rtrim($proxy_url, '/') . '/logs?limit=' . $limit;
         
         try {
@@ -52,15 +116,17 @@ function local_security_dashboard_get_logs($limit = 100) {
                 $proxy_data = json_decode($response, true);
                 if (isset($proxy_data['logs']) && is_array($proxy_data['logs'])) {
                     foreach ($proxy_data['logs'] as $log) {
-                        // Parse ISO 8601 timestamp to Unix timestamp
                         $timestamp_str = $log['timestamp'] ?? date('c');
                         $timestamp_obj = new DateTime($timestamp_str);
                         $timestamp_int = $timestamp_obj->getTimestamp();
                         
-                        // Extract summary data
                         $summary = $log['summary'] ?? ['critical' => 0, 'high' => 0, 'medium' => 0, 'low' => 0];
+                        $ml_stats = $log['ml_stats'] ?? [];
+                        $original_count = intval($ml_stats['original_findings'] ?? $log['findings_count'] ?? 0);
+                        $fp_filtered = intval($ml_stats['fp_filtered'] ?? 0);
+                        $final_count = intval($log['findings_count'] ?? 0);
                         
-                        $logs[] = [
+                        $proxy_logs[] = [
                             'type' => $log['type'] ?? 'proxy_transaction',
                             'timestamp' => date('Y-m-d H:i:s', $timestamp_int),
                             'details' => 'Scan ID: ' . ($log['scan_id'] ?? 'N/A') . ' | Findings: ' . ($log['findings_count'] ?? 0),
@@ -71,48 +137,72 @@ function local_security_dashboard_get_logs($limit = 100) {
                             'high' => intval($summary['high'] ?? 0),
                             'medium' => intval($summary['medium'] ?? 0),
                             'low' => intval($summary['low'] ?? 0),
+                            'original_count' => $original_count,
+                            'fp_filtered' => $fp_filtered,
+                            'final_count' => $final_count,
                             'source' => 'proxy'
                         ];
                     }
                 }
             }
         } catch (Exception $e) {
-            // Continue even if proxy fails
-            error_log('Error fetching proxy logs: ' . $e->getMessage());
+            error_log('Error fetching proxy logs (fallback): ' . $e->getMessage());
         }
     }
     
-    // 2. Get ZAP scans from database
+    // ALWAYS GET ZAP SCANS FROM DATABASE - NOT JUST WHEN PROXY FAILS!
     try {
         $zap_scans = $DB->get_records('local_security_scans', 
             [], 'timecreated DESC', '*', 0, $limit);
         
-        foreach ($zap_scans as $scan) {
-            $logs[] = [
-                'type' => $scan->scan_type ?? 'full_site_scan',
-                'timestamp' => date('Y-m-d H:i:s', $scan->timecreated),
-                'details' => 'Scan ID: ' . $scan->scan_id . ' | Findings: ' . $scan->total_findings,
-                'url' => $scan->target_url,
-                'scan_id' => $scan->scan_id,
-                'db_id' => $scan->id,  // Database record ID for lookup
-                'findings' => $scan->total_findings,
-                'critical' => $scan->critical_count ?? 0,
-                'high' => $scan->high_count ?? 0,
-                'medium' => $scan->medium_count ?? 0,
-                'low' => $scan->low_count ?? 0,
-                'source' => 'zap'
-            ];
+        if ($zap_scans) {
+            foreach ($zap_scans as $scan) {
+                $zap_logs[] = [
+                    'type' => $scan->scan_type ?? 'full_site_scan',
+                    'timestamp' => date('Y-m-d H:i:s', $scan->timecreated),
+                    'details' => 'Scan ID: ' . $scan->scan_id . ' | Findings: ' . $scan->total_findings,
+                    'url' => $scan->target_url,
+                    'scan_id' => $scan->scan_id,
+                    'db_id' => $scan->id,
+                    'findings' => $scan->total_findings,
+                    'critical' => $scan->critical_count ?? 0,
+                    'high' => $scan->high_count ?? 0,
+                    'medium' => $scan->medium_count ?? 0,
+                    'low' => $scan->low_count ?? 0,
+                    'source' => 'zap'
+                ];
+                error_log('[lib.php] Added ZAP: ' . ($scan->scan_type ?? 'unknown') . ' [' . ($scan->scan_id ?? 'N/A') . ']');
+            }
         }
     } catch (Exception $e) {
         error_log('Error fetching ZAP scans: ' . $e->getMessage());
     }
     
-    // 3. Sort by timestamp descending and limit results
+    // Merge both proxy and ZAP logs
+    $logs = array_merge($proxy_logs, $zap_logs);
+    
+    error_log('[lib.php] ===== MERGED SOURCES =====');
+    error_log('[lib.php] Proxy logs: ' . count($proxy_logs));
+    error_log('[lib.php] ZAP logs: ' . count($zap_logs));
+    error_log('[lib.php] Total logs collected: ' . count($logs));
+    
+    // Sort by timestamp descending and limit results
     usort($logs, function($a, $b) {
         return strtotime($b['timestamp']) - strtotime($a['timestamp']);
     });
     
     $logs = array_slice($logs, 0, $limit);
+    
+    error_log('[lib.php] Total logs after slice: ' . count($logs) . ' (limit=' . $limit . ')');
+    
+    if (count($logs) > 0) {
+        error_log('[lib.php] ===== LOGS BEING RETURNED TO INDEX.PHP =====');
+        foreach ($logs as $i => $log) {
+            error_log('[lib.php] Log ' . ($i+1) . ': [' . strtoupper($log['source']) . '] ' . $log['type'] . ' | Scan: ' . ($log['scan_id'] ?? 'N/A') . ' | Findings: ' . intval($log['findings'] ?? 0));
+        }
+    } else {
+        error_log('[lib.php] ⚠️ NO LOGS COLLECTED FROM ANY SOURCE!');
+    }
     
     return ['logs' => $logs, 'total' => count($logs)];
 }
@@ -122,6 +212,9 @@ function local_security_dashboard_get_logs($limit = 100) {
  */
 function local_security_dashboard_trigger_scan($path, $method = 'GET', $parameters = null) {
     $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    if (empty($proxy_url)) {
+        $proxy_url = 'http://localhost:8999';
+    }
     
     if (empty($proxy_url)) {
         return ['error' => 'Proxy URL not configured'];
@@ -197,6 +290,9 @@ function local_security_dashboard_calculate_cvss($vector) {
  */
 function local_security_dashboard_check_health() {
     $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    if (empty($proxy_url)) {
+        $proxy_url = 'http://localhost:8999';
+    }
     $cvss_url = get_config('local_security_dashboard', 'cvss_url');
     
     $status = [
@@ -240,6 +336,11 @@ function local_security_dashboard_check_health() {
  */
 function local_security_dashboard_trigger_full_scan($max_depth = 2, $max_pages = 30) {
     $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    
+    // Fallback to default localhost if not configured
+    if (empty($proxy_url)) {
+        $proxy_url = 'http://localhost:8999';
+    }
     
     if (empty($proxy_url)) {
         return ['error' => 'Proxy URL not configured'];
@@ -288,8 +389,9 @@ function local_security_dashboard_trigger_full_scan($max_depth = 2, $max_pages =
 function local_security_dashboard_trigger_native_auth_scan($max_depth = 2, $max_pages = 50, $username = 'admin', $password = 'Admin@1234') {
     $proxy_url = get_config('local_security_dashboard', 'proxy_url');
     
+    // Fallback to default localhost if not configured
     if (empty($proxy_url)) {
-        return ['error' => 'Proxy URL not configured'];
+        $proxy_url = 'http://localhost:8999';
     }
     
     // Call the new native authenticated scan endpoint
@@ -334,6 +436,11 @@ function local_security_dashboard_trigger_native_auth_scan($max_depth = 2, $max_
 function local_security_dashboard_create_schedule($target_url, $frequency, $scan_type = 'full') {
     $proxy_url = get_config('local_security_dashboard', 'proxy_url');
     
+    // Fallback to default localhost if not configured
+    if (empty($proxy_url)) {
+        $proxy_url = 'http://localhost:8999';
+    }
+    
     if (empty($proxy_url)) {
         return ['error' => 'Proxy URL not configured'];
     }
@@ -376,6 +483,11 @@ function local_security_dashboard_create_schedule($target_url, $frequency, $scan
 function local_security_dashboard_get_schedules() {
     $proxy_url = get_config('local_security_dashboard', 'proxy_url');
     
+    // Fallback to default localhost if not configured
+    if (empty($proxy_url)) {
+        $proxy_url = 'http://localhost:8999';
+    }
+    
     if (empty($proxy_url)) {
         return ['error' => 'Proxy URL not configured'];
     }
@@ -411,6 +523,11 @@ function local_security_dashboard_get_schedules() {
 function local_security_dashboard_delete_schedule($schedule_id) {
     $proxy_url = get_config('local_security_dashboard', 'proxy_url');
     
+    // Fallback to default localhost if not configured
+    if (empty($proxy_url)) {
+        $proxy_url = 'http://localhost:8999';
+    }
+    
     if (empty($proxy_url)) {
         return ['error' => 'Proxy URL not configured'];
     }
@@ -444,6 +561,11 @@ function local_security_dashboard_delete_schedule($schedule_id) {
  */
 function local_security_dashboard_start_auth_scan() {
     $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    
+    // Fallback to default localhost if not configured
+    if (empty($proxy_url)) {
+        $proxy_url = 'http://localhost:8999';
+    }
     
     if (empty($proxy_url)) {
         return ['error' => 'Proxy URL not configured'];
@@ -487,6 +609,11 @@ function local_security_dashboard_start_auth_scan() {
 function local_security_dashboard_start_api_scan() {
     $proxy_url = get_config('local_security_dashboard', 'proxy_url');
     
+    // Fallback to default localhost if not configured
+    if (empty($proxy_url)) {
+        $proxy_url = 'http://localhost:8999';
+    }
+    
     if (empty($proxy_url)) {
         return ['error' => 'Proxy URL not configured'];
     }
@@ -529,6 +656,11 @@ function local_security_dashboard_start_api_scan() {
  */
 function local_security_dashboard_get_scan_history($limit = 10) {
     $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    
+    // Fallback to default localhost if not configured
+    if (empty($proxy_url)) {
+        $proxy_url = 'http://localhost:8999';
+    }
     
     if (empty($proxy_url)) {
         return ['error' => 'Proxy URL not configured'];
@@ -1418,5 +1550,180 @@ function local_security_dashboard_verify_zap_auth($username, $password) {
     } catch (Exception $e) {
         error_log("DEBUG: Authentication test exception: " . $e->getMessage());
         return ['success' => false, 'error' => $e->getMessage()];
+    }
+}
+
+// ==================== PHASE 2: DYNAMIC PAYLOAD MANAGEMENT ====================
+
+/**
+ * Import payloads from ZAP API
+ * 
+ * @return array Result array with status and details
+ */
+function local_security_dashboard_import_from_zap() {
+    global $CFG;
+    
+    $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    if (empty($proxy_url)) {
+        $proxy_url = 'http://localhost:8999';
+    }
+    
+    $url = rtrim($proxy_url, '/') . '/api/payloads/import-from-zap';
+    
+    $params = [
+        'zap_host' => 'localhost',
+        'zap_port' => 8080,
+        'limit' => 200,
+        'reload_scanners' => true
+    ];
+    
+    try {
+        $curl = new curl();
+        $curl->setHeader([
+            'Content-Type: application/json',
+            'Accept: application/json'
+        ]);
+        
+        $response = $curl->post($url, json_encode($params));
+        
+        if ($curl->get_errno()) {
+            return [
+                'status' => 'error',
+                'message' => 'Connection error: ' . $curl->error
+            ];
+        }
+        
+        $result = json_decode($response, true);
+        if (isset($result['status']) && $result['status'] === 'success') {
+            $import = $result['import_result'] ?? [];
+            return [
+                'status' => 'success',
+                'message' => "Imported {$import['payloads_imported']} payloads from {$import['alerts_fetched']} ZAP alerts",
+                'import_result' => $import,
+                'scanners_reloaded' => $result['scanners_reloaded'] ?? false
+            ];
+        } else {
+            return [
+                'status' => 'error',
+                'message' => $result['message'] ?? 'Import failed'
+            ];
+        }
+    } catch (Exception $e) {
+        return [
+            'status' => 'error',
+            'message' => $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Reload payloads from repository
+ * 
+ * @param string $category Optional specific category to reload
+ * @return array Result array
+ */
+function local_security_dashboard_reload_payloads($category = null) {
+    $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    if (empty($proxy_url)) {
+        $proxy_url = 'http://localhost:8999';
+    }
+    
+    $url = rtrim($proxy_url, '/') . '/api/payloads/reload';
+    if ($category) {
+        $url .= '?category=' . urlencode($category);
+    }
+    
+    try {
+        $curl = new curl();
+        $curl->setHeader('Accept: application/json');
+        
+        $response = $curl->post($url);
+        
+        if ($curl->get_errno()) {
+            return [
+                'status' => 'error',
+                'message' => 'Connection error: ' . $curl->error
+            ];
+        }
+        
+        $result = json_decode($response, true);
+        return $result ?: ['status' => 'error', 'message' => 'Invalid response'];
+    } catch (Exception $e) {
+        return [
+            'status' => 'error',
+            'message' => $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Reload scanners with new payloads
+ * 
+ * @return array Result array
+ */
+function local_security_dashboard_reload_scanners() {
+    $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    if (empty($proxy_url)) {
+        $proxy_url = 'http://localhost:8999';
+    }
+    
+    $url = rtrim($proxy_url, '/') . '/api/scanners/reload-payloads';
+    
+    try {
+        $curl = new curl();
+        $curl->setHeader('Accept: application/json');
+        
+        $response = $curl->post($url);
+        
+        if ($curl->get_errno()) {
+            return [
+                'status' => 'error',
+                'message' => 'Connection error: ' . $curl->error
+            ];
+        }
+        
+        $result = json_decode($response, true);
+        return $result ?: ['status' => 'error', 'message' => 'Invalid response'];
+    } catch (Exception $e) {
+        return [
+            'status' => 'error',
+            'message' => $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Get import status and repository health
+ * 
+ * @return array Status array
+ */
+function local_security_dashboard_get_import_status() {
+    $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    if (empty($proxy_url)) {
+        $proxy_url = 'http://localhost:8999';
+    }
+    
+    $url = rtrim($proxy_url, '/') . '/api/payloads/import-status';
+    
+    try {
+        $curl = new curl();
+        $curl->setHeader('Accept: application/json');
+        
+        $response = $curl->get($url);
+        
+        if ($curl->get_errno()) {
+            return [
+                'status' => 'error',
+                'message' => 'Connection error: ' . $curl->error
+            ];
+        }
+        
+        $result = json_decode($response, true);
+        return $result ?: ['status' => 'error', 'message' => 'Invalid response'];
+    } catch (Exception $e) {
+        return [
+            'status' => 'error',
+            'message' => $e->getMessage()
+        ];
     }
 }

@@ -5,15 +5,45 @@ Detects SQL injection vulnerabilities using pattern matching and payload testing
 """
 
 import re
+import sys
 from typing import List, Dict, Any, Optional
 from urllib.parse import parse_qs, urlparse
+from pathlib import Path
+
+# Add database module to path
+db_path = Path(__file__).parent.parent / "database"
+if str(db_path) not in sys.path:
+    sys.path.insert(0, str(db_path))
+
+from payload_repository import PayloadRepositoryManager
 
 
 class SQLInjectionDetector:
     """Detect SQL injection vulnerabilities in web applications."""
     
-    def __init__(self):
+    def __init__(self, payload_repo: Optional[PayloadRepositoryManager] = None):
         """Initialize SQL injection detector with patterns and payloads."""
+        
+        # Initialize payload repository
+        if payload_repo is None:
+            try:
+                self.payload_repo = PayloadRepositoryManager()
+            except Exception as e:
+                print(f"[!] Payload repository initialization failed: {e}")
+                self.payload_repo = None
+        else:
+            self.payload_repo = payload_repo
+        
+        # Load smart payloads from repository (high-success ones prioritized)
+        self.smart_payloads = []
+        if self.payload_repo:
+            try:
+                print(f"[Scanner] SQLi: Loading top payloads from repository...")
+                smart_sql = self.payload_repo.get_top_payloads("SQL Injection", limit=20)
+                self.smart_payloads = [p.get('payload_text', '') for p in smart_sql if p.get('payload_text')]
+                print(f"[✓] Loaded {len(self.smart_payloads)} smart SQL injection payloads from repository")
+            except Exception as e:
+                print(f"[!] Failed to load smart payloads: {e}")
         
         # SQL error patterns that indicate potential SQL injection
         self.error_patterns = [
@@ -269,4 +299,14 @@ class SQLInjectionDetector:
                 'owasp': 'A03:2021 - Injection'
             })
         
-        return findings
+        return findings    
+    def record_payload_usage(self, payload_id: int, scan_id: str, url: str,
+                            parameter: str, success: bool, response: str = ""):
+        """Record payload usage in repository for effectiveness tracking."""
+        if self.payload_repo is None:
+            return
+        
+        try:
+            self.payload_repo.record_usage(payload_id, scan_id, url, parameter, success, response)
+        except Exception as e:
+            print(f"[!] Failed to record payload usage: {e}")

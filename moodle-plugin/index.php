@@ -34,6 +34,10 @@ echo html_writer::end_div();
 // Get recent logs
 $logs_data = local_security_dashboard_get_logs(10);
 
+error_log('[index.php] Logs data received: ' . print_r($logs_data, true));
+error_log('[index.php] isset error: ' . (isset($logs_data['error']) ? 'yes' : 'no'));
+error_log('[index.php] logs count: ' . (isset($logs_data['logs']) ? count($logs_data['logs']) : '0'));
+
 if (isset($logs_data['error'])) {
     echo html_writer::div($logs_data['error'], 'alert alert-danger');
 } else {
@@ -49,19 +53,23 @@ if (isset($logs_data['error'])) {
     );
     echo html_writer::link(
         new moodle_url('/local/security_dashboard/fullscan.php'),
-        '<i class="fa fa-globe"></i> Full Site Scan',
+        '<i class="fa fa-globe"></i> Unauthenticated Full Site Scan',
         ['class' => 'btn btn-success mr-2']
     );
     echo html_writer::link(
         new moodle_url('/local/security_dashboard/native_auth_scan.php'),
-        '<i class="fa fa-user-check"></i> Authenticated Scan',
+        '<i class="fa fa-user-crown"></i> Admin Area Scan',
         ['class' => 'btn btn-info mr-2']
     );
-    echo html_writer::link(
-        new moodle_url('/local/security_dashboard/auth_scan.php'),
-        '<i class="fa fa-lock"></i> Auth & API Scan',
-        ['class' => 'btn btn-primary mr-2']
+    
+    // Reload Scanner button
+    echo html_writer::tag('button',
+        '<i class="fa fa-cogs"></i> Reload Scanner',
+        ['class' => 'btn btn-warning mr-2', 'id' => 'btn-reload-scanner-dashboard', 
+         'onclick' => 'reloadScannerDashboard()', 'type' => 'button',
+         'title' => 'Reload scanner with latest payloads (without proxy restart)']
     );
+    
     echo html_writer::link(
         new moodle_url('/local/security_dashboard/scheduler.php'),
         '<i class="fa fa-clock-o"></i> Scheduler',
@@ -146,10 +154,32 @@ if (isset($logs_data['error'])) {
                     );
                 }
             } else {
-                // For proxy logs - show details as-is
+                // For proxy logs - show details with ML stats
                 $details = s($log['details'] ?? 'N/A');
                 if (!empty($log['url'])) {
                     $details .= '<br>URL: ' . s($log['url']);
+                }
+                
+                // Add ML filtering statistics if available
+                if ($log['source'] === 'proxy' && isset($log['original_count'])) {
+                    $original = intval($log['original_count'] ?? 0);
+                    $filtered = intval($log['fp_filtered'] ?? 0);
+                    $final = intval($log['final_count'] ?? 0);
+                    
+                    $details .= '<br><strong>ML Filtering:</strong> ';
+                    $details .= $original . ' raw → ' . $filtered . ' FP removed → ' . $final . ' actual vulns';
+                }
+                
+                if ($log['findings'] > 0) {
+                    $summary_parts = [];
+                    if ($log['critical'] > 0) $summary_parts[] = 'Critical: ' . intval($log['critical']);
+                    if ($log['high'] > 0) $summary_parts[] = 'High: ' . intval($log['high']);
+                    if ($log['medium'] > 0) $summary_parts[] = 'Medium: ' . intval($log['medium']);
+                    if ($log['low'] > 0) $summary_parts[] = 'Low: ' . intval($log['low']);
+                    
+                    if (!empty($summary_parts)) {
+                        $details .= '<br>' . implode(' | ', $summary_parts);
+                    }
                 }
             }
 
@@ -199,6 +229,37 @@ echo html_writer::link(
 
 echo html_writer::end_div();
 echo html_writer::end_div();
+
+// Add JavaScript for reload scanner functionality
+echo html_writer::script(<<<'JS'
+function reloadScannerDashboard() {
+    const btn = document.getElementById('btn-reload-scanner-dashboard');
+    const proxyUrl = 'http://localhost:8999';
+    
+    btn.disabled = true;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Reloading...';
+    
+    fetch(proxyUrl + '/api/payloads/reload', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        btn.innerHTML = '<i class="fa fa-check"></i> Reloaded!';
+        setTimeout(() => {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            alert('Scanner reloaded successfully! All payloads are now available.');
+        }, 1500);
+    })
+    .catch(error => {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        alert('Error reloading scanner: ' + error.message);
+    });
+}
+JS
+);
 
 // Display footer
 echo $OUTPUT->footer();
