@@ -156,8 +156,14 @@ class ModelTrainer:
         
         if result.get('success'):
             print(f"✅ Training successful!")
+            print(f"   Model: {result.get('model_type', 'Unknown')}")
             print(f"   Train Accuracy: {result['train_accuracy']:.2%}")
+            print(f"   Validation Accuracy: {result.get('val_accuracy', 'N/A')}")
             print(f"   Test Accuracy: {result['test_accuracy']:.2%}")
+            print(f"   Test F1 Score: {result.get('test_f1', 'N/A')}")
+            if result.get('best_iteration'):
+                print(f"   Early Stopping: Iteration {result['best_iteration']}")
+            print(f"   GPU Used: {result.get('gpu_used', 'Unknown')}")
             print(f"\n   Top Features:")
             for feature, importance in sorted(
                 result['feature_importance'].items(), 
@@ -182,8 +188,15 @@ class ModelTrainer:
         
         if result.get('success'):
             print(f"✅ Training successful!")
-            print(f"   R² Score: {result['r2_score']:.4f}")
-            print(f"   Mean Absolute Error: {result['mean_absolute_error']:.2f}")
+            print(f"   Model: {result.get('model_type', 'Unknown')}")
+            print(f"   Train R²: {result.get('train_r2', 'N/A'):.4f}")
+            print(f"   Validation R²: {result.get('val_r2', 'N/A'):.4f}")
+            print(f"   Test R²: {result.get('test_r2', 'N/A'):.4f}")
+            print(f"   Test MAE: {result.get('test_mae', 'N/A'):.2f}")
+            print(f"   Test RMSE: {result.get('test_rmse', 'N/A'):.2f}")
+            if result.get('best_iteration'):
+                print(f"   Early Stopping: Iteration {result['best_iteration']}")
+            print(f"   GPU Used: {result.get('gpu_used', 'Unknown')}")
             print(f"\n   Top Features:")
             for feature, importance in sorted(
                 result['feature_importance'].items(), 

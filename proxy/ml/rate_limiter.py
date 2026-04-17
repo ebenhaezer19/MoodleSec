@@ -12,8 +12,9 @@ import time
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from collections import defaultdict, deque
-from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+import xgboost as xgb
 
 
 class MLRateLimiter:
@@ -376,25 +377,55 @@ class MLRateLimiter:
         X = np.array(X)
         y = np.array(risk_scores)
         
-        # Scale features
-        X_scaled = self.scaler.fit_transform(X)
-        
-        # Train Gradient Boosting Regressor
-        self.model = GradientBoostingRegressor(
-            n_estimators=100,
-            learning_rate=0.1,
-            max_depth=5,
-            min_samples_split=5,
-            random_state=42
+        # Split data - 70% train, 15% validation, 15% test
+        X_train, X_temp, y_train, y_temp = train_test_split(
+            X, y, test_size=0.3, random_state=42
+        )
+        X_val, X_test, y_val, y_test = train_test_split(
+            X_temp, y_temp, test_size=0.5, random_state=42
         )
         
-        self.model.fit(X_scaled, y)
+        # Scale features
+        X_train_scaled = self.scaler.fit_transform(X_train)
+        X_val_scaled = self.scaler.transform(X_val)
+        X_test_scaled = self.scaler.transform(X_test)
+        
+        # Train XGBoost Regressor with GPU and regularization
+        self.model = xgb.XGBRegressor(
+            n_estimators=300,
+            learning_rate=0.05,
+            max_depth=4,
+            min_child_weight=5,
+            subsample=0.7,
+            colsample_bytree=0.7,
+            reg_lambda=5,  # L2 regularization
+            reg_alpha=1,  # L1 regularization
+            tree_method='hist',
+            device='cuda',
+            objective='reg:squarederror',
+            verbosity=1,
+            random_state=42,
+            early_stopping_rounds=25  # Added to constructor
+        )
+        
+        # Train with early stopping
+        self.model.fit(
+            X_train_scaled, y_train,
+            eval_set=[(X_val_scaled, y_val)],
+            verbose=False
+        )
+        
         self.is_trained = True
         
         # Evaluate
-        train_score = self.model.score(X_scaled, y)
-        predictions = self.model.predict(X_scaled)
-        mae = np.mean(np.abs(predictions - y))
+        from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+        train_score = r2_score(y_train, self.model.predict(X_train_scaled))
+        val_score = r2_score(y_val, self.model.predict(X_val_scaled))
+        test_score = r2_score(y_test, self.model.predict(X_test_scaled))
+        
+        train_mae = mean_absolute_error(y_train, self.model.predict(X_train_scaled))
+        test_mae = mean_absolute_error(y_test, self.model.predict(X_test_scaled))
+        test_rmse = np.sqrt(mean_squared_error(y_test, self.model.predict(X_test_scaled)))
         
         # Feature importance
         feature_names = [
@@ -414,10 +445,21 @@ class MLRateLimiter:
         
         return {
             'success': True,
-            'r2_score': float(train_score),
-            'mean_absolute_error': float(mae),
-            'samples_trained': len(X),
+            'model_type': 'XGBoost',
+            'best_iteration': self.model.best_iteration if hasattr(self.model, 'best_iteration') else None,
+            'train_r2': float(train_score),
+            'val_r2': float(val_score),
+            'test_r2': float(test_score),
+            'train_mae': float(train_mae),
+            'test_mae': float(test_mae),
+            'test_rmse': float(test_rmse),
+            'samples_trained': len(X_train),
+            'samples_validated': len(X_val),
+            'samples_tested': len(X_test),
             'feature_importance': feature_importance,
+            'gpu_used': 'cuda',
+            'regularization': {'lambda': 5, 'alpha': 1, 'subsample': 0.7},
+            'early_stopping_rounds': 25,
             'timestamp': datetime.utcnow().isoformat() + 'Z'
         }
     
@@ -471,35 +513,54 @@ class MLRateLimiter:
         }
     
     def _save_model(self):
-        """Save trained model and state to disk."""
+        """Save trained model and state to disk in XGBoost JSON format."""
         os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
         
-        model_data = {
-            'model': self.model,
-            'scaler': self.scaler,
-            'is_trained': self.is_trained,
-            'blacklist': list(self.blacklist),
-            'whitelist': list(self.whitelist),
-            'timestamp': datetime.utcnow().isoformat() + 'Z'
-        }
+        model_json_path = self.model_path.replace('.pkl', '.json')
+        model_meta_path = self.model_path.replace('.pkl', '_meta.pkl')
         
-        with open(self.model_path, 'wb') as f:
-            pickle.dump(model_data, f)
+        try:
+            # Save XGBoost model in JSON format
+            if self.model is not None:
+                self.model.save_model(model_json_path)
+            
+            # Save scaler and state in pickle
+            meta_data = {
+                'scaler': self.scaler,
+                'is_trained': self.is_trained,
+                'blacklist': list(self.blacklist),
+                'whitelist': list(self.whitelist),
+                'timestamp': datetime.utcnow().isoformat() + 'Z'
+            }
+            
+            with open(model_meta_path, 'wb') as f:
+                pickle.dump(meta_data, f)
+            
+            print(f"[Rate Limiter] Model saved: {model_json_path}")
+        except Exception as e:
+            print(f"[Rate Limiter] Error saving model: {e}")
     
     def _load_model(self):
-        """Load trained model from disk if available."""
-        if os.path.exists(self.model_path):
+        """Load trained model from disk using XGBoost JSON format."""
+        model_json_path = self.model_path.replace('.pkl', '.json')
+        model_meta_path = self.model_path.replace('.pkl', '_meta.pkl')
+        
+        if os.path.exists(model_json_path) and os.path.exists(model_meta_path):
             try:
-                with open(self.model_path, 'rb') as f:
-                    model_data = pickle.load(f)
+                # Load XGBoost model from JSON
+                self.model = xgb.XGBRegressor()
+                self.model.load_model(model_json_path)
                 
-                self.model = model_data['model']
-                self.scaler = model_data['scaler']
-                self.is_trained = model_data['is_trained']
-                self.blacklist = set(model_data.get('blacklist', []))
-                self.whitelist = set(model_data.get('whitelist', []))
+                # Load scaler and state
+                with open(model_meta_path, 'rb') as f:
+                    meta_data = pickle.load(f)
                 
-                print(f"[Rate Limiter] Loaded trained model from {self.model_path}")
+                self.scaler = meta_data['scaler']
+                self.is_trained = meta_data['is_trained']
+                self.blacklist = set(meta_data.get('blacklist', []))
+                self.whitelist = set(meta_data.get('whitelist', []))
+                
+                print(f"[Rate Limiter] Loaded trained model from {model_json_path}")
             except Exception as e:
                 print(f"[Rate Limiter] Failed to load model: {e}")
                 self.is_trained = False

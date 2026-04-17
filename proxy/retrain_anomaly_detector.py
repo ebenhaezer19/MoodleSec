@@ -6,6 +6,7 @@ Regenerate training data with 25 features (18 original + 7 enhanced)
 """
 
 import json
+import os
 from ml.anomaly_detector import AnomalyDetector
 from ml.training_data_generator import TrainingDataGenerator
 
@@ -17,10 +18,16 @@ def retrain_anomaly_detector():
     print("RETRAINING ANOMALY DETECTOR WITH ENHANCED FEATURES")
     print("="*80)
     
+    # Start from a clean model so we know this run produced the artifact.
+    model_path = os.path.join('ml', 'models', 'anomaly_detector.pkl')
+    if os.path.exists(model_path):
+        os.remove(model_path)
+        print(f"\nRemoved existing model: {model_path}")
+
     # Generate normal behavior data
-    print("\nGenerating normal behavior data (200 samples)...")
+    print("\nGenerating normal behavior data (500 samples)...")
     generator = TrainingDataGenerator()
-    normal_data = generator.generate_anomaly_training_data(num_samples=200)
+    normal_data = generator.generate_anomaly_training_data(num_samples=500)
     
     print(f"✅ Generated {len(normal_data)} normal samples")
     
@@ -30,7 +37,7 @@ def retrain_anomaly_detector():
     
     # Train
     print("Training model on normal behavior patterns...")
-    results = detector.train(normal_data, contamination=0.1)
+    results = detector.train(normal_data, contamination=0.08)
     
     # Print results
     print("\n" + "="*80)

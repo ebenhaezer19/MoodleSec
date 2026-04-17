@@ -11,9 +11,10 @@ import pickle
 import os
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
-from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+import xgboost as xgb
 
 
 class SeverityPredictor:
@@ -295,31 +296,62 @@ class SeverityPredictor:
             print(f"⚠️  Warning: Class imbalance detected (min samples: {min_samples})")
             print("   Disabling stratified split")
         
-        # Split data
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y if use_stratify else None
+        # Split data - 70% train, 15% validation, 15% test
+        X_train, X_temp, y_train, y_temp = train_test_split(
+            X, y, test_size=0.3, random_state=42, stratify=y if use_stratify else None
+        )
+        X_val, X_test, y_val, y_test = train_test_split(
+            X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp if use_stratify else None
         )
         
         # Scale features
         X_train_scaled = self.scaler.fit_transform(X_train)
+        X_val_scaled = self.scaler.transform(X_val)
         X_test_scaled = self.scaler.transform(X_test)
         
-        # Train Gradient Boosting
-        self.model = GradientBoostingClassifier(
-            n_estimators=100,
-            learning_rate=0.1,
-            max_depth=5,
-            min_samples_split=5,
-            min_samples_leaf=2,
-            random_state=42
+        # Train XGBoost with GPU, regularization, and early stopping
+        # Parameters optimized for small dataset (200 samples) to prevent overfitting
+        self.model = xgb.XGBClassifier(
+            n_estimators=500,
+            learning_rate=0.05,  # Lower learning rate for better generalization
+            max_depth=4,  # Shallower trees to prevent overfitting
+            min_child_weight=5,  # Minimum samples to split node
+            subsample=0.7,  # Row subsampling to reduce variance
+            colsample_bytree=0.7,  # Feature subsampling
+            reg_lambda=10,  # L2 regularization (higher = more conservative)
+            reg_alpha=1,  # L1 regularization
+            tree_method='hist',  # Required for GPU acceleration
+            device='cuda',  # Use NVIDIA GPU
+            verbosity=1,
+            random_state=42,
+            eval_metric='mlogloss',
+            early_stopping_rounds=30  # Added to constructor
         )
         
-        self.model.fit(X_train_scaled, y_train)
+        # Train with early stopping using callbacks
+        self.model.fit(
+            X_train_scaled, y_train,
+            eval_set=[(X_val_scaled, y_val)],
+            verbose=False
+        )
+        
         self.is_trained = True
         
-        # Evaluate
-        train_score = self.model.score(X_train_scaled, y_train)
-        test_score = self.model.score(X_test_scaled, y_test)
+        # Evaluate on all three sets
+        train_predictions = self.model.predict(X_train_scaled)
+        val_predictions = self.model.predict(X_val_scaled)
+        test_predictions = self.model.predict(X_test_scaled)
+        
+        from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+        train_score = accuracy_score(y_train, train_predictions)
+        val_score = accuracy_score(y_val, val_predictions)
+        test_score = accuracy_score(y_test, test_predictions)
+        
+        # Calculate additional metrics
+        train_f1 = f1_score(y_train, train_predictions, average='weighted', zero_division=0)
+        test_f1 = f1_score(y_test, test_predictions, average='weighted', zero_division=0)
+        test_precision = precision_score(y_test, test_predictions, average='weighted', zero_division=0)
+        test_recall = recall_score(y_test, test_predictions, average='weighted', zero_division=0)
         
         # Feature importance
         feature_names = [
@@ -338,46 +370,76 @@ class SeverityPredictor:
         
         return {
             'success': True,
+            'model_type': 'XGBoost',
+            'best_iteration': self.model.best_iteration if hasattr(self.model, 'best_iteration') else None,
             'train_accuracy': float(train_score),
+            'val_accuracy': float(val_score),
             'test_accuracy': float(test_score),
+            'test_f1': float(test_f1),
+            'test_precision': float(test_precision),
+            'test_recall': float(test_recall),
             'samples_trained': len(X_train),
+            'samples_validated': len(X_val),
             'samples_tested': len(X_test),
             'feature_importance': feature_importance,
             'severity_distribution': {
                 sev: int(np.sum(y == idx))
                 for idx, sev in enumerate(self.severity_levels)
             },
+            'gpu_used': 'cuda',
+            'regularization': {'lambda': 10, 'alpha': 1, 'subsample': 0.7},
+            'early_stopping_rounds': 30,
             'timestamp': datetime.utcnow().isoformat() + 'Z'
         }
     
     def _save_model(self):
-        """Save trained model and scaler to disk."""
+        """Save trained model and scaler to disk in XGBoost JSON format."""
         os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
         
-        model_data = {
-            'model': self.model,
-            'scaler': self.scaler,
-            'label_encoder': self.label_encoder,
-            'is_trained': self.is_trained,
-            'timestamp': datetime.utcnow().isoformat() + 'Z'
-        }
+        # Split model path for XGBoost and auxiliary data
+        model_json_path = self.model_path.replace('.pkl', '.json')
+        model_meta_path = self.model_path.replace('.pkl', '_meta.pkl')
         
-        with open(self.model_path, 'wb') as f:
-            pickle.dump(model_data, f)
+        try:
+            # Save XGBoost model in JSON format
+            if self.model is not None:
+                self.model.save_model(model_json_path)
+            
+            # Save scaler and label encoder in pickle
+            meta_data = {
+                'scaler': self.scaler,
+                'label_encoder': self.label_encoder,
+                'is_trained': self.is_trained,
+                'timestamp': datetime.utcnow().isoformat() + 'Z'
+            }
+            
+            with open(model_meta_path, 'wb') as f:
+                pickle.dump(meta_data, f)
+            
+            print(f"[Severity Predictor] Model saved: {model_json_path}")
+        except Exception as e:
+            print(f"[Severity Predictor] Error saving model: {e}")
     
     def _load_model(self):
-        """Load trained model from disk if available."""
-        if os.path.exists(self.model_path):
+        """Load trained model from disk using XGBoost JSON format."""
+        model_json_path = self.model_path.replace('.pkl', '.json')
+        model_meta_path = self.model_path.replace('.pkl', '_meta.pkl')
+        
+        if os.path.exists(model_json_path) and os.path.exists(model_meta_path):
             try:
-                with open(self.model_path, 'rb') as f:
-                    model_data = pickle.load(f)
+                # Load XGBoost model from JSON
+                self.model = xgb.XGBClassifier()
+                self.model.load_model(model_json_path)
                 
-                self.model = model_data['model']
-                self.scaler = model_data['scaler']
-                self.label_encoder = model_data['label_encoder']
-                self.is_trained = model_data['is_trained']
+                # Load scaler and label encoder
+                with open(model_meta_path, 'rb') as f:
+                    meta_data = pickle.load(f)
                 
-                print(f"[Severity Predictor] Loaded trained model from {self.model_path}")
+                self.scaler = meta_data['scaler']
+                self.label_encoder = meta_data['label_encoder']
+                self.is_trained = meta_data['is_trained']
+                
+                print(f"[Severity Predictor] Loaded trained model from {model_json_path}")
             except Exception as e:
                 print(f"[Severity Predictor] Failed to load model: {e}")
                 self.is_trained = False

@@ -3,6 +3,7 @@ FastAPI reverse proxy for Moodle with logging and DAST scanning capabilities.
 """
 
 import os
+from collections import deque
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -11,7 +12,19 @@ from fastapi import FastAPI, Request, Response, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from config import MOODLE_URL, LISTEN_PORT, LOG_DIR, MAX_LOG_ENTRIES, SLACK_WEBHOOK_URL, SLACK_ENABLED
+from config import (
+    MOODLE_URL,
+    LISTEN_PORT,
+    LOG_DIR,
+    MAX_LOG_ENTRIES,
+    SLACK_WEBHOOK_URL,
+    SLACK_ENABLED,
+    ANOMALY_DETECTION_ENABLED,
+    ANOMALY_LOOKBACK_SECONDS,
+    ANOMALY_MIN_SCORE_TO_LOG,
+    ANOMALY_BLOCK_ON_DETECTION,
+    ANOMALY_BLOCK_THRESHOLD,
+)
 from utils.logger import append_log, read_logs, ensure_log_directory
 from utils.slack_notifier import SlackNotifier
 from scanners.scanner_engine import ScannerEngine
@@ -74,6 +87,12 @@ slack_notifier = None
 if SLACK_ENABLED and SLACK_WEBHOOK_URL:
     slack_notifier = SlackNotifier(SLACK_WEBHOOK_URL)
 
+# In-memory runtime buffers for anomaly observability in proxy traffic.
+RECENT_TRAFFIC_MAXLEN = 5000
+RECENT_ANOMALIES_MAXLEN = 200
+recent_traffic_events = deque(maxlen=RECENT_TRAFFIC_MAXLEN)
+recent_anomalies = deque(maxlen=RECENT_ANOMALIES_MAXLEN)
+
 
 class ScanRequest(BaseModel):
     """Request model for DAST scan trigger."""
@@ -105,6 +124,74 @@ class NativeAuthScanRequest(BaseModel):
     max_pages: int = Field(default=50, description="Maximum pages to scan")
     username: str = Field(default="admin", description="Username for authentication")
     password: str = Field(default="Admin@1234", description="Password for authentication")
+
+
+def _get_client_ip(request: Request) -> str:
+    """Resolve client IP with proxy-aware header fallback."""
+    x_forwarded_for = request.headers.get("x-forwarded-for")
+    if x_forwarded_for:
+        return x_forwarded_for.split(",")[0].strip()
+
+    x_real_ip = request.headers.get("x-real-ip")
+    if x_real_ip:
+        return x_real_ip.strip()
+
+    if request.client and request.client.host:
+        return request.client.host
+
+    return "unknown"
+
+
+def _sanitize_headers(headers: Dict[str, Any]) -> Dict[str, str]:
+    """Drop sensitive headers before logging or ML processing."""
+    sensitive_headers = {"authorization", "cookie", "set-cookie"}
+    return {
+        str(key): str(value)
+        for key, value in headers.items()
+        if str(key).lower() not in sensitive_headers
+    }
+
+
+def _prune_recent_traffic(now_ts: float) -> None:
+    """Keep only events within configured lookback window."""
+    cutoff = now_ts - ANOMALY_LOOKBACK_SECONDS
+    while recent_traffic_events and recent_traffic_events[0]["ts"] < cutoff:
+        recent_traffic_events.popleft()
+
+
+def _build_anomaly_payload(
+    request: Request,
+    target_url: str,
+    request_headers: Dict[str, str],
+    request_body: bytes,
+    response_status_code: int,
+    response_size: int,
+    response_time_ms: int,
+    response_headers: Dict[str, str],
+    request_count_last_minute: int,
+    unique_ips_last_minute: int,
+    error_rate_last_minute: float,
+) -> Dict[str, Any]:
+    """Map proxy transaction into anomaly detector feature schema."""
+    decoded_body = request_body[:4096].decode("utf-8", errors="ignore") if request_body else ""
+
+    return {
+        "request": {
+            "url": target_url,
+            "method": request.method,
+            "headers": _sanitize_headers(request_headers),
+            "body": decoded_body,
+        },
+        "response": {
+            "status_code": int(response_status_code),
+            "size": int(response_size),
+            "time": int(response_time_ms),
+            "headers": _sanitize_headers(response_headers),
+        },
+        "request_count_last_minute": int(request_count_last_minute),
+        "unique_ips_last_minute": int(max(unique_ips_last_minute, 1)),
+        "error_rate_last_minute": float(error_rate_last_minute),
+    }
 
 
 @app.get("/health")
@@ -1825,6 +1912,51 @@ async def blacklist_ip(ip: str):
     }
 
 
+@app.get("/ml/anomalies/recent")
+async def get_recent_anomalies(limit: int = 50):
+    """Get recent proxy anomalies detected by ML."""
+    safe_limit = max(1, min(limit, RECENT_ANOMALIES_MAXLEN))
+    anomalies = list(recent_anomalies)[:safe_limit]
+
+    return {
+        'success': True,
+        'count': len(anomalies),
+        'limit': safe_limit,
+        'anomaly_detection_enabled': ANOMALY_DETECTION_ENABLED,
+        'anomaly_block_on_detection': ANOMALY_BLOCK_ON_DETECTION,
+        'anomaly_block_threshold': ANOMALY_BLOCK_THRESHOLD,
+        'lookback_seconds': ANOMALY_LOOKBACK_SECONDS,
+        'anomalies': anomalies
+    }
+
+
+@app.get("/ml/anomalies/runtime")
+async def get_anomaly_runtime():
+    """Get runtime stats for traffic window used by anomaly detection."""
+    now_ts = datetime.utcnow().timestamp()
+    _prune_recent_traffic(now_ts)
+    window_events = list(recent_traffic_events)
+
+    request_count_last_minute = len(window_events)
+    unique_ips_last_minute = len({event['ip'] for event in window_events}) if window_events else 0
+    error_count = sum(1 for event in window_events if event['status_code'] >= 400)
+    error_rate_last_minute = (error_count / request_count_last_minute) if request_count_last_minute else 0.0
+
+    return {
+        'success': True,
+        'anomaly_detection_enabled': ANOMALY_DETECTION_ENABLED,
+        'window_stats': {
+            'request_count_last_minute': request_count_last_minute,
+            'unique_ips_last_minute': unique_ips_last_minute,
+            'error_rate_last_minute': round(error_rate_last_minute, 4),
+        },
+        'buffer_sizes': {
+            'recent_traffic_events': len(recent_traffic_events),
+            'recent_anomalies': len(recent_anomalies),
+        }
+    }
+
+
 # IMPORTANT: Catch-all proxy route MUST be at the end to not interfere with specific endpoints
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 async def proxy_request_catchall(request: Request, path: str) -> Response:
@@ -1840,6 +1972,7 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
     # Prepare request data
     headers = dict(request.headers)
     headers.pop("host", None)
+    client_ip = _get_client_ip(request)
     
     # Read request body
     body = await request.body()
@@ -1847,6 +1980,7 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
     # Log the incoming request
     request_log = {
         "type": "proxy_request",
+        "client_ip": client_ip,
         "method": request.method,
         "path": path,
         "target_url": target_url,
@@ -1857,6 +1991,8 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
     }
     
     try:
+        request_start = datetime.utcnow()
+
         # Forward request to Moodle
         async with httpx.AsyncClient(follow_redirects=False, timeout=30.0) as client:
             response = await client.request(
@@ -1865,15 +2001,116 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
                 headers=headers,
                 content=body
             )
+
+        response_time_ms = int((datetime.utcnow() - request_start).total_seconds() * 1000)
+
+        # Update rolling traffic window for anomaly context.
+        now_ts = datetime.utcnow().timestamp()
+        recent_traffic_events.append({
+            "ts": now_ts,
+            "ip": client_ip,
+            "status_code": response.status_code,
+        })
+        _prune_recent_traffic(now_ts)
+
+        window_events = list(recent_traffic_events)
+        request_count_last_minute = len(window_events)
+        unique_ips_last_minute = len({event["ip"] for event in window_events}) if window_events else 1
+        error_count = sum(1 for event in window_events if event["status_code"] >= 400)
+        error_rate_last_minute = (error_count / request_count_last_minute) if request_count_last_minute else 0.0
+
+        anomaly_detected = False
+        anomaly_score = 0.0
+        anomaly_reason = "Anomaly detection disabled"
+
+        if ANOMALY_DETECTION_ENABLED:
+            anomaly_payload = _build_anomaly_payload(
+                request=request,
+                target_url=target_url,
+                request_headers=headers,
+                request_body=body,
+                response_status_code=response.status_code,
+                response_size=len(response.content),
+                response_time_ms=response_time_ms,
+                response_headers=dict(response.headers),
+                request_count_last_minute=request_count_last_minute,
+                unique_ips_last_minute=unique_ips_last_minute,
+                error_rate_last_minute=error_rate_last_minute,
+            )
+
+            try:
+                anomaly_detected, anomaly_score, anomaly_reason = ml_manager.detect_anomaly(anomaly_payload)
+            except Exception as anomaly_error:
+                anomaly_reason = f"Anomaly detector error: {str(anomaly_error)}"
+                append_log(LOG_DIR, {
+                    "type": "anomaly_detector_error",
+                    "client_ip": client_ip,
+                    "path": path,
+                    "target_url": target_url,
+                    "error": str(anomaly_error),
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                })
+
+        if anomaly_detected and anomaly_score >= ANOMALY_MIN_SCORE_TO_LOG:
+            anomaly_event = {
+                "type": "proxy_anomaly",
+                "client_ip": client_ip,
+                "method": request.method,
+                "path": path,
+                "target_url": target_url,
+                "status_code": response.status_code,
+                "response_time_ms": response_time_ms,
+                "anomaly_score": round(float(anomaly_score), 4),
+                "anomaly_reason": anomaly_reason,
+                "request_count_last_minute": request_count_last_minute,
+                "unique_ips_last_minute": unique_ips_last_minute,
+                "error_rate_last_minute": round(error_rate_last_minute, 4),
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            }
+            recent_anomalies.appendleft(anomaly_event)
+            append_log(LOG_DIR, anomaly_event)
+
+        if (
+            ANOMALY_DETECTION_ENABLED
+            and ANOMALY_BLOCK_ON_DETECTION
+            and anomaly_detected
+            and anomaly_score >= ANOMALY_BLOCK_THRESHOLD
+        ):
+            blocked_event = {
+                "type": "proxy_blocked_response",
+                "client_ip": client_ip,
+                "method": request.method,
+                "path": path,
+                "target_url": target_url,
+                "status_code": response.status_code,
+                "anomaly_score": round(float(anomaly_score), 4),
+                "anomaly_reason": anomaly_reason,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            }
+            append_log(LOG_DIR, blocked_event)
+            return Response(
+                content='{"detail":"Response blocked by anomaly detector"}',
+                status_code=403,
+                media_type="application/json",
+                headers={"X-MoodleSec-Blocked": "anomaly"},
+            )
         
         # Log the response
         response_log = {
             "type": "proxy_response",
+            "client_ip": client_ip,
             "method": request.method,
             "path": path,
             "target_url": target_url,
             "status_code": response.status_code,
+            "response_time_ms": response_time_ms,
             "response_size": len(response.content),
+            "anomaly_detected": anomaly_detected,
+            "anomaly_score": round(float(anomaly_score), 4),
+            "anomaly_reason": anomaly_reason if anomaly_detected else "Normal behavior",
+            "window_request_count": request_count_last_minute,
+            "window_unique_ips": unique_ips_last_minute,
+            "window_error_rate": round(error_rate_last_minute, 4),
             "timestamp": datetime.utcnow().isoformat() + "Z"
         }
         append_log(LOG_DIR, {**request_log, **response_log, "type": "proxy_transaction"})
@@ -1882,6 +2119,10 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
         response_headers = dict(response.headers)
         response_headers.pop("content-length", None)
         response_headers.pop("transfer-encoding", None)
+
+        if anomaly_detected:
+            response_headers["X-MoodleSec-Anomaly"] = "1"
+            response_headers["X-MoodleSec-Anomaly-Score"] = f"{float(anomaly_score):.3f}"
         
         return Response(
             content=response.content,

@@ -13,9 +13,21 @@ import numpy as np
 
 from .false_positive_reducer import FalsePositiveReducer
 from .anomaly_detector import AnomalyDetector
-from .severity_predictor import SeverityPredictor
-from .rate_limiter import MLRateLimiter
 from .phishing_detector import PhishingDetector
+
+try:
+    from .severity_predictor import SeverityPredictor
+    _SEVERITY_IMPORT_ERROR = None
+except Exception as severity_import_error:
+    SeverityPredictor = None
+    _SEVERITY_IMPORT_ERROR = severity_import_error
+
+try:
+    from .rate_limiter import MLRateLimiter
+    _RATE_LIMITER_IMPORT_ERROR = None
+except Exception as rate_limiter_import_error:
+    MLRateLimiter = None
+    _RATE_LIMITER_IMPORT_ERROR = rate_limiter_import_error
 
 
 class MLManager:
@@ -41,20 +53,31 @@ class MLManager:
         # Initialize ML modules
         self.fp_reducer = FalsePositiveReducer() if enable_ml else None
         self.anomaly_detector = AnomalyDetector() if enable_ml else None
-        self.severity_predictor = SeverityPredictor() if enable_ml else None
-        self.rate_limiter = MLRateLimiter() if enable_ml else None
+        self.severity_predictor = SeverityPredictor() if (enable_ml and SeverityPredictor) else None
+        self.rate_limiter = MLRateLimiter() if (enable_ml and MLRateLimiter) else None
         self.phishing_detector = PhishingDetector() if enable_ml else None
         
         print(f"[ML Manager] Initialized (ML {'enabled' if enable_ml else 'disabled'})")
         if enable_ml:
+            if _SEVERITY_IMPORT_ERROR:
+                print(f"[ML Manager] Severity Predictor unavailable: {_SEVERITY_IMPORT_ERROR}")
+            if _RATE_LIMITER_IMPORT_ERROR:
+                print(f"[ML Manager] Rate Limiter unavailable: {_RATE_LIMITER_IMPORT_ERROR}")
             self._print_model_status()
     
     def _print_model_status(self):
         """Print status of all ML models."""
         print(f"[ML Manager] False Positive Reducer: {'trained' if self.fp_reducer.is_trained else 'not trained'}")
         print(f"[ML Manager] Anomaly Detector: {'trained' if self.anomaly_detector.is_trained else 'not trained'}")
-        print(f"[ML Manager] Severity Predictor: {'trained' if self.severity_predictor.is_trained else 'not trained'}")
-        print(f"[ML Manager] Rate Limiter: {'trained' if self.rate_limiter.is_trained else 'not trained'}")
+        if self.severity_predictor:
+            print(f"[ML Manager] Severity Predictor: {'trained' if self.severity_predictor.is_trained else 'not trained'}")
+        else:
+            print("[ML Manager] Severity Predictor: unavailable")
+
+        if self.rate_limiter:
+            print(f"[ML Manager] Rate Limiter: {'trained' if self.rate_limiter.is_trained else 'not trained'}")
+        else:
+            print("[ML Manager] Rate Limiter: unavailable")
     
     def process_finding(self, finding: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -103,20 +126,29 @@ class MLManager:
                 enhanced_finding['filter_reason'] = 'Known false positive pattern: Moodle legitimate HTML tags'
         
         # 2. Severity Prediction
-        predicted_severity, severity_confidence, severity_dist = self.severity_predictor.predict(finding, context)
-        ml_metadata['severity_prediction'] = {
-            'predicted': predicted_severity,
-            'confidence': severity_confidence,
-            'distribution': severity_dist,
-            'original': finding.get('severity', 'unknown')
-        }
-        
-        # Update severity if ML prediction is more confident
-        if severity_confidence > 0.7 and predicted_severity != finding.get('severity', '').lower():
-            enhanced_finding['severity_adjusted'] = True
-            enhanced_finding['original_severity'] = finding.get('severity')
-            enhanced_finding['severity'] = predicted_severity.capitalize()
-            enhanced_finding['severity_reason'] = f'ML prediction ({severity_confidence:.2%} confidence)'
+        if self.severity_predictor:
+            predicted_severity, severity_confidence, severity_dist = self.severity_predictor.predict(finding, context)
+            ml_metadata['severity_prediction'] = {
+                'predicted': predicted_severity,
+                'confidence': severity_confidence,
+                'distribution': severity_dist,
+                'original': finding.get('severity', 'unknown')
+            }
+
+            # Update severity if ML prediction is more confident
+            if severity_confidence > 0.7 and predicted_severity != finding.get('severity', '').lower():
+                enhanced_finding['severity_adjusted'] = True
+                enhanced_finding['original_severity'] = finding.get('severity')
+                enhanced_finding['severity'] = predicted_severity.capitalize()
+                enhanced_finding['severity_reason'] = f'ML prediction ({severity_confidence:.2%} confidence)'
+        else:
+            ml_metadata['severity_prediction'] = {
+                'predicted': finding.get('severity', 'unknown').lower(),
+                'confidence': 0.0,
+                'distribution': {},
+                'original': finding.get('severity', 'unknown'),
+                'note': 'Severity predictor unavailable'
+            }
         
         # Add ML metadata to finding
         enhanced_finding['ml_metadata'] = ml_metadata
@@ -364,8 +396,14 @@ class MLManager:
             'modules': {
                 'false_positive_reducer': self.fp_reducer.get_model_info(),
                 'anomaly_detector': self.anomaly_detector.get_model_info(),
-                'severity_predictor': self.severity_predictor.get_model_info(),
-                'rate_limiter': self.rate_limiter.get_model_info()
+                'severity_predictor': self.severity_predictor.get_model_info() if self.severity_predictor else {
+                    'trained': False,
+                    'message': f'Severity predictor unavailable: {_SEVERITY_IMPORT_ERROR}' if _SEVERITY_IMPORT_ERROR else 'Severity predictor unavailable'
+                },
+                'rate_limiter': self.rate_limiter.get_model_info() if self.rate_limiter else {
+                    'trained': False,
+                    'message': f'Rate limiter unavailable: {_RATE_LIMITER_IMPORT_ERROR}' if _RATE_LIMITER_IMPORT_ERROR else 'Rate limiter unavailable'
+                }
             },
             'timestamp': datetime.utcnow().isoformat() + 'Z'
         }

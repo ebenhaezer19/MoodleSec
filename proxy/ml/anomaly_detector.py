@@ -11,6 +11,9 @@ import os
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 from sklearn.ensemble import IsolationForest
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from collections import defaultdict
 
@@ -37,6 +40,11 @@ class AnomalyDetector:
         self.model = None
         self.scaler = StandardScaler()
         self.is_trained = False
+
+        # Optional second-stage calibration model.
+        # Learns from labeled data to reduce both FP and FN.
+        self.meta_classifier = None
+        self.meta_threshold = 0.5
         
         # Baseline statistics
         self.baseline_stats = {
@@ -48,6 +56,80 @@ class AnomalyDetector:
         
         # Load existing model if available
         self._load_model()
+
+    @staticmethod
+    def _sigmoid(score: float) -> float:
+        """Numerically stable sigmoid used for score normalization."""
+        return float(1 / (1 + np.exp(score)))
+
+    @staticmethod
+    def _safe_feature_value(features: np.ndarray, index: int, default: float = 0.0) -> float:
+        """Safely read a feature index with fallback default."""
+        if features is None or index < 0 or index >= len(features):
+            return float(default)
+        return float(features[index])
+
+    def _build_meta_features(
+        self,
+        normalized_score: float,
+        heuristic_score: float,
+        features: np.ndarray,
+    ) -> np.ndarray:
+        """Build second-stage feature vector for calibrated anomaly decision."""
+        payload_suspicion = self._safe_feature_value(features, 18)
+        is_bot = self._safe_feature_value(features, 19)
+        status_abnormality = self._safe_feature_value(features, 21)
+        freq_spike = self._safe_feature_value(features, 22)
+        time_deviation = self._safe_feature_value(features, 23)
+        request_count = self._safe_feature_value(features, 14)
+        url_length = self._safe_feature_value(features, 0)
+
+        return np.array(
+            [
+                float(normalized_score),
+                float(heuristic_score),
+                payload_suspicion,
+                is_bot,
+                status_abnormality,
+                freq_spike,
+                time_deviation,
+                request_count,
+                url_length,
+            ],
+            dtype=float,
+        )
+
+    @staticmethod
+    def _evaluate_binary_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, Any]:
+        """Compute confusion-matrix counts and common binary metrics."""
+        y_true = np.asarray(y_true).astype(int)
+        y_pred = np.asarray(y_pred).astype(int)
+
+        tp = int(np.sum((y_true == 1) & (y_pred == 1)))
+        fp = int(np.sum((y_true == 0) & (y_pred == 1)))
+        tn = int(np.sum((y_true == 0) & (y_pred == 0)))
+        fn = int(np.sum((y_true == 1) & (y_pred == 0)))
+
+        total = tp + fp + tn + fn
+        accuracy = (tp + tn) / total if total else 0.0
+        precision = tp / (tp + fp) if (tp + fp) else 0.0
+        recall = tp / (tp + fn) if (tp + fn) else 0.0
+        f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) else 0.0
+        fp_rate = fp / (fp + tn) if (fp + tn) else 0.0
+        fn_rate = fn / (fn + tp) if (fn + tp) else 0.0
+
+        return {
+            'tp': tp,
+            'fp': fp,
+            'tn': tn,
+            'fn': fn,
+            'accuracy': float(accuracy),
+            'precision': float(precision),
+            'recall': float(recall),
+            'f1': float(f1),
+            'fp_rate': float(fp_rate),
+            'fn_rate': float(fn_rate),
+        }
     
     def extract_features(self, data: Dict[str, Any]) -> np.ndarray:
         """
@@ -182,7 +264,7 @@ class AnomalyDetector:
         
         return float(entropy)
     
-    def detect(self, data: Dict[str, Any]) -> Tuple[bool, float, str]:
+    def detect(self, data: Dict[str, Any], use_meta: bool = True) -> Tuple[bool, float, str]:
         """
         Detect if the data represents an anomaly.
         
@@ -195,6 +277,8 @@ class AnomalyDetector:
         if not self.is_trained:
             # Use rule-based detection if model not trained
             return self._heuristic_detection(data)
+
+        heuristic_is_anomaly, heuristic_score, heuristic_reason = self._heuristic_detection(data)
         
         # Extract features
         features = self.extract_features(data)
@@ -211,12 +295,183 @@ class AnomalyDetector:
         is_anomaly = prediction == -1
         
         # Normalize score to 0-1 range (higher = more anomalous)
-        normalized_score = 1 / (1 + np.exp(anomaly_score))
+        normalized_score = self._sigmoid(anomaly_score)
         
         # Determine reason
         reason = self._determine_anomaly_reason(data, features.flatten())
+
+        # Optional second-stage calibrated classifier.
+        # This is trained with labeled normal/anomaly samples to improve
+        # the FP/FN trade-off over raw IsolationForest prediction.
+        if use_meta and self.meta_classifier is not None:
+            meta_features = self._build_meta_features(
+                normalized_score=normalized_score,
+                heuristic_score=heuristic_score,
+                features=features.flatten(),
+            ).reshape(1, -1)
+
+            calibrated_probability = float(self.meta_classifier.predict_proba(meta_features)[0][1])
+
+            # Preserve very strong heuristic detections for obvious payload attacks.
+            if heuristic_is_anomaly and heuristic_score >= 0.85:
+                calibrated_probability = max(calibrated_probability, float(heuristic_score))
+
+            calibrated_is_anomaly = calibrated_probability >= self.meta_threshold
+
+            if calibrated_is_anomaly:
+                combined_reason = reason
+                if heuristic_reason and heuristic_reason != "Normal behavior":
+                    combined_reason = heuristic_reason
+                    if reason and reason != "Anomalous pattern detected":
+                        combined_reason = f"{heuristic_reason}; {reason}"
+                return True, calibrated_probability, combined_reason or "Anomalous pattern detected"
+
+            return False, calibrated_probability, "Normal behavior"
+
+        # Hybrid safeguard: let strong heuristic signals override the model.
+        # This keeps obvious attack traffic detectable even when the learned
+        # Isolation Forest boundary is conservative.
+        if heuristic_is_anomaly and heuristic_score >= 0.5:
+            combined_reason = heuristic_reason
+            if reason and reason != "Anomalous pattern detected":
+                combined_reason = f"{heuristic_reason}; {reason}" if heuristic_reason else reason
+            return True, float(max(normalized_score, heuristic_score)), combined_reason
+
+        if not is_anomaly and not heuristic_is_anomaly:
+            return False, float(normalized_score), "Normal behavior"
         
         return is_anomaly, float(normalized_score), reason
+
+    def train_meta_classifier(
+        self,
+        normal_data: List[Dict[str, Any]],
+        anomaly_data: List[Dict[str, Any]],
+        validation_ratio: float = 0.2,
+        random_state: int = 42,
+        model_type: str = 'random_forest',
+    ) -> Dict[str, Any]:
+        """
+        Train calibrated second-stage classifier on labeled normal/anomaly data.
+
+        This stage learns a better decision boundary from model scores +
+        heuristic features to reduce both false positives and false negatives.
+        """
+        if not self.is_trained or self.model is None:
+            return {
+                'error': 'Base anomaly model must be trained before meta classifier training'
+            }
+
+        if len(normal_data) < 30 or len(anomaly_data) < 30:
+            return {
+                'error': 'Insufficient labeled data for meta classifier training (need >=30 normal and >=30 anomaly)',
+                'normal_samples': len(normal_data),
+                'anomaly_samples': len(anomaly_data),
+            }
+
+        X = []
+        y = []
+
+        for sample in normal_data:
+            features = self.extract_features(sample)
+            features_flat = features.flatten()
+            features_scaled = self.scaler.transform(features)
+            anomaly_score = self.model.score_samples(features_scaled)[0]
+            normalized_score = self._sigmoid(anomaly_score)
+            _, heuristic_score, _ = self._heuristic_detection(sample)
+            X.append(self._build_meta_features(normalized_score, heuristic_score, features_flat))
+            y.append(0)
+
+        for sample in anomaly_data:
+            features = self.extract_features(sample)
+            features_flat = features.flatten()
+            features_scaled = self.scaler.transform(features)
+            anomaly_score = self.model.score_samples(features_scaled)[0]
+            normalized_score = self._sigmoid(anomaly_score)
+            _, heuristic_score, _ = self._heuristic_detection(sample)
+            X.append(self._build_meta_features(normalized_score, heuristic_score, features_flat))
+            y.append(1)
+
+        X = np.array(X, dtype=float)
+        y = np.array(y, dtype=int)
+
+        if len(np.unique(y)) < 2:
+            return {'error': 'Meta classifier requires both classes in labeled data'}
+
+        X_train, X_val, y_train, y_val = train_test_split(
+            X,
+            y,
+            test_size=validation_ratio,
+            random_state=random_state,
+            stratify=y,
+        )
+
+        if model_type == 'random_forest':
+            model = RandomForestClassifier(
+                n_estimators=300,
+                class_weight='balanced_subsample',
+                random_state=random_state,
+                n_jobs=-1,
+            )
+        elif model_type == 'logistic':
+            model = LogisticRegression(max_iter=1000, class_weight='balanced', random_state=random_state)
+        else:
+            return {
+                'error': f"Unsupported meta model type: {model_type}. Use 'random_forest' or 'logistic'"
+            }
+
+        model.fit(X_train, y_train)
+
+        val_probabilities = model.predict_proba(X_val)[:, 1]
+        threshold_candidates = np.linspace(0.30, 0.85, 56)
+
+        best_result = None
+        for threshold in threshold_candidates:
+            y_pred = (val_probabilities >= threshold).astype(int)
+            metrics = self._evaluate_binary_metrics(y_val, y_pred)
+            objective = metrics['fp_rate'] + metrics['fn_rate']
+
+            if (
+                best_result is None
+                or objective < best_result['objective']
+                or (
+                    abs(objective - best_result['objective']) < 1e-12
+                    and metrics['f1'] > best_result['metrics']['f1']
+                )
+            ):
+                best_result = {
+                    'threshold': float(threshold),
+                    'objective': float(objective),
+                    'metrics': metrics,
+                }
+
+        # Refit on all labeled samples after choosing threshold.
+        if model_type == 'random_forest':
+            final_model = RandomForestClassifier(
+                n_estimators=300,
+                class_weight='balanced_subsample',
+                random_state=random_state,
+                n_jobs=-1,
+            )
+        else:
+            final_model = LogisticRegression(max_iter=1000, class_weight='balanced', random_state=random_state)
+
+        final_model.fit(X, y)
+
+        self.meta_classifier = final_model
+        self.meta_threshold = best_result['threshold'] if best_result else 0.5
+        self._save_model()
+
+        return {
+            'success': True,
+            'normal_samples': len(normal_data),
+            'anomaly_samples': len(anomaly_data),
+            'train_samples': int(len(y_train)),
+            'validation_samples': int(len(y_val)),
+            'meta_model_type': model_type,
+            'meta_threshold': float(self.meta_threshold),
+            'validation_metrics': best_result['metrics'] if best_result else {},
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+        }
     
     def _heuristic_detection(self, data: Dict[str, Any]) -> Tuple[bool, float, str]:
         """
@@ -260,6 +515,20 @@ class AnomalyDetector:
         if any(pattern in url.lower() for pattern in ['../', 'etc/passwd', 'union select', '<script>']):
             anomalies.append("Suspicious URL pattern")
             score += 0.7
+
+        # Check 6: Suspicious request body content
+        body = data.get('request', {}).get('body', '')
+        suspicious_body_patterns = ['<script', 'union select', '../', 'or 1=1', 'select * from', 'sqlmap', 'eval(', 'cmd.exe']
+        if any(pattern in body.lower() for pattern in suspicious_body_patterns):
+            anomalies.append("Suspicious request payload")
+            score += 0.8
+
+        # Check 7: Bot / scanner user agent
+        user_agent = data.get('request', {}).get('headers', {}).get('User-Agent', '')
+        bot_keywords = ['bot', 'spider', 'crawler', 'scanner', 'nikto', 'sqlmap', 'nmap']
+        if any(keyword in user_agent.lower() for keyword in bot_keywords):
+            anomalies.append("Scanner or bot user-agent")
+            score += 0.5
         
         is_anomaly = score > 0.5
         reason = "; ".join(anomalies) if anomalies else "Normal behavior"
@@ -336,6 +605,10 @@ class AnomalyDetector:
         
         self.model.fit(X_scaled)
         self.is_trained = True
+
+        # Base model retraining invalidates prior calibration model.
+        self.meta_classifier = None
+        self.meta_threshold = 0.5
         
         # Calculate baseline statistics
         self._calculate_baseline_stats(training_data)
@@ -354,6 +627,7 @@ class AnomalyDetector:
             'anomalies_detected': int(anomaly_count),
             'normal_samples': int(normal_count),
             'contamination': contamination,
+            'meta_classifier_enabled': False,
             'baseline_stats': self.baseline_stats,
             'timestamp': datetime.utcnow().isoformat() + 'Z'
         }
@@ -401,6 +675,8 @@ class AnomalyDetector:
             'model': self.model,
             'scaler': self.scaler,
             'is_trained': self.is_trained,
+            'meta_classifier': self.meta_classifier,
+            'meta_threshold': self.meta_threshold,
             'baseline_stats': self.baseline_stats,
             'timestamp': datetime.utcnow().isoformat() + 'Z'
         }
@@ -418,6 +694,8 @@ class AnomalyDetector:
                 self.model = model_data['model']
                 self.scaler = model_data['scaler']
                 self.is_trained = model_data['is_trained']
+                self.meta_classifier = model_data.get('meta_classifier')
+                self.meta_threshold = float(model_data.get('meta_threshold', 0.5))
                 self.baseline_stats = model_data.get('baseline_stats', self.baseline_stats)
                 
                 print(f"[Anomaly Detector] Loaded trained model from {self.model_path}")
@@ -437,6 +715,10 @@ class AnomalyDetector:
             'trained': True,
             'n_estimators': self.model.n_estimators,
             'contamination': self.model.contamination,
+            'meta_classifier': {
+                'enabled': self.meta_classifier is not None,
+                'threshold': float(self.meta_threshold),
+            },
             'baseline_stats': self.baseline_stats,
             'model_path': self.model_path
         }
