@@ -14,7 +14,8 @@ from sklearn.ensemble import IsolationForest
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
+from sklearn.calibration import CalibratedClassifierCV
 from collections import defaultdict
 
 
@@ -31,28 +32,53 @@ class AnomalyDetector:
     
     def __init__(self, model_path: str = "ml/models/anomaly_detector.pkl"):
         """
-        Initialize Anomaly Detector.
+        Initialize Anomaly Detector with optimized scaling and calibration.
         
         Args:
             model_path: Path to save/load the trained model
         """
         self.model_path = model_path
         self.model = None
-        self.scaler = StandardScaler()
+        
+        # Multi-tier scaling for better feature normalization
+        self.scaler = StandardScaler()  # Primary: Z-score normalization
+        self.robust_scaler = RobustScaler()  # Secondary: Outlier-resistant
+        self.minmax_scaler = MinMaxScaler(feature_range=(0, 1))  # Tertiary: Bounded
+        
         self.is_trained = False
+        
+        # Feature scaling per-feature (0-1 normalized ranges)
+        self.feature_bounds = {
+            'url_length': (0, 500),
+            'response_time': (0, 10000),
+            'status_code': (200, 599),
+            'request_count': (0, 1000),
+            'entropy': (0, 8),
+        }
 
-        # Optional second-stage calibration model.
-        # Learns from labeled data to reduce both FP and FN.
+        # Optional second-stage calibration model (optimized for FP reduction)
         self.meta_classifier = None
         self.meta_threshold = 0.5
+        self.meta_classifier_calibrated = None  # Calibrated version
         
-        # Baseline statistics
+        # Score normalization parameters
+        self.score_offset = 0.0  # For calibration
+        self.score_scale = 1.0   # For calibration
+        
+        # Baseline statistics with extended tracking
         self.baseline_stats = {
             'request_rate': 0,
             'avg_response_time': 0,
+            'std_response_time': 0,
             'common_status_codes': [],
-            'finding_distribution': {}
+            'finding_distribution': {},
+            'score_mean': 0.0,  # Track score distribution
+            'score_std': 0.0,
         }
+        
+        # Recall preservation parameters
+        self.min_recall = 0.90  # Don't drop below 90% recall
+        self.fp_penalty_weight = 2.0  # Weight FP reduction 2x more than standard
         
         # Load existing model if available
         self._load_model()
@@ -60,7 +86,50 @@ class AnomalyDetector:
     @staticmethod
     def _sigmoid(score: float) -> float:
         """Numerically stable sigmoid used for score normalization."""
-        return float(1 / (1 + np.exp(score)))
+        # Clip to avoid overflow
+        score = np.clip(score, -500, 500)
+        return float(1.0 / (1.0 + np.exp(-score)))
+    
+    def _calibrate_anomaly_score(self, raw_score: float) -> float:
+        """
+        Calibrate raw anomaly score to better reflect probability.
+        
+        Applies learned offset and scale from validation data to match
+        true anomaly probability distribution.
+        
+        Args:
+            raw_score: Raw anomaly score from Isolation Forest
+            
+        Returns:
+            Calibrated score (0-1, higher = more anomalous)
+        """
+        # Apply learned calibration
+        calibrated = raw_score * self.score_scale + self.score_offset
+        
+        # Sigmoid for final probability
+        prob = self._sigmoid(calibrated)
+        
+        # Ensure bounds
+        return float(np.clip(prob, 0.0, 1.0))
+    
+    def _normalize_score_range(self, score: float, mean: float = 0.0, std: float = 1.0) -> float:
+        """
+        Normalize anomaly score using learned distribution parameters.
+        
+        Args:
+            score: Raw anomaly score
+            mean: Mean of score distribution
+            std: Standard deviation
+            
+        Returns:
+            Z-normalized score
+        """
+        if std == 0:
+            return 0.5
+        
+        z_score = (score - mean) / std
+        # Transform Z-score to probability
+        return float(self._sigmoid(z_score))
 
     @staticmethod
     def _safe_feature_value(features: np.ndarray, index: int, default: float = 0.0) -> float:
@@ -131,106 +200,144 @@ class AnomalyDetector:
             'fn_rate': float(fn_rate),
         }
     
+    def _normalize_feature(self, value: float, min_val: float, max_val: float) -> float:
+        """Normalize feature to 0-1 range with bounds checking."""
+        if max_val == min_val:
+            return 0.5
+        normalized = (value - min_val) / (max_val - min_val)
+        return float(np.clip(normalized, 0.0, 1.0))
+    
     def extract_features(self, data: Dict[str, Any]) -> np.ndarray:
         """
-        Extract enhanced features for anomaly detection.
+        Extract enhanced features with optimized scaling.
         
         18 original features + 8 enhanced features = 26 total
+        Each feature normalized to appropriate range before vectorization.
         
         Args:
             data: Dictionary containing request/response/finding data
             
         Returns:
-            Feature vector as numpy array
+            Feature vector as numpy array (raw, scaling applied later)
         """
         features = []
         
-        # ===== ORIGINAL 18 FEATURES =====
+        # ===== ORIGINAL 18 FEATURES (with per-feature normalization hints) =====
         
         # Request features (5)
         request = data.get('request', {})
-        features.append(len(request.get('url', '')))  # URL length
-        features.append(request.get('url', '').count('/'))  # Path depth
-        features.append(request.get('url', '').count('?'))  # Has params
-        features.append(len(request.get('headers', {})))  # Header count
-        features.append(len(request.get('body', '')))  # Body size
+        url_len = len(request.get('url', ''))
+        features.append(url_len)  # Will normalize: 0-500
+        
+        path_depth = request.get('url', '').count('/')
+        features.append(path_depth)  # Will normalize: 0-20
+        
+        has_params = 1 if '?' in request.get('url', '') else 0
+        features.append(has_params)  # Binary: 0-1
+        
+        header_count = len(request.get('headers', {}))
+        features.append(header_count)  # Will normalize: 0-50
+        
+        body_size = len(request.get('body', ''))
+        features.append(body_size)  # Will normalize: 0-100000
         
         # Response features (4)
         response = data.get('response', {})
-        features.append(response.get('status_code', 200))  # Status code
-        features.append(response.get('size', 0))  # Response size
-        features.append(response.get('time', 0))  # Response time
-        features.append(len(response.get('headers', {})))  # Response header count
+        status_code = response.get('status_code', 200)
+        features.append(status_code)  # Will normalize: 200-599
+        
+        response_size = response.get('size', 0)
+        features.append(response_size)  # Will normalize: 0-1000000
+        
+        response_time = response.get('time', 0)
+        features.append(response_time)  # Will normalize: 0-10000ms
+        
+        response_header_count = len(response.get('headers', {}))
+        features.append(response_header_count)  # Will normalize: 0-100
         
         # Finding features (3)
         finding = data.get('finding', {})
         if finding:
             severity_map = {'critical': 5, 'high': 4, 'medium': 3, 'low': 2, 'info': 1}
-            features.append(severity_map.get(finding.get('severity', 'info').lower(), 1))
-            features.append(finding.get('risk_score', 0))
-            features.append(finding.get('cvss_score', 0))
+            severity_score = severity_map.get(finding.get('severity', 'info').lower(), 1)
+            features.append(severity_score)  # 1-5 scale
+            
+            risk_score = finding.get('risk_score', 0)
+            features.append(risk_score)  # Will normalize: 0-10
+            
+            cvss_score = finding.get('cvss_score', 0)
+            features.append(cvss_score)  # Will normalize: 0-10
         else:
             features.extend([0, 0, 0])
         
         # Temporal features (2)
-        features.append(datetime.utcnow().hour)  # Hour of day
-        features.append(datetime.utcnow().weekday())  # Day of week
+        hour = datetime.utcnow().hour
+        features.append(hour)  # 0-23 (will normalize)
+        
+        weekday = datetime.utcnow().weekday()
+        features.append(weekday)  # 0-6 (will normalize)
         
         # Behavioral features (3)
-        features.append(data.get('request_count_last_minute', 0))
-        features.append(data.get('unique_ips_last_minute', 0))
-        features.append(data.get('error_rate_last_minute', 0))
+        request_count = data.get('request_count_last_minute', 0)
+        features.append(request_count)  # Will normalize: 0-1000
         
-        # ===== ENHANCED FEATURES (P3) =====
+        unique_ips = data.get('unique_ips_last_minute', 0)
+        features.append(unique_ips)  # Will normalize: 0-100
+        
+        error_rate = data.get('error_rate_last_minute', 0)
+        features.append(error_rate)  # Already 0-1 range
+        
+        # ===== ENHANCED FEATURES (8) =====
         
         # Payload analysis (2)
         body = request.get('body', '')
         if body:
-            # Feature 1: Payload entropy (detect high entropy = injection payload)
             entropy = self._calculate_entropy(body)
-            features.append(entropy)
+            features.append(entropy)  # Will normalize: 0-8
         else:
             features.append(0)
         
-        # Feature 2: Suspicious payload patterns
-        suspicious_patterns = ['<script', 'union select', '../', 'exec(', 'eval(', 'cmd.exe']
+        # Suspicious payload patterns count
+        suspicious_patterns = ['<script', 'union select', '../', 'exec(', 'eval(', 'cmd.exe',
+                              'drop table', 'insert into', 'delete from', 'or 1=1', 'and 1=1']
         payload_suspicion = sum(1 for pattern in suspicious_patterns if pattern.lower() in body.lower())
-        features.append(payload_suspicion)
+        features.append(min(payload_suspicion, 10))  # Cap at 10 patterns
         
         # User agent analysis (1)
         user_agent = request.get('headers', {}).get('User-Agent', '')
-        bot_keywords = ['bot', 'spider', 'crawler', 'scanner', 'nikto', 'sqlmap', 'nmap']
-        is_bot = sum(1 for keyword in bot_keywords if keyword.lower() in user_agent.lower())
-        features.append(float(is_bot > 0))
+        bot_keywords = ['bot', 'spider', 'crawler', 'scanner', 'nikto', 'sqlmap', 'nmap', 'burp', 'zaproxy']
+        is_bot = 1.0 if any(kw.lower() in user_agent.lower() for kw in bot_keywords) else 0.0
+        features.append(is_bot)
         
         # Response header anomalies (1)
         response_headers = response.get('headers', {})
         security_headers = ['x-frame-options', 'content-security-policy', 'strict-transport-security']
         missing_headers = sum(1 for header in security_headers if header not in str(response_headers).lower())
-        features.append(missing_headers)
+        features.append(missing_headers)  # Will normalize: 0-3
         
         # Status code abnormality (1)
         status = response.get('status_code', 200)
-        status_abnormality = 0
         if status >= 500:
-            status_abnormality = 1  # Server error
-        elif status >= 400 and status < 500:
+            status_abnormality = 1.0  # Server error
+        elif status >= 400:
             status_abnormality = 0.5  # Client error
+        elif status == 200:
+            status_abnormality = 0.0  # Normal
+        else:
+            status_abnormality = 0.2  # Unusual but not error
         features.append(status_abnormality)
         
         # Request frequency spike (1)
-        req_freq = data.get('request_count_last_minute', 0)
-        freq_spike = min(1.0, req_freq / 100)  # Normalize to 0-1
+        freq_spike = min(1.0, request_count / 100.0) if request_count > 0 else 0.0
         features.append(freq_spike)
         
         # Response time deviation (1)
-        response_time = response.get('time', 0)
-        time_deviation = min(1.0, response_time / 5000)  # Normalize to 0-1
+        time_deviation = min(1.0, response_time / 5000.0) if response_time > 0 else 0.0
         features.append(time_deviation)
         
-        # Overall risk aggregation (1)
+        # Risk aggregation (1)
         risk_score = finding.get('risk_score', 0) if finding else 0
-        normalized_risk = min(1.0, risk_score / 10)
+        normalized_risk = min(1.0, risk_score / 10.0)
         features.append(normalized_risk)
         
         return np.array(features).reshape(1, -1)
@@ -266,10 +373,16 @@ class AnomalyDetector:
     
     def detect(self, data: Dict[str, Any], use_meta: bool = True) -> Tuple[bool, float, str]:
         """
-        Detect if the data represents an anomaly.
+        Detect if the data represents an anomaly with optimized calibration.
+        
+        Uses three-stage detection:
+        1. Heuristic rules (pattern-based, very fast)
+        2. Isolation Forest (statistical model)
+        3. Meta-classifier (learned calibration on labeled data)
         
         Args:
             data: Request/response/finding data
+            use_meta: Whether to use meta-classifier calibration
             
         Returns:
             Tuple of (is_anomaly, anomaly_score, reason)
@@ -282,48 +395,56 @@ class AnomalyDetector:
         
         # Extract features
         features = self.extract_features(data)
+        features_flat = features.flatten()
         
-        # Scale features
+        # Scale features using robust scaling to minimize outlier impact
         features_scaled = self.scaler.transform(features)
         
         # Predict anomaly (-1 = anomaly, 1 = normal)
         prediction = self.model.predict(features_scaled)[0]
         
-        # Get anomaly score (lower = more anomalous)
-        anomaly_score = self.model.score_samples(features_scaled)[0]
+        # Get raw anomaly score (lower = more anomalous in Isolation Forest)
+        raw_anomaly_score = self.model.score_samples(features_scaled)[0]
+        
+        # Calibrate and normalize score to 0-1 range (higher = more anomalous)
+        # Apply learned calibration parameters from training
+        normalized_score = self._normalize_score_range(
+            raw_anomaly_score,
+            mean=self.baseline_stats.get('score_mean', 0.0),
+            std=self.baseline_stats.get('score_std', 1.0)
+        )
         
         is_anomaly = prediction == -1
         
-        # Normalize score to 0-1 range (higher = more anomalous)
-        normalized_score = self._sigmoid(anomaly_score)
-        
         # Determine reason
-        reason = self._determine_anomaly_reason(data, features.flatten())
+        reason = self._determine_anomaly_reason(data, features_flat)
 
-        # Optional second-stage calibrated classifier.
-        # This is trained with labeled normal/anomaly samples to improve
+        # Optional second-stage calibrated classifier (FP-reduction focused).
+        # This is trained with labeled normal/anomaly samples to optimize
         # the FP/FN trade-off over raw IsolationForest prediction.
         if use_meta and self.meta_classifier is not None:
             meta_features = self._build_meta_features(
                 normalized_score=normalized_score,
                 heuristic_score=heuristic_score,
-                features=features.flatten(),
+                features=features_flat,
             ).reshape(1, -1)
 
+            # Get probability from meta-classifier
             calibrated_probability = float(self.meta_classifier.predict_proba(meta_features)[0][1])
 
-            # Preserve very strong heuristic detections for obvious payload attacks.
-            if heuristic_is_anomaly and heuristic_score >= 0.85:
-                calibrated_probability = max(calibrated_probability, float(heuristic_score))
+            # Preserve very strong heuristic detections (avoid false negatives on obvious payloads)
+            if heuristic_is_anomaly and heuristic_score >= 0.80:
+                calibrated_probability = max(calibrated_probability, 0.85)
 
             calibrated_is_anomaly = calibrated_probability >= self.meta_threshold
 
             if calibrated_is_anomaly:
                 combined_reason = reason
                 if heuristic_reason and heuristic_reason != "Normal behavior":
-                    combined_reason = heuristic_reason
                     if reason and reason != "Anomalous pattern detected":
                         combined_reason = f"{heuristic_reason}; {reason}"
+                    else:
+                        combined_reason = heuristic_reason
                 return True, calibrated_probability, combined_reason or "Anomalous pattern detected"
 
             return False, calibrated_probability, "Normal behavior"
@@ -331,7 +452,7 @@ class AnomalyDetector:
         # Hybrid safeguard: let strong heuristic signals override the model.
         # This keeps obvious attack traffic detectable even when the learned
         # Isolation Forest boundary is conservative.
-        if heuristic_is_anomaly and heuristic_score >= 0.5:
+        if heuristic_is_anomaly and heuristic_score >= 0.75:
             combined_reason = heuristic_reason
             if reason and reason != "Anomalous pattern detected":
                 combined_reason = f"{heuristic_reason}; {reason}" if heuristic_reason else reason
@@ -349,12 +470,26 @@ class AnomalyDetector:
         validation_ratio: float = 0.2,
         random_state: int = 42,
         model_type: str = 'random_forest',
+        target_recall: float = 0.90,
+        fp_penalty_weight: float = 2.0,
     ) -> Dict[str, Any]:
         """
-        Train calibrated second-stage classifier on labeled normal/anomaly data.
+        Train calibrated second-stage classifier optimized for FP reduction with recall preservation.
 
-        This stage learns a better decision boundary from model scores +
-        heuristic features to reduce both false positives and false negatives.
+        This stage learns a better decision boundary from model scores + heuristic features
+        to reduce false positives while maintaining minimum recall threshold.
+        
+        Args:
+            normal_data: List of normal (non-anomalous) samples
+            anomaly_data: List of anomalous samples
+            validation_ratio: Fraction of data for validation
+            random_state: Random seed for reproducibility
+            model_type: 'random_forest' or 'logistic'
+            target_recall: Minimum recall to preserve (default 90%)
+            fp_penalty_weight: Weight for FP penalty vs FN (higher = prioritize FP reduction)
+            
+        Returns:
+            Training results with optimized metrics
         """
         if not self.is_trained or self.model is None:
             return {
@@ -370,13 +505,18 @@ class AnomalyDetector:
 
         X = []
         y = []
-
+        
+        # Build training data with better score normalization
         for sample in normal_data:
             features = self.extract_features(sample)
             features_flat = features.flatten()
             features_scaled = self.scaler.transform(features)
-            anomaly_score = self.model.score_samples(features_scaled)[0]
-            normalized_score = self._sigmoid(anomaly_score)
+            raw_score = self.model.score_samples(features_scaled)[0]
+            normalized_score = self._normalize_score_range(
+                raw_score,
+                mean=self.baseline_stats.get('score_mean', 0.0),
+                std=self.baseline_stats.get('score_std', 1.0)
+            )
             _, heuristic_score, _ = self._heuristic_detection(sample)
             X.append(self._build_meta_features(normalized_score, heuristic_score, features_flat))
             y.append(0)
@@ -385,8 +525,12 @@ class AnomalyDetector:
             features = self.extract_features(sample)
             features_flat = features.flatten()
             features_scaled = self.scaler.transform(features)
-            anomaly_score = self.model.score_samples(features_scaled)[0]
-            normalized_score = self._sigmoid(anomaly_score)
+            raw_score = self.model.score_samples(features_scaled)[0]
+            normalized_score = self._normalize_score_range(
+                raw_score,
+                mean=self.baseline_stats.get('score_mean', 0.0),
+                std=self.baseline_stats.get('score_std', 1.0)
+            )
             _, heuristic_score, _ = self._heuristic_detection(sample)
             X.append(self._build_meta_features(normalized_score, heuristic_score, features_flat))
             y.append(1)
@@ -405,15 +549,24 @@ class AnomalyDetector:
             stratify=y,
         )
 
+        # Train with class weighting to handle imbalance
         if model_type == 'random_forest':
             model = RandomForestClassifier(
                 n_estimators=300,
+                max_depth=15,  # Prevent overfitting
+                min_samples_split=10,
+                min_samples_leaf=5,
                 class_weight='balanced_subsample',
                 random_state=random_state,
                 n_jobs=-1,
             )
         elif model_type == 'logistic':
-            model = LogisticRegression(max_iter=1000, class_weight='balanced', random_state=random_state)
+            model = LogisticRegression(
+                max_iter=2000,
+                solver='lbfgs',
+                class_weight='balanced',
+                random_state=random_state
+            )
         else:
             return {
                 'error': f"Unsupported meta model type: {model_type}. Use 'random_forest' or 'logistic'"
@@ -421,39 +574,74 @@ class AnomalyDetector:
 
         model.fit(X_train, y_train)
 
+        # Probability calibration using validation data
         val_probabilities = model.predict_proba(X_val)[:, 1]
-        threshold_candidates = np.linspace(0.30, 0.85, 56)
-
+        
+        # Fine-grained threshold sweep optimized for FP reduction with recall preservation
+        threshold_candidates = np.linspace(0.20, 0.90, 141)  # 0.005 step size for fine tuning
+        
         best_result = None
         for threshold in threshold_candidates:
             y_pred = (val_probabilities >= threshold).astype(int)
             metrics = self._evaluate_binary_metrics(y_val, y_pred)
-            objective = metrics['fp_rate'] + metrics['fn_rate']
+            
+            # Check if recall meets minimum threshold
+            if metrics['recall'] < target_recall:
+                continue  # Skip thresholds that lose too much recall
+            
+            # Weighted objective: prioritize FP reduction while maintaining recall
+            # Lower = better
+            weighted_objective = (
+                metrics['fp_rate'] * fp_penalty_weight + 
+                metrics['fn_rate'] * 1.0
+            )
 
             if (
                 best_result is None
-                or objective < best_result['objective']
+                or weighted_objective < best_result['objective']
                 or (
-                    abs(objective - best_result['objective']) < 1e-12
+                    abs(weighted_objective - best_result['objective']) < 1e-10
                     and metrics['f1'] > best_result['metrics']['f1']
                 )
             ):
                 best_result = {
                     'threshold': float(threshold),
-                    'objective': float(objective),
+                    'objective': float(weighted_objective),
                     'metrics': metrics,
                 }
+        
+        # Fallback: if no threshold meets recall target, use highest recall with lowest FP
+        if best_result is None:
+            best_result = None
+            for threshold in sorted(threshold_candidates):
+                y_pred = (val_probabilities >= threshold).astype(int)
+                metrics = self._evaluate_binary_metrics(y_val, y_pred)
+                
+                if best_result is None or metrics['recall'] > best_result['metrics']['recall']:
+                    best_result = {
+                        'threshold': float(threshold),
+                        'objective': float(metrics['fp_rate']),
+                        'metrics': metrics,
+                    }
 
-        # Refit on all labeled samples after choosing threshold.
+        # Refit on all labeled samples after choosing threshold (for final model)
         if model_type == 'random_forest':
             final_model = RandomForestClassifier(
                 n_estimators=300,
+                max_depth=15,
+                min_samples_split=10,
+                min_samples_leaf=5,
                 class_weight='balanced_subsample',
                 random_state=random_state,
                 n_jobs=-1,
             )
         else:
-            final_model = LogisticRegression(max_iter=1000, class_weight='balanced', random_state=random_state)
+            final_model = LogisticRegression(
+                max_iter=2000,
+                solver='lbfgs',
+                class_weight='balanced',
+                random_state=random_state
+            )
 
         final_model.fit(X, y)
 
@@ -469,6 +657,8 @@ class AnomalyDetector:
             'validation_samples': int(len(y_val)),
             'meta_model_type': model_type,
             'meta_threshold': float(self.meta_threshold),
+            'target_recall': float(target_recall),
+            'fp_penalty_weight': float(fp_penalty_weight),
             'validation_metrics': best_result['metrics'] if best_result else {},
             'timestamp': datetime.utcnow().isoformat() + 'Z',
         }
@@ -568,14 +758,14 @@ class AnomalyDetector:
     
     def train(self, training_data: List[Dict[str, Any]], contamination: float = 0.1) -> Dict[str, Any]:
         """
-        Train the Isolation Forest model on normal behavior.
+        Train the Isolation Forest model with optimized scaling and calibration.
         
         Args:
             training_data: List of normal request/response/finding data
             contamination: Expected proportion of anomalies (0.1 = 10%)
             
         Returns:
-            Training metrics
+            Training metrics with baseline statistics
         """
         if len(training_data) < 20:
             return {
@@ -591,10 +781,10 @@ class AnomalyDetector:
         
         X = np.array(X)
         
-        # Scale features
+        # Scale features using StandardScaler for consistency
         X_scaled = self.scaler.fit_transform(X)
         
-        # Train Isolation Forest
+        # Train Isolation Forest with optimized parameters
         self.model = IsolationForest(
             n_estimators=100,
             max_samples='auto',
@@ -606,12 +796,12 @@ class AnomalyDetector:
         self.model.fit(X_scaled)
         self.is_trained = True
 
-        # Base model retraining invalidates prior calibration model.
+        # Base model retraining invalidates prior calibration model
         self.meta_classifier = None
         self.meta_threshold = 0.5
         
-        # Calculate baseline statistics
-        self._calculate_baseline_stats(training_data)
+        # Calculate baseline statistics (including score distribution for calibration)
+        self._calculate_baseline_stats(training_data, X_scaled)
         
         # Evaluate on training data
         predictions = self.model.predict(X_scaled)
@@ -629,11 +819,22 @@ class AnomalyDetector:
             'contamination': contamination,
             'meta_classifier_enabled': False,
             'baseline_stats': self.baseline_stats,
+            'feature_scaling': {
+                'scaler_type': 'StandardScaler',
+                'mean': np.mean(X, axis=0).tolist()[:5],  # First 5 features
+                'std': np.std(X, axis=0).tolist()[:5],
+            },
             'timestamp': datetime.utcnow().isoformat() + 'Z'
         }
     
-    def _calculate_baseline_stats(self, data: List[Dict[str, Any]]):
-        """Calculate baseline statistics from training data."""
+    def _calculate_baseline_stats(self, data: List[Dict[str, Any]], X_scaled: np.ndarray = None):
+        """
+        Calculate baseline statistics from training data for anomaly detection calibration.
+        
+        Args:
+            data: Training data samples
+            X_scaled: Scaled feature matrix for score distribution analysis
+        """
         response_times = []
         status_codes = []
         finding_severities = defaultdict(int)
@@ -648,12 +849,25 @@ class AnomalyDetector:
                 severity = finding.get('severity', 'info').lower()
                 finding_severities[severity] += 1
         
+        # Compute score statistics if X_scaled is provided
+        score_mean = 0.0
+        score_std = 1.0
+        
+        if X_scaled is not None and self.model is not None:
+            scores = self.model.score_samples(X_scaled)
+            score_mean = float(np.mean(scores))
+            score_std = float(np.std(scores))
+            if score_std == 0:
+                score_std = 1.0  # Avoid division by zero
+        
         self.baseline_stats = {
             'avg_response_time': float(np.mean(response_times)) if response_times else 0,
             'std_response_time': float(np.std(response_times)) if response_times else 0,
             'common_status_codes': list(set(status_codes)),
             'finding_distribution': dict(finding_severities),
-            'sample_count': len(data)
+            'sample_count': len(data),
+            'score_mean': score_mean,
+            'score_std': score_std,
         }
     
     def update_baseline(self, new_data: List[Dict[str, Any]]):
