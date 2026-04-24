@@ -1,0 +1,5 @@
+Phase,Data Source,Samples,Normal:Attack,Accuracy,Balanced Acc,Issue
+0,Synthetic,186,105:81,99.3%,99.1%,Data leakage (text features)
+2,Real Imbalanced,46,8:38,72.0%,47.3%,Severe imbalance (82:18)
+3 (Buggy),Real Balanced,76,38:38,100.0%,100.0%,"Extraction bugs (0ms time, 0% cookies)"
+3 (Fixed),Real Balanced,76,38:38,89.3%,89.3%,✓ Valid - Corrected extraction

@@ -1,0 +1,1 @@
+method,has_post_data,payload_length,has_session_cookie,request_time_ms,response_status,response_size,has_xframe_options,has_csp,has_content_type,error_leaked,db_error_visible,payload_reflected,response_time_anomaly,label

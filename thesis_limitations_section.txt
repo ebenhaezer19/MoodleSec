@@ -1,0 +1,79 @@
+
+KETERBATASAN PENELITIAN
+=======================
+
+Meskipun model akhir mencapai akurasi 89.3%, penelitian ini memiliki beberapa 
+keterbatasan yang perlu dipertimbangkan untuk generalisasi hasil:
+
+1. ARTIFAK DATA COLLECTION (has_post_data)
+   
+   Fitur has_post_data menunjukkan pola yang mencurigakan: 100% untuk sampel 
+   normal versus 39% untuk serangan. Analisis menunjukkan ini adalah artefak 
+   dari bagaimana Normal-Moodle-Browser.har dikumpulkan (fokus pada request 
+   interaktif), bukan karakteristik attack signature yang genuine. Jika 
+   Normal-Moodle-Browser.har dikumpulkan dengan pola browsing berbeda 
+   (lebih banyak GET requests), fitur ini akan berbeda secara signifikan.
+   
+   Permutation importance menunjukkan has_post_data BUKAN fitur paling penting 
+   (ranking ke-X), sehingga dampaknya terbatas. Namun, untuk deployment praktis, 
+   fitur ini sebaiknya ditangani dengan hati-hati atau divalidasi pada data 
+   independen.
+
+2. UKURAN SAMPEL KECIL (76 SAMPEL TOTAL)
+   
+   Dataset final hanya mengandung 76 sampel (38 normal, 38 serangan) setelah 
+   balancing. Ini adalah ukuran yang sangat kecil untuk machine learning, 
+   terutama dengan 14 fitur. Cross-validation 5-fold hanya menggunakan ~7-8 
+   sampel per fold, yang dapat menghasilkan high variance dan poor generalization.
+   
+   Rekomendasi: Penelitian lanjutan harus mengumpulkan minimal 200-300 sampel 
+   per kelas untuk hasil yang lebih robust.
+
+3. TIDAK ADA TEMPORAL VALIDATION
+   
+   Model dilatih dan dievaluasi pada data yang dikumpulkan dalam timeframe 
+   yang sama dengan pola serangan konsisten. Tidak ada evaluasi temporal: 
+   melatih pada data minggu 1, test pada data minggu 2-3. Pola serangan 
+   Moodle dapat berubah dari waktu ke waktu, sehingga model mungkin overfit 
+   pada pola serangan spesifik dari periode pengumpulan data.
+
+4. SINGLE INSTANCE MOODLE
+   
+   Semua data dikumpulkan dari SATU instance Moodle (localhost:8998). 
+   Konfigurasi Moodle berbeda, versi berbeda, dan plugin berbeda dapat 
+   menghasilkan pola HTTP yang berbeda signifikan. Model dilatih pada 
+   satu konfigurasi mungkin tidak bekerja baik pada instance Moodle lain.
+   
+   Rekomendasi: Validasi cross-instance dengan mengumpulkan data dari 
+   minimal 3-5 instance Moodle berbeda.
+
+5. JENIS SERANGAN TERBATAS
+   
+   Dataset hanya mengandung serangan dari 18 file HAR (SQL Injection, XSS, 
+   Anti-CSRF, dll dari ZAP-FULL-DATASET). Kemungkinan ada jenis serangan 
+   Moodle lain yang tidak tercakup, atau serangan lebih sophisticated yang 
+   tidak terdeteksi.
+   
+   Model ini bukan defense komprehensif tetapi detector untuk pola serangan 
+   spesifik yang ada di training data.
+
+KESIMPULAN KETERBATASAN
+=======================
+
+Akurasi 89.3% adalah hasil yang JUJUR namun dengan scope terbatas. Model ini 
+cocok untuk:
+✓ Research proof-of-concept
+✓ Demonstrasi HTTP-based attack detection
+✓ Foundation untuk sistem detection yang lebih kompleks
+
+Model ini TIDAK cocok untuk:
+✗ Production deployment tanpa validasi lebih lanjut
+✗ Keputusan security kritis tanpa human review
+✗ Generalisasi ke Moodle instance/versi lain tanpa testing
+
+Rekomendasi tindak lanjut:
+1. Kumpulkan 200-300 sampel per kelas (minimum)
+2. Gunakan multiple Moodle instances
+3. Tambahkan temporal validation
+4. Kembangkan feature extraction yang lebih robust
+5. Pertimbangkan deep learning atau ensemble methods
