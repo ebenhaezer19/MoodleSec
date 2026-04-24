@@ -10,10 +10,10 @@ import pickle
 import os
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
+from collections import Counter
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-import hashlib
 
 
 class FalsePositiveReducer:
@@ -54,16 +54,6 @@ class FalsePositiveReducer:
         # Enhanced category encoding with more categories
         self.category_encoding = {}
         self._build_category_encoding()
-        
-        # Keywords for feature extraction
-        self.fp_keywords = [
-            'missing', 'not implemented', 'not set', 'header', 'best practice',
-            'recommendation', 'information', 'disclosure', 'version', 'banner'
-        ]
-        self.tp_keywords = [
-            'injection', 'xss', 'csrf', 'bypass', 'exploit', 'vulnerability',
-            'attack', 'malicious', 'unauthorized', 'exposed', 'sensitive'
-        ]
     
     def _build_category_encoding(self):
         """Build dynamic category encoding from common categories."""
@@ -79,6 +69,36 @@ class FalsePositiveReducer:
         
         # Load existing model if available
         self._load_model()
+
+    def _safe_float(self, value: Any, default: float = 0.0) -> float:
+        """Convert value to float with fallback."""
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float(default)
+
+    def _normalized_entropy(self, text: str) -> float:
+        """Return normalized Shannon entropy in range [0, 1]."""
+        if not text:
+            return 0.0
+
+        counts = Counter(text)
+        length = float(len(text))
+        probs = [count / length for count in counts.values()]
+        entropy = -sum(p * np.log2(p) for p in probs if p > 0)
+
+        max_entropy = np.log2(max(2, min(len(text), 256)))
+        if max_entropy <= 0:
+            return 0.0
+
+        return float(np.clip(entropy / max_entropy, 0.0, 1.0))
+
+    def _safe_int(self, value: Any, default: int = 0) -> int:
+        """Convert value to int with fallback."""
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return int(default)
     
     def extract_features(self, finding: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         """
@@ -121,54 +141,49 @@ class FalsePositiveReducer:
         features.append(1 if '?' in url else 0)
         
         # Feature 7: CVSS score (if available)
-        features.append(finding.get('cvss_score', 0))
+        features.append(self._safe_float(finding.get('cvss_score', 0), 0.0))
         
         # Feature 8: Risk score (if available)
-        features.append(finding.get('risk_score', 0))
-        
-        # Feature 9-11: Domain-specific keyword features
-        # Source: OWASP Top 10, CVE Common Patterns, SANS Security Guidelines
-        # These are EXPERT KNOWLEDGE-based patterns, not derived from training labels
-        # 
-        # FP patterns: Informational findings (missing headers, version disclosure)
-        # TP patterns: Exploitable vulnerabilities (injection, XSS, bypass)
-        desc_lower = description.lower()
-        
-        # Feature 9: FP keyword count (informational/best-practice indicators)
-        fp_count = sum(1 for kw in self.fp_keywords if kw in desc_lower)
-        features.append(fp_count)
-        
-        # Feature 10: TP keyword count (exploit/vulnerability indicators)
-        tp_count = sum(1 for kw in self.tp_keywords if kw in desc_lower)
-        features.append(tp_count)
-        
-        # Feature 11: Keyword ratio (balance between FP/TP indicators)
-        if tp_count + fp_count > 0:
-            keyword_ratio = fp_count / (tp_count + fp_count)
-        else:
-            keyword_ratio = 0.5  # Neutral if no keywords found
-        features.append(keyword_ratio)
-        
-        # Feature 12: Is informational (low severity + no exploit keywords)
-        is_info = 1 if (severity in ['info', 'low'] and tp_count == 0) else 0
-        features.append(is_info)
+        features.append(self._safe_float(finding.get('risk_score', 0), 0.0))
+
+        # Feature 9: Entropy of evidence (higher values often indicate obfuscation)
+        features.append(self._normalized_entropy(evidence))
+
+        # Feature 10: URL encoding ratio (%xx density)
+        encoded_count = url.count('%')
+        features.append(float(np.clip(encoded_count / max(1, len(url)), 0.0, 1.0)))
+
+        # Feature 11: Query parameter density
+        query_str = ''
+        if '?' in url:
+            query_str = url.split('?', 1)[1]
+        param_count = len([p for p in query_str.split('&') if p]) if query_str else 0
+        features.append(float(np.clip(param_count / 20.0, 0.0, 1.0)))
+
+        # Feature 12: Structural irregularity score (non-alnum density)
+        structural_text = f"{url} {evidence}"
+        non_alnum_count = sum(1 for ch in structural_text if not ch.isalnum() and not ch.isspace())
+        features.append(float(np.clip(non_alnum_count / max(1, len(structural_text)), 0.0, 1.0)))
         
         # Context features (if provided)
         if context:
             # Feature 13: Response status code
-            features.append(context.get('status_code', 200))
+            features.append(self._safe_int(context.get('status_code', 200), 200))
             
             # Feature 14: Response time (ms)
-            features.append(context.get('response_time', 0))
+            response_time = max(0.0, self._safe_float(context.get('response_time', 0.0), 0.0))
+            features.append(float(np.log1p(response_time)))
             
             # Feature 15: Historical occurrence count
-            features.append(context.get('occurrence_count', 1))
+            occurrence_count = max(0, self._safe_int(context.get('occurrence_count', 1), 1))
+            features.append(float(np.log1p(occurrence_count)))
             
             # Feature 16: Days since first seen
-            features.append(context.get('days_since_first_seen', 0))
+            days_since_first_seen = max(0, self._safe_int(context.get('days_since_first_seen', 0), 0))
+            features.append(float(np.log1p(days_since_first_seen)))
         else:
             # Default values if no context
-            features.extend([200, 0, 1, 0])
+            features.extend([200, 0.0, 0.0, 0.0])
         
         return np.array(features).reshape(1, -1)
     
@@ -387,8 +402,8 @@ class FalsePositiveReducer:
         feature_names = [
             'severity', 'category', 'evidence_length', 'description_length',
             'url_complexity', 'has_params', 'cvss_score', 'risk_score',
-            'fp_keyword_count', 'tp_keyword_count', 'keyword_ratio', 'is_informational',
-            'status_code', 'response_time', 'occurrence_count', 'days_since_first_seen'
+            'evidence_entropy', 'url_encoded_ratio', 'query_param_density', 'structural_irregularity',
+            'status_code', 'response_time_log', 'occurrence_count_log', 'days_since_first_seen_log'
         ]
         
         # ✅ FIX: Proper feature importance extraction from ensemble
