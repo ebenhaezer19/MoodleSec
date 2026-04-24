@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 from fastapi import FastAPI, Request, Response, HTTPException, Body
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -36,6 +37,7 @@ from database.scheduler_db import SchedulerDB
 from database.payload_repository import PayloadRepositoryManager
 from reporting.pdf_generator import PDFReportGenerator
 from integrations.integration_manager import IntegrationManager
+from integrations.ml_pipeline_integration import process_http_request, pipeline as ml_pipeline_instance
 from ml.ml_manager import MLManager
 from routers.payload_router import (
     router as payload_router,
@@ -1717,6 +1719,15 @@ async def get_ml_status():
     return ml_manager.get_status()
 
 
+@app.get("/ml-test")
+async def ml_test() -> Dict[str, Any]:
+    """Quick check endpoint for ML pipeline integration availability."""
+    return {
+        "status": "ok",
+        "pipeline_loaded": bool(ml_pipeline_instance is not None),
+    }
+
+
 @app.get("/ml/models/info")
 async def get_ml_models_info():
     """
@@ -2163,6 +2174,49 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
         "body_size": len(body),
         "timestamp": datetime.utcnow().isoformat() + "Z"
     }
+
+    # Run ML pipeline check before forwarding request to destination.
+    try:
+        ml_raw_request = {
+            "uri": str(request.url),
+            "method": request.method,
+            "headers": dict(request.headers),
+            "body": body.decode("utf-8", errors="ignore") if body else "",
+            "request_raw": f"{request.method} {request.url.path}"
+            + (f"?{request.url.query}" if request.url.query else ""),
+        }
+        ml_result = process_http_request(ml_raw_request)
+        print("[PROXY ML RESULT]", ml_result)
+    except Exception as ml_error:
+        ml_result = {
+            "decision": "IGNORE",
+            "severity": "LOW",
+            "attack_type": "unknown",
+            "confidence": 0.0,
+            "anomaly_score": 0.0,
+            "reason": "ML failure fallback",
+        }
+        print("[PROXY ML RESULT]", ml_result)
+
+    if str(ml_result.get("decision", "")).upper() == "BLOCK":
+        ml_blocked_event = {
+            "type": "proxy_ml_blocked_request",
+            "client_ip": client_ip,
+            "method": request.method,
+            "path": path,
+            "target_url": target_url,
+            "ml_result": ml_result,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+        append_log(LOG_DIR, ml_blocked_event)
+        return JSONResponse(
+            status_code=403,
+            content={
+                "status": 403,
+                "message": "Blocked by ML security system",
+                "reason": ml_result.get("reason", "Pipeline decision BLOCK"),
+            },
+        )
     
     try:
         request_start = datetime.utcnow()

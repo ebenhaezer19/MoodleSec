@@ -10,31 +10,24 @@ import pickle
 import os
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
+from collections import Counter
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-import hashlib
 
 
 class FalsePositiveReducer:
     """
     Reduces false positives using Random Forest classifier.
     
-    Features used (14 total — Phase 5 Clean-14):
+    Features used:
     - Finding severity (encoded)
     - Finding category (encoded)
     - Evidence length
-    - Description length
-    - URL pattern features (complexity, has params)
-    - CVSS score (neutralized=0 in training)
-    - Risk score (neutralized=0 in training)
-    - FP keyword count
-    - TP keyword count
-    - Keyword ratio
-    - Is informational
+    - URL pattern features
+    - Historical occurrence count
     - Response status code
     - Response time
-    NOTE: occurrence_count and days_since_first_seen REMOVED (Phase 5 shortcut fix)
     """
     
     def __init__(self, model_path: str = "ml/models/fp_reducer.pkl"):
@@ -61,16 +54,6 @@ class FalsePositiveReducer:
         # Enhanced category encoding with more categories
         self.category_encoding = {}
         self._build_category_encoding()
-        
-        # Keywords for feature extraction
-        self.fp_keywords = [
-            'missing', 'not implemented', 'not set', 'header', 'best practice',
-            'recommendation', 'information', 'disclosure', 'version', 'banner'
-        ]
-        self.tp_keywords = [
-            'injection', 'xss', 'csrf', 'bypass', 'exploit', 'vulnerability',
-            'attack', 'malicious', 'unauthorized', 'exposed', 'sensitive'
-        ]
     
     def _build_category_encoding(self):
         """Build dynamic category encoding from common categories."""
@@ -86,6 +69,36 @@ class FalsePositiveReducer:
         
         # Load existing model if available
         self._load_model()
+
+    def _safe_float(self, value: Any, default: float = 0.0) -> float:
+        """Convert value to float with fallback."""
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float(default)
+
+    def _normalized_entropy(self, text: str) -> float:
+        """Return normalized Shannon entropy in range [0, 1]."""
+        if not text:
+            return 0.0
+
+        counts = Counter(text)
+        length = float(len(text))
+        probs = [count / length for count in counts.values()]
+        entropy = -sum(p * np.log2(p) for p in probs if p > 0)
+
+        max_entropy = np.log2(max(2, min(len(text), 256)))
+        if max_entropy <= 0:
+            return 0.0
+
+        return float(np.clip(entropy / max_entropy, 0.0, 1.0))
+
+    def _safe_int(self, value: Any, default: int = 0) -> int:
+        """Convert value to int with fallback."""
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return int(default)
     
     def extract_features(self, finding: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> np.ndarray:
         """
@@ -128,51 +141,49 @@ class FalsePositiveReducer:
         features.append(1 if '?' in url else 0)
         
         # Feature 7: CVSS score (if available)
-        features.append(finding.get('cvss_score', 0))
+        features.append(self._safe_float(finding.get('cvss_score', 0), 0.0))
         
         # Feature 8: Risk score (if available)
-        features.append(finding.get('risk_score', 0))
-        
-        # Feature 9-11: Domain-specific keyword features
-        # Source: OWASP Top 10, CVE Common Patterns, SANS Security Guidelines
-        # These are EXPERT KNOWLEDGE-based patterns, not derived from training labels
-        # 
-        # FP patterns: Informational findings (missing headers, version disclosure)
-        # TP patterns: Exploitable vulnerabilities (injection, XSS, bypass)
-        desc_lower = description.lower()
-        
-        # Feature 9: FP keyword count (informational/best-practice indicators)
-        fp_count = sum(1 for kw in self.fp_keywords if kw in desc_lower)
-        features.append(fp_count)
-        
-        # Feature 10: TP keyword count (exploit/vulnerability indicators)
-        tp_count = sum(1 for kw in self.tp_keywords if kw in desc_lower)
-        features.append(tp_count)
-        
-        # Feature 11: Keyword ratio (balance between FP/TP indicators)
-        if tp_count + fp_count > 0:
-            keyword_ratio = fp_count / (tp_count + fp_count)
-        else:
-            keyword_ratio = 0.5  # Neutral if no keywords found
-        features.append(keyword_ratio)
-        
-        # Feature 12: Is informational (low severity + no exploit keywords)
-        is_info = 1 if (severity in ['info', 'low'] and tp_count == 0) else 0
-        features.append(is_info)
+        features.append(self._safe_float(finding.get('risk_score', 0), 0.0))
+
+        # Feature 9: Entropy of evidence (higher values often indicate obfuscation)
+        features.append(self._normalized_entropy(evidence))
+
+        # Feature 10: URL encoding ratio (%xx density)
+        encoded_count = url.count('%')
+        features.append(float(np.clip(encoded_count / max(1, len(url)), 0.0, 1.0)))
+
+        # Feature 11: Query parameter density
+        query_str = ''
+        if '?' in url:
+            query_str = url.split('?', 1)[1]
+        param_count = len([p for p in query_str.split('&') if p]) if query_str else 0
+        features.append(float(np.clip(param_count / 20.0, 0.0, 1.0)))
+
+        # Feature 12: Structural irregularity score (non-alnum density)
+        structural_text = f"{url} {evidence}"
+        non_alnum_count = sum(1 for ch in structural_text if not ch.isalnum() and not ch.isspace())
+        features.append(float(np.clip(non_alnum_count / max(1, len(structural_text)), 0.0, 1.0)))
         
         # Context features (if provided)
         if context:
             # Feature 13: Response status code
-            features.append(context.get('status_code', 200))
+            features.append(self._safe_int(context.get('status_code', 200), 200))
             
             # Feature 14: Response time (ms)
-            features.append(context.get('response_time', 0))
+            response_time = max(0.0, self._safe_float(context.get('response_time', 0.0), 0.0))
+            features.append(float(np.log1p(response_time)))
             
-            # NOTE: occurrence_count and days_since_first_seen REMOVED
-            # (Phase 5 Clean-14 fix — these were shortcuts: 95.3% single-feature accuracy)
+            # Feature 15: Historical occurrence count
+            occurrence_count = max(0, self._safe_int(context.get('occurrence_count', 1), 1))
+            features.append(float(np.log1p(occurrence_count)))
+            
+            # Feature 16: Days since first seen
+            days_since_first_seen = max(0, self._safe_int(context.get('days_since_first_seen', 0), 0))
+            features.append(float(np.log1p(days_since_first_seen)))
         else:
             # Default values if no context
-            features.extend([200, 0])
+            features.extend([200, 0.0, 0.0, 0.0])
         
         return np.array(features).reshape(1, -1)
     
@@ -299,28 +310,31 @@ class FalsePositiveReducer:
         from sklearn.svm import SVC
         from sklearn.metrics import precision_score, recall_score, f1_score, classification_report
 
-        # Model 1: Random Forest (Anti-Overfitting for ~64 samples)
-        # max_depth=3: 2^3=8 max leaves per tree — cannot memorize 64 samples
-        # Phase 0 lesson: high depth on small data → train 100% (memorization)
+        # Model 1: Random Forest (Anti-Overfitting Configuration)
+        # Reduced complexity to prevent overfitting on small datasets
+        # Changes: n_estimators 150→100, max_depth 12→8, added max_features
+        # min_samples_split 4→6, min_samples_leaf 2→3 for better generalization
         rf_model = RandomForestClassifier(
-            n_estimators=100,        # Keep ensemble size
-            max_depth=3,             # KEY: 8→3 to prevent memorization
-            min_samples_split=8,     # Increased from 6
-            min_samples_leaf=5,      # Increased from 3: each leaf needs 5+ samples
-            max_features='sqrt',     # Limit features per tree
+            n_estimators=100,        # Reduced from 150
+            max_depth=8,             # Reduced from 12 to prevent memorization
+            min_samples_split=6,     # Increased from 4
+            min_samples_leaf=3,      # Increased from 2
+            max_features='sqrt',     # Added: limit features per tree
             random_state=42,
             class_weight='balanced'
         )
 
-        # Model 2: Gradient Boosting (Regularized for small datasets)
-        # max_depth=2: shallow stumps prevent memorization, force generalization
+        # Model 2: Gradient Boosting (Regularized)
+        # Reduced complexity for better generalization
+        # Note: GradientBoostingClassifier doesn't have class_weight parameter
+        # Instead, we handle imbalance through subsample and learning_rate tuning
         gb_model = GradientBoostingClassifier(
-            n_estimators=50,         # Reduced from 75
-            max_depth=2,             # KEY: 4→2 (decision stumps)
-            learning_rate=0.05,      # Keep slow learning rate
-            min_samples_split=8,     # Increased from 6
-            min_samples_leaf=5,      # Increased from 3
-            subsample=0.7,           # Reduced from 0.8: more stochasticity
+            n_estimators=75,         # Reduced from 100
+            max_depth=4,             # Reduced from 5
+            learning_rate=0.05,      # Reduced from 0.1 for smoother learning
+            min_samples_split=6,     # Added regularization
+            min_samples_leaf=3,      # Added regularization
+            subsample=0.8,           # Added: use 80% of samples per tree
             random_state=42
         )
 
@@ -388,8 +402,8 @@ class FalsePositiveReducer:
         feature_names = [
             'severity', 'category', 'evidence_length', 'description_length',
             'url_complexity', 'has_params', 'cvss_score', 'risk_score',
-            'fp_keyword_count', 'tp_keyword_count', 'keyword_ratio', 'is_informational',
-            'status_code', 'response_time', 'occurrence_count', 'days_since_first_seen'
+            'evidence_entropy', 'url_encoded_ratio', 'query_param_density', 'structural_irregularity',
+            'status_code', 'response_time_log', 'occurrence_count_log', 'days_since_first_seen_log'
         ]
         
         # ✅ FIX: Proper feature importance extraction from ensemble
@@ -500,38 +514,21 @@ class FalsePositiveReducer:
             'timestamp': datetime.utcnow().isoformat() + 'Z'
         }
         
-        import joblib
-        joblib.dump(model_data, self.model_path)
+        with open(self.model_path, 'wb') as f:
+            pickle.dump(model_data, f)
     
     def _load_model(self):
         """Load trained model from disk if available."""
         if os.path.exists(self.model_path):
             try:
-                import joblib
-                model_data = joblib.load(self.model_path)
+                with open(self.model_path, 'rb') as f:
+                    model_data = pickle.load(f)
                 
                 self.model = model_data['model']
                 self.scaler = model_data['scaler']
                 self.is_trained = model_data['is_trained']
                 
-                # Log detailed version info for debugging
-                timestamp = model_data.get('timestamp', 'UNKNOWN (pre-v2 model — no timestamp)')
-                model_type = type(self.model).__name__
-                n_features = len(self.scaler.mean_) if hasattr(self.scaler, 'mean_') else 'unknown'
-                
-                # Detect if it's the v2.0 Calibrated Ensemble
-                is_v2 = (
-                    model_type == 'CalibratedClassifierCV' and
-                    'timestamp' in model_data
-                )
-                version_tag = "v2.0 (Calibrated RF+GB Ensemble)" if is_v2 else "v1.x (legacy)"
-                
-                print(f"[FP Reducer] ✓ Loaded model from {self.model_path}")
-                print(f"[FP Reducer]   Version   : {version_tag}")
-                print(f"[FP Reducer]   Type      : {model_type}")
-                print(f"[FP Reducer]   Timestamp : {timestamp}")
-                print(f"[FP Reducer]   Features  : {n_features}")
-                
+                print(f"[FP Reducer] Loaded trained model from {self.model_path}")
             except Exception as e:
                 print(f"[FP Reducer] Failed to load model: {e}")
                 self.is_trained = False
