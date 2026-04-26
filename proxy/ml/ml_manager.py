@@ -111,22 +111,53 @@ class MLManager:
             enhanced_finding['filter_reason'] = f'ML model detected false positive ({fp_confidence:.2%} confidence)'
             ml_metadata['false_positive']['filtered_by'] = 'ml_model'
         
-        # Filter path B: Rule-based pattern for known Moodle-specific FPs
-        # These are XSS alerts triggered by Moodle's own legitimate JS/HTML
-        elif finding.get('category') == 'Cross-Site Scripting (XSS)':
+        # Filter path B: Rule-based patterns for known Moodle-specific FPs
+        elif not enhanced_finding.get('filtered'):
             description = finding.get('description', '').lower()
-            fp_patterns = [
-                'dangerous html tag',
-                'potentially dangerous html tag',
-                'dangerous tag detected',
-                '<script>',
-                '<iframe>',
-                '<object>',
-                '<embed>'
-            ]
-            if any(pattern in description for pattern in fp_patterns):
+            evidence = str(finding.get('evidence', '')).lower()
+            category = finding.get('category', '')
+            severity = finding.get('severity', '').lower()
+            
+            is_rule_fp = False
+            filter_reason = ''
+            
+            # B1: XSS alerts triggered by Moodle's own legitimate JS/HTML
+            if category == 'Cross-Site Scripting (XSS)':
+                xss_fp_patterns = [
+                    'dangerous html tag', 'potentially dangerous html tag',
+                    'dangerous tag detected', '<script>', '<iframe>',
+                    '<object>', '<embed>',
+                    'found' , 'input field', 'verify xss protection',
+                    'input fields detected'
+                ]
+                if any(p in description for p in xss_fp_patterns):
+                    is_rule_fp = True
+                    filter_reason = 'Pattern: Moodle legitimate HTML/form fields (known FP)'
+            
+            # B2: Info-level findings about input fields (not actual vulnerabilities)
+            if not is_rule_fp and severity == 'info':
+                info_fp_patterns = [
+                    'input field', 'form field', 'found',
+                    'detected in', 'verify', 'ensure'
+                ]
+                if any(p in description for p in info_fp_patterns):
+                    is_rule_fp = True
+                    filter_reason = 'Pattern: Informational finding (not exploitable)'
+            
+            # B3: Missing security headers (valid but not injection vulnerabilities)
+            if not is_rule_fp and ('header' in category.lower() or 'header' in description):
+                header_fp_patterns = [
+                    'missing', 'not set', 'not implemented',
+                    'x-frame-options', 'x-content-type', 'strict-transport',
+                    'content-security-policy', 'referrer-policy'
+                ]
+                if severity in ('info', 'low') and any(p in description for p in header_fp_patterns):
+                    is_rule_fp = True
+                    filter_reason = 'Pattern: Missing security header (best practice, not exploitable)'
+            
+            if is_rule_fp:
                 enhanced_finding['filtered'] = True
-                enhanced_finding['filter_reason'] = 'Pattern: Moodle legitimate HTML (known FP)'
+                enhanced_finding['filter_reason'] = filter_reason
                 ml_metadata['false_positive']['filtered_by'] = 'rule_pattern'
         
         # 2. Severity Prediction

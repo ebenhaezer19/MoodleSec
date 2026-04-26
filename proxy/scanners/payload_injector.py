@@ -156,6 +156,13 @@ class PayloadInjector:
         
         print(f"[PayloadInjector] Testing {len(params)} parameters with {len(available_payloads)} {category} payloads")
         
+        # Detect time-based SQLi keywords in payloads
+        _TIME_BASED_KEYWORDS = ['sleep', 'waitfor', 'delay', 'pg_sleep', 'benchmark']
+        
+        def _is_time_based_payload(payload: str) -> bool:
+            pl = payload.lower()
+            return any(kw in pl for kw in _TIME_BASED_KEYWORDS)
+        
         # Test each parameter with each payload
         for param_name, param_value in params.items():
             print(f"[PayloadInjector] Injecting payloads to parameter: {param_name}")
@@ -169,7 +176,6 @@ class PayloadInjector:
                 
                 try:
                     # Create test request with injected payload
-                    # URL encoding is handled by httpx/requests library automatically
                     test_params = params.copy()
                     test_params[param_name] = payload_text
                     
@@ -177,8 +183,41 @@ class PayloadInjector:
                     encoded_preview = quote(payload_text, safe='')
                     print(f"[PayloadInjector] Payload ID {payload_id} -> {param_name}={encoded_preview[:80]}{'...' if len(encoded_preview) > 80 else ''}")
                     
-                    # Make request with injected payload
+                    # Make request with injected payload (returns dict with response + timing)
+                    import time as _time
+                    t0 = _time.monotonic()
                     response = await self._make_request(url, test_params, client)
+                    elapsed_ms = (_time.monotonic() - t0) * 1000
+                    
+                    # --- TIME-BASED BLIND SQLi DETECTION ---
+                    # If the payload contains sleep/waitfor AND the request timed out
+                    # or took abnormally long, that IS evidence of SQL injection.
+                    if response is None and _is_time_based_payload(payload_text):
+                        finding = {
+                            'severity': 'Critical',
+                            'category': 'SQL Injection',
+                            'type': 'Time-Based Blind SQL Injection',
+                            'description': f'Time-based blind SQL Injection detected in parameter "{param_name}"',
+                            'evidence': f'Payload with sleep/delay caused request timeout ({elapsed_ms:.0f}ms). '
+                                        f'Server executed the injected SQL sleep command.',
+                            'payload': payload_text[:200],
+                            'payload_id': payload_id,
+                            'injection_point': 'parameter',
+                            'target': url,
+                            'cwe': 'CWE-89',
+                            'owasp': 'A03:2021 - Injection'
+                        }
+                        findings.append(finding)
+                        print(f"[PayloadInjector] ✓ CRITICAL: Time-based blind SQLi detected! "
+                              f"Timeout on sleep payload in param '{param_name}'")
+                        
+                        if self.payload_repo and payload_id != "unknown":
+                            self.payload_repo.update_payload_stats(
+                                payload_id=int(payload_id) if isinstance(payload_id, (str, int)) else 0,
+                                success=True,
+                                severity='Critical'
+                            )
+                        continue
                     
                     if self.debug_logger:
                         self.debug_logger.log_injection_attempt(
@@ -199,7 +238,8 @@ class PayloadInjector:
                             param_name=param_name,
                             url=url,
                             category=category,
-                            payload_id=payload_id
+                            payload_id=payload_id,
+                            elapsed_ms=elapsed_ms
                         )
                         if finding:
                             findings.append(finding)
@@ -486,10 +526,16 @@ class PayloadInjector:
         url: str,
         category: str,
         payload_id: str = "unknown",
-        injection_point: str = "parameter"
+        injection_point: str = "parameter",
+        elapsed_ms: float = 0
     ) -> Optional[Dict[str, Any]]:
         """
         Check if payload injection resulted in vulnerability.
+        
+        Detection methods:
+        - SQL Injection: error patterns, HTTP 500, time-based (slow response)
+        - XSS: payload reflection in response
+        - CSRF: form accepted without valid token
         
         Args:
             response: Response from injected request
@@ -499,21 +545,25 @@ class PayloadInjector:
             category: Payload category
             payload_id: ID of payload
             injection_point: Where payload was injected
+            elapsed_ms: Response time in milliseconds
             
         Returns:
             Finding dict if vulnerability detected, None otherwise
         """
         response_text = response.text if hasattr(response, 'text') else str(response)
+        status_code = response.status_code if hasattr(response, 'status_code') else 200
         
-        # Check for SQL injection indicators
+        # ======== SQL INJECTION DETECTION ========
         if category == "SQL Injection" or "sql" in category.lower():
+            
+            # Method 1: Error-based SQLi (SQL error messages in response)
             for pattern in self.compiled_sql_patterns:
                 if pattern.search(response_text):
                     return {
                         'severity': 'Critical',
                         'category': 'SQL Injection',
-                        'type': 'SQL Injection via Payload',
-                        'description': f'SQL Injection detected in {injection_point} "{param_name}"',
+                        'type': 'Error-Based SQL Injection',
+                        'description': f'SQL Injection detected in {injection_point} "{param_name}" (error-based)',
                         'evidence': f'SQL error pattern detected after injecting payload',
                         'payload': payload_text[:200],
                         'payload_id': payload_id,
@@ -522,8 +572,44 @@ class PayloadInjector:
                         'cwe': 'CWE-89',
                         'owasp': 'A03:2021 - Injection'
                     }
+            
+            # Method 2: HTTP 500 error (server crashed processing SQL)
+            if status_code >= 500:
+                return {
+                    'severity': 'High',
+                    'category': 'SQL Injection',
+                    'type': 'Error-Based SQL Injection (HTTP 500)',
+                    'description': f'Potential SQL Injection in {injection_point} "{param_name}" - server error {status_code}',
+                    'evidence': f'HTTP {status_code} returned after injecting SQL payload. '
+                                f'Server may have failed processing the injected SQL.',
+                    'payload': payload_text[:200],
+                    'payload_id': payload_id,
+                    'injection_point': injection_point,
+                    'target': url,
+                    'cwe': 'CWE-89',
+                    'owasp': 'A03:2021 - Injection'
+                }
+            
+            # Method 3: Time-based blind SQLi (abnormally slow response)
+            _time_keywords = ['sleep', 'waitfor', 'delay', 'pg_sleep', 'benchmark']
+            is_time_payload = any(kw in payload_text.lower() for kw in _time_keywords)
+            if is_time_payload and elapsed_ms > 5000:
+                return {
+                    'severity': 'Critical',
+                    'category': 'SQL Injection',
+                    'type': 'Time-Based Blind SQL Injection',
+                    'description': f'Time-based blind SQL Injection in {injection_point} "{param_name}"',
+                    'evidence': f'Payload with sleep/delay caused {elapsed_ms:.0f}ms response time '
+                                f'(normal < 2000ms). Server executed the injected SQL.',
+                    'payload': payload_text[:200],
+                    'payload_id': payload_id,
+                    'injection_point': injection_point,
+                    'target': url,
+                    'cwe': 'CWE-89',
+                    'owasp': 'A03:2021 - Injection'
+                }
         
-        # Check for XSS indicators
+        # ======== XSS DETECTION ========
         if category == "XSS" or "xss" in category.lower():
             # Check if payload is reflected in response
             if payload_text in response_text:
@@ -532,9 +618,9 @@ class PayloadInjector:
                         return {
                             'severity': 'High',
                             'category': 'Cross-Site Scripting (XSS)',
-                            'type': 'XSS via Payload',
+                            'type': 'Reflected XSS via Payload',
                             'description': f'XSS detected in {injection_point} "{param_name}"',
-                            'evidence': f'JavaScript code reflected: {payload_text[:100]}',
+                            'evidence': f'JavaScript code reflected in response: {payload_text[:100]}',
                             'payload': payload_text[:200],
                             'payload_id': payload_id,
                             'injection_point': injection_point,
@@ -542,6 +628,44 @@ class PayloadInjector:
                             'cwe': 'CWE-79',
                             'owasp': 'A03:2021 - Injection'
                         }
+        
+        # ======== CSRF DETECTION ========
+        if category == "CSRF" or "csrf" in category.lower():
+            # If the form accepted the request without a valid CSRF token
+            # (status 200 when it should have been 403), that's a vulnerability.
+            # Look for indicators that the action was processed successfully:
+            # - HTTP 200 with no error message about sesskey/token
+            # - Form submission was accepted (redirect to success page)
+            response_lower = response_text.lower()
+            
+            # Check if the token payload was "missing_csrf_token" or empty
+            is_csrf_test_payload = ('missing' in payload_text.lower() or 
+                                   'csrf' in payload_text.lower() or
+                                   payload_text.strip() == '')
+            
+            if is_csrf_test_payload and status_code == 200:
+                # Check that the response doesn't contain CSRF rejection messages
+                csrf_rejection_patterns = [
+                    'sesskey', 'invalid session', 'session expired',
+                    'invalid token', 'csrf token', 'form submission failed'
+                ]
+                was_rejected = any(p in response_lower for p in csrf_rejection_patterns)
+                
+                if not was_rejected:
+                    return {
+                        'severity': 'High',
+                        'category': 'Cross-Site Request Forgery (CSRF)',
+                        'type': 'CSRF Token Bypass',
+                        'description': f'CSRF protection may be missing on {injection_point} "{param_name}"',
+                        'evidence': f'Request with invalid/missing CSRF token was accepted (HTTP {status_code}). '
+                                    f'Form may not validate CSRF tokens properly.',
+                        'payload': payload_text[:200],
+                        'payload_id': payload_id,
+                        'injection_point': injection_point,
+                        'target': url,
+                        'cwe': 'CWE-352',
+                        'owasp': 'A01:2021 - Broken Access Control'
+                    }
         
         return None
     
