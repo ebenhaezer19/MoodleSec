@@ -33,9 +33,21 @@ from crawler.web_crawler import WebCrawler
 from risk.risk_scorer import RiskScorer
 from database.scan_history import ScanHistoryDB
 from database.scheduler_db import SchedulerDB
+from database.payload_repository import PayloadRepositoryManager
 from reporting.pdf_generator import PDFReportGenerator
 from integrations.integration_manager import IntegrationManager
 from ml.ml_manager import MLManager
+from routers.payload_router import (
+    router as payload_router,
+    set_payload_repo,
+    set_scanner_engine as payload_router_set_scanner_engine
+)
+from routers.scanner_router import (
+    router as scanner_router,
+    set_scanner_engine as scanner_router_set_scanner_engine
+)
+
+
 
 
 app = FastAPI(
@@ -76,6 +88,18 @@ integration_manager = IntegrationManager()
 
 # Initialize ML Manager
 ml_manager = MLManager(enable_ml=True)
+
+# Initialize Payload Repository
+payload_repo = PayloadRepositoryManager()
+
+# Register routers and inject dependencies
+app.include_router(payload_router)
+app.include_router(scanner_router)
+set_payload_repo(payload_repo)
+payload_router_set_scanner_engine(scanner_engine)  # payload_router needs scanner for reload
+scanner_router_set_scanner_engine(scanner_engine)  # scanner_router status/reload endpoints
+
+
 
 # Initialize Phishing Detector
 MOODLE_BASE_DOMAIN = "localhost"  # Change to your actual domain
