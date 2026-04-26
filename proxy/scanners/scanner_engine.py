@@ -214,7 +214,8 @@ class ScannerEngine:
                 params=params,
                 method=method,
                 scan_id=scan_id,
-                client=client
+                client=client,
+                response_body=response_body
             )
             all_findings.extend(payload_findings)
             scanner_results['payload_injection'] = {
@@ -368,7 +369,8 @@ class ScannerEngine:
         params: Dict[str, Any],
         method: str,
         scan_id: str,
-        client=None
+        client=None,
+        response_body: str = ""
     ) -> List[Dict[str, Any]]:
         """
         Test payloads from repository against endpoints.
@@ -378,17 +380,48 @@ class ScannerEngine:
         
         Args:
             url: Target URL
-            params: Request parameters
+            params: Request parameters (may be None)
             method: HTTP method
             scan_id: Scan ID for tracking
             client: HTTP client for injection testing
+            response_body: HTML response to extract form fields from
             
         Returns:
             List of findings from payload injection
         """
         findings = []
         
-        if not params or not self.payload_injector:
+        # Build effective params: start with caller-supplied params
+        effective_params = dict(params) if params else {}
+        
+        # 1. Extract query params from the URL itself (e.g. ?view=month&time=123)
+        if not effective_params:
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(url)
+            if parsed.query:
+                for k, v_list in parse_qs(parsed.query).items():
+                    effective_params[k] = v_list[0] if v_list else ''
+        
+        # 2. Extract input field names from the HTML response
+        if not effective_params and response_body:
+            import re
+            # Match <input>, <textarea>, <select> name attributes
+            for m in re.finditer(
+                r'<(?:input|textarea|select)[^>]+name=["\']([^"\']+)["\']',
+                response_body, re.IGNORECASE
+            ):
+                field_name = m.group(1)
+                # Skip CSRF tokens and hidden Moodle fields
+                if field_name.lower() not in ('sesskey', 'logintoken', '_qf__', 'mform_isexpanded'):
+                    effective_params.setdefault(field_name, '')
+                if len(effective_params) >= 5:
+                    break  # Cap at 5 form fields to avoid too many requests
+        
+        if not effective_params or not self.payload_injector:
+            if not self.payload_injector:
+                print("[Scanner Engine] Payload injector not available, skipping active injection")
+            else:
+                print(f"[Scanner Engine] No injectable parameters found for {url}, skipping active injection")
             return findings
         
         # Test SQL Injection payloads
@@ -397,7 +430,7 @@ class ScannerEngine:
                 print("[Scanner Engine] Testing SQL Injection payloads...")
                 sql_findings = await self._test_payload_category(
                     url=url,
-                    params=params,
+                    params=effective_params,
                     category="SQL Injection",
                     scan_id=scan_id,
                     client=client
@@ -413,7 +446,7 @@ class ScannerEngine:
                 print("[Scanner Engine] Testing XSS payloads...")
                 xss_findings = await self._test_payload_category(
                     url=url,
-                    params=params,
+                    params=effective_params,
                     category="XSS",
                     scan_id=scan_id,
                     client=client
@@ -429,7 +462,7 @@ class ScannerEngine:
                 print("[Scanner Engine] Testing CSRF payloads...")
                 csrf_findings = await self._test_payload_category(
                     url=url,
-                    params=params,
+                    params=effective_params,
                     category="CSRF",
                     scan_id=scan_id,
                     client=client
