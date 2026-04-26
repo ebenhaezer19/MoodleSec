@@ -2059,6 +2059,71 @@ async def get_anomaly_runtime():
     }
 
 
+@app.get("/ml/dashboard/recent-scans")
+async def get_ml_dashboard_recent_scans(limit: int = 10):
+    """
+    Return recent scan summaries with ML filtering stats.
+    Called by moodle-plugin/lib.php to populate the dashboard activity feed.
+
+    Returns:
+        recent_scans: list of scans with severity_breakdown and ml_filtering
+    """
+    try:
+        history = scan_history_db.get_scan_history(limit=limit)
+        recent_scans = []
+
+        for scan in history:
+            # Parse metadata JSON for ml_stats if stored
+            metadata = {}
+            try:
+                import json as _json
+                metadata = _json.loads(scan.get('metadata') or '{}')
+            except Exception:
+                pass
+
+            ml_stats = metadata.get('ml_stats', {})
+            raw_findings    = ml_stats.get('original_count', scan.get('total_findings', 0))
+            fp_removed      = ml_stats.get('filtered_count', 0)
+            actual_findings = ml_stats.get('final_count', scan.get('total_findings', 0))
+
+            recent_scans.append({
+                'scan_id':    scan.get('scan_id', ''),
+                'scan_type':  scan.get('scan_type', 'security_scan'),
+                'timestamp':  scan.get('timestamp', ''),
+                'target_url': scan.get('target_url', ''),
+                'findings_count': int(scan.get('total_findings', 0)),
+                'severity_breakdown': {
+                    'critical': int(scan.get('critical_count', 0)),
+                    'high':     int(scan.get('high_count', 0)),
+                    'medium':   int(scan.get('medium_count', 0)),
+                    'low':      int(scan.get('low_count', 0)),
+                    'info':     int(scan.get('info_count', 0)),
+                },
+                'ml_filtering': {
+                    'raw_findings':           int(raw_findings),
+                    'false_positives_removed': int(fp_removed),
+                    'actual_vulnerabilities':  int(actual_findings),
+                }
+            })
+
+        return {
+            'success': True,
+            'count': len(recent_scans),
+            'recent_scans': recent_scans,
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        }
+
+    except Exception as e:
+        print(f"[ML Dashboard] Error fetching recent scans: {e}")
+        return {
+            'success': False,
+            'count': 0,
+            'recent_scans': [],
+            'error': str(e)
+        }
+
+
+
 # IMPORTANT: Catch-all proxy route MUST be at the end to not interfere with specific endpoints
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 async def proxy_request_catchall(request: Request, path: str) -> Response:
