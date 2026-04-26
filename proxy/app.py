@@ -99,6 +99,12 @@ set_payload_repo(payload_repo)
 payload_router_set_scanner_engine(scanner_engine)  # payload_router needs scanner for reload
 scanner_router_set_scanner_engine(scanner_engine)  # scanner_router status/reload endpoints
 
+# Connect payload repository to scanner engine for active injection testing
+# (scanner_engine was initialized before payload_repo existed, so we wire them now)
+scanner_engine.payload_repo = payload_repo
+scanner_engine.initialize_scanners()  # re-creates detectors + PayloadInjector with the repo
+print(f"[Scanner Engine] Payload repository connected: {type(payload_repo).__name__}")
+
 
 
 # Initialize Phishing Detector
