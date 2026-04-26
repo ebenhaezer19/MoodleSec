@@ -1570,7 +1570,8 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
                     params=target.get('parameters'),
                     response_body=response_body,
                     response_headers=response_headers,
-                    status_code=status_code
+                    status_code=status_code,
+                    client=auth_client
                 )
                 
                 # Enrich findings with risk scores

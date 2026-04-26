@@ -560,7 +560,7 @@ class PayloadInjector:
         Args:
             url: Target URL
             params: Query parameters
-            client: HTTP client (httpx.AsyncClient or aiohttp.ClientSession)
+            client: HTTP client (httpx.AsyncClient)
             headers: Request headers
             data: Request body
             timeout: Request timeout
@@ -570,28 +570,18 @@ class PayloadInjector:
         """
         try:
             if not client:
-                # Create temporary aiohttp client if none provided
-                import aiohttp
-                async with aiohttp.ClientSession() as session:
+                # Create temporary httpx client if none provided
+                import httpx
+                async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, verify=False) as temp_client:
                     method = 'POST' if data else 'GET'
-                    async with session.request(
-                        method,
-                        url,
+                    response = await temp_client.request(
+                        method=method,
+                        url=url,
                         params=params,
                         headers=headers,
-                        data=data,
-                        timeout=aiohttp.ClientTimeout(total=timeout),
-                        ssl=False
-                    ) as response:
-                        # Read response text to keep it alive
-                        text = await response.text()
-                        # Create object with common response properties
-                        class SimpleResponse:
-                            def __init__(self, status, text, headers):
-                                self.status_code = status
-                                self.text = text
-                                self.headers = headers
-                        return SimpleResponse(response.status, text, dict(response.headers))
+                        data=data
+                    )
+                    return response
             else:
                 # If client is httpx.AsyncClient
                 if hasattr(client, 'request'):
@@ -617,3 +607,4 @@ class PayloadInjector:
             import traceback
             traceback.print_exc()
             return None
+
