@@ -403,6 +403,8 @@ class ScannerEngine:
                     effective_params[k] = v_list[0] if v_list else ''
         
         # 2. Extract input field names from the HTML response
+        # If params come from form fields, use POST method for injection
+        injection_method = method.upper() if method else 'GET'
         if not effective_params and response_body:
             import re
             # Match <input>, <textarea>, <select> name attributes
@@ -416,6 +418,9 @@ class ScannerEngine:
                     effective_params.setdefault(field_name, '')
                 if len(effective_params) >= 5:
                     break  # Cap at 5 form fields to avoid too many requests
+            # Form fields are typically submitted via POST
+            if effective_params:
+                injection_method = 'POST'
         
         if not effective_params or not self.payload_injector:
             if not self.payload_injector:
@@ -433,7 +438,8 @@ class ScannerEngine:
                     params=effective_params,
                     category="SQL Injection",
                     scan_id=scan_id,
-                    client=client
+                    client=client,
+                    method=injection_method
                 )
                 findings.extend(sql_findings)
                 print(f"[Scanner Engine] Found {len(sql_findings)} SQL Injection findings")
@@ -449,7 +455,8 @@ class ScannerEngine:
                     params=effective_params,
                     category="XSS",
                     scan_id=scan_id,
-                    client=client
+                    client=client,
+                    method=injection_method
                 )
                 findings.extend(xss_findings)
                 print(f"[Scanner Engine] Found {len(xss_findings)} XSS findings")
@@ -465,7 +472,8 @@ class ScannerEngine:
                     params=effective_params,
                     category="CSRF",
                     scan_id=scan_id,
-                    client=client
+                    client=client,
+                    method=injection_method
                 )
                 findings.extend(csrf_findings)
                 print(f"[Scanner Engine] Found {len(csrf_findings)} CSRF findings")
@@ -480,7 +488,8 @@ class ScannerEngine:
         params: Dict[str, Any],
         category: str,
         scan_id: str,
-        client=None
+        client=None,
+        method: str = "GET"
     ) -> List[Dict[str, Any]]:
         """
         Test specific payload category against parameters.
@@ -491,6 +500,7 @@ class ScannerEngine:
             category: Payload category (SQL Injection, XSS, etc.)
             scan_id: Scan ID
             client: HTTP client for actual injection testing
+            method: HTTP method (GET or POST)
             
         Returns:
             List of findings
@@ -506,7 +516,7 @@ class ScannerEngine:
             print(f"[Scanner Engine] No payloads found for {category}")
             return findings
         
-        print(f"[Scanner Engine] Testing {len(payloads)} {category} payloads on {len(params)} parameters")
+        print(f"[Scanner Engine] Testing {len(payloads)} {category} payloads on {len(params)} parameters (method={method})")
         
         try:
             # Use PayloadInjector to test payloads against parameters
@@ -516,7 +526,8 @@ class ScannerEngine:
                 client=client,
                 category=category,
                 scan_id=scan_id,
-                max_payloads=10
+                max_payloads=10,
+                method=method
             )
             findings.extend(injection_findings)
             print(f"[Scanner Engine] ✓ Parameter injection testing complete for {category}")

@@ -32,15 +32,37 @@ class PayloadInjector:
         self.debug_logger = debug_logger
         
         # Indicators for successful injection/vulnerability
+        # Covers: MySQL, PostgreSQL, Oracle, MSSQL, SQLite, and Moodle DML errors
         self.sql_error_indicators = [
             r"sql syntax error",
-            r"you have an error",
+            r"you have an error in your sql",
             r"warning.*mysql",
             r"postgresql.*error",
             r"oracle.*error",
             r"unclosed quotation mark",
             r"sqlexception",
             r"syntax error in sql",
+            # Moodle-specific DML / mysqli error patterns
+            r"error writing to database",
+            r"error reading from database",
+            r"data too long for column",
+            r"INSERT INTO\s+\w+",
+            r"SELECT .+FROM\s+\w+",
+            r"UPDATE\s+\w+\s+SET",
+            r"DELETE FROM\s+\w+",
+            r"mysqli_native_moodle_database",
+            r"moodle_database",
+            r"dml_write_exception",
+            r"dml_read_exception",
+            r"/lib/dml/",
+            # Generic DB error patterns
+            r"SQLSTATE\[",
+            r"ORA-\d{5}",
+            r"PG::Error",
+            r"sqlite3?\.OperationalError",
+            r"database error",
+            r"query_end\(\)",
+            r"insert_record",
         ]
         
         self.xss_indicators = [
@@ -127,18 +149,25 @@ class PayloadInjector:
         client: Any,
         category: str,
         scan_id: str = "",
-        max_payloads: int = 50
+        max_payloads: int = 50,
+        method: str = "GET"
     ) -> List[Dict[str, Any]]:
         """
         Inject payloads from repository to each parameter with proper URL encoding.
         
+        For GET endpoints: payloads are injected as URL query parameters.
+        For POST endpoints: payloads are injected as form-encoded body data
+        (Content-Type: application/x-www-form-urlencoded), matching how real
+        forms submit data (same as curl --data-urlencode).
+        
         Args:
             url: Target URL
             params: Request parameters
-            client: HTTP client (aiohttp or requests)
+            client: HTTP client (httpx.AsyncClient)
             category: Payload category (XSS, SQL Injection, etc.)
             scan_id: ID of current scan for tracking
             max_payloads: Max payloads to test per parameter (default 50 for comprehensive testing)
+            method: HTTP method (GET or POST) - determines how params are sent
             
         Returns:
             List of findings from payload injection
@@ -154,7 +183,8 @@ class PayloadInjector:
             print(f"[PayloadInjector] No payloads found for category: {category}")
             return findings
         
-        print(f"[PayloadInjector] Testing {len(params)} parameters with {len(available_payloads)} {category} payloads")
+        use_method = method.upper()
+        print(f"[PayloadInjector] Testing {len(params)} parameters with {len(available_payloads)} {category} payloads (method={use_method})")
         
         # Detect time-based SQLi keywords in payloads
         _TIME_BASED_KEYWORDS = ['sleep', 'waitfor', 'delay', 'pg_sleep', 'benchmark']
@@ -183,10 +213,21 @@ class PayloadInjector:
                     encoded_preview = quote(payload_text, safe='')
                     print(f"[PayloadInjector] Payload ID {payload_id} -> {param_name}={encoded_preview[:80]}{'...' if len(encoded_preview) > 80 else ''}")
                     
-                    # Make request with injected payload (returns dict with response + timing)
+                    # Make request with injected payload
+                    # POST: send as form data (Content-Type: application/x-www-form-urlencoded)
+                    # GET:  send as URL query parameters
                     import time as _time
                     t0 = _time.monotonic()
-                    response = await self._make_request(url, test_params, client)
+                    if use_method == 'POST':
+                        response = await self._make_request(
+                            url, params=None, client=client,
+                            method='POST', data=test_params
+                        )
+                    else:
+                        response = await self._make_request(
+                            url, params=test_params, client=client,
+                            method='GET'
+                        )
                     elapsed_ms = (_time.monotonic() - t0) * 1000
                     
                     # --- TIME-BASED BLIND SQLi DETECTION ---
@@ -675,29 +716,40 @@ class PayloadInjector:
         params: Dict[str, Any] = None,
         client: Any = None,
         headers: Dict[str, str] = None,
-        data: str = None,
-        timeout: int = 10
+        data: Any = None,
+        timeout: int = 30,
+        method: str = None
     ) -> Optional[Any]:
         """
         Make HTTP request with error handling.
         
+        For POST requests with dict `data`, httpx automatically encodes as
+        application/x-www-form-urlencoded (same as curl --data-urlencode).
+        
         Args:
             url: Target URL
-            params: Query parameters
+            params: URL query parameters (for GET)
             client: HTTP client (httpx.AsyncClient)
             headers: Request headers
-            data: Request body
-            timeout: Request timeout
+            data: Request body data (dict for form data, str for raw)
+            timeout: Request timeout in seconds (default 30 for time-based SQLi)
+            method: HTTP method (GET/POST). If None, auto-detect from data.
             
         Returns:
             Response object or None on error
         """
+        # Auto-detect method if not explicitly provided
+        if method is None:
+            method = 'POST' if data else 'GET'
+        method = method.upper()
+        
         try:
             if not client:
                 # Create temporary httpx client if none provided
                 import httpx
-                async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, verify=False) as temp_client:
-                    method = 'POST' if data else 'GET'
+                async with httpx.AsyncClient(
+                    timeout=timeout, follow_redirects=True, verify=False
+                ) as temp_client:
                     response = await temp_client.request(
                         method=method,
                         url=url,
@@ -709,7 +761,6 @@ class PayloadInjector:
             else:
                 # If client is httpx.AsyncClient
                 if hasattr(client, 'request'):
-                    method = 'POST' if data else 'GET'
                     response = await client.request(
                         method=method,
                         url=url,
@@ -724,11 +775,15 @@ class PayloadInjector:
                     return None
         
         except asyncio.TimeoutError:
-            logger.warning(f"Request timeout to {url}")
+            logger.warning(f"Request timeout to {url} (method={method}, timeout={timeout}s)")
             return None
         except Exception as e:
-            logger.error(f"Request error to {url}: {e}")
-            import traceback
-            traceback.print_exc()
+            # Catch httpx-specific timeouts too
+            if 'ReadTimeout' in type(e).__name__ or 'TimeoutException' in type(e).__name__:
+                logger.warning(f"Request timeout to {url} (method={method}, timeout={timeout}s)")
+            else:
+                logger.error(f"Request error to {url}: {e}")
+                import traceback
+                traceback.print_exc()
             return None
 
