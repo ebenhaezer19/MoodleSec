@@ -247,19 +247,27 @@ class ScanHistoryDB:
     def _generate_finding_hash(self, finding: Dict[str, Any]) -> str:
         """Generate unique hash for finding deduplication."""
         import hashlib
+        import re
         
-        # Use category + description + url + evidence for better uniqueness
-        # This prevents identical vulnerability types on different pages from collapsing into one
         cat = finding.get('category', '')
         desc = finding.get('description', '')
-        url = finding.get('url', '')
+        severity = finding.get('severity', '')
         evidence = finding.get('evidence', '')
         
-        key = f"{cat}:{desc}:{url}:{evidence}"
+        # If URL is empty, try extracting it from evidence text
+        # (scanner puts "... in http://host/path ..." inside the evidence string)
+        url = finding.get('url', '') or ''
+        if not url and evidence:
+            url_match = re.search(r'https?://[^\s,;"\']+', evidence)
+            if url_match:
+                url = url_match.group(0)
+        
+        # Include severity so identical vuln types at different risk levels are separate
+        key = f"{cat}:{severity}:{desc[:120]}:{url}:{evidence[:120]}"
         hash_val = hashlib.md5(key.encode()).hexdigest()
         
         # DEBUG: Show hash input composition
-        print(f"[DB]     Hash input: {cat[:30]}... : {desc[:30]}... : {url[:40]}... : {evidence[:40] if evidence else 'EMPTY'}...")
+        print(f"[DB]     Hash input: {cat[:30]}... | {severity} | {url[:40] or 'NO_URL'} | {evidence[:40] if evidence else 'EMPTY'}...")
         
         return hash_val
     

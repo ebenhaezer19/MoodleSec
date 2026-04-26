@@ -1534,7 +1534,7 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
                 response_headers = dict(response.headers)
                 status_code = response.status_code
                 
-                scan_results = scanner_engine.scan(
+                scan_results = await scanner_engine.scan(
                     url=target['url'],
                     method=target['method'],
                     params=target.get('parameters'),

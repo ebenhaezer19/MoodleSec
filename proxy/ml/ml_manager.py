@@ -96,21 +96,25 @@ class MLManager:
         enhanced_finding = finding.copy()
         ml_metadata = {}
         
-        # 1. False Positive Detection
+        # 1. False Positive Detection (ML Model)
         is_fp, fp_confidence = self.fp_reducer.predict(finding, context)
+        ml_used = self.fp_reducer.is_trained
         ml_metadata['false_positive'] = {
             'is_false_positive': is_fp,
-            'confidence': fp_confidence
+            'confidence': fp_confidence,
+            'method': 'ml_model' if ml_used else 'heuristic'
         }
         
-        # Filter out false positives with confidence > 70%
-        # Also filter XSS findings with "dangerous tag" pattern (common FP)
-        if is_fp and fp_confidence > 0.7:
+        # Filter path A: ML model high-confidence FP (threshold: 60%)
+        if is_fp and fp_confidence > 0.6:
             enhanced_finding['filtered'] = True
-            enhanced_finding['filter_reason'] = f'ML detected false positive ({fp_confidence:.2%})'
+            enhanced_finding['filter_reason'] = f'ML model detected false positive ({fp_confidence:.2%} confidence)'
+            ml_metadata['false_positive']['filtered_by'] = 'ml_model'
+        
+        # Filter path B: Rule-based pattern for known Moodle-specific FPs
+        # These are XSS alerts triggered by Moodle's own legitimate JS/HTML
         elif finding.get('category') == 'Cross-Site Scripting (XSS)':
             description = finding.get('description', '').lower()
-            # Check for multiple FP patterns
             fp_patterns = [
                 'dangerous html tag',
                 'potentially dangerous html tag',
@@ -121,9 +125,9 @@ class MLManager:
                 '<embed>'
             ]
             if any(pattern in description for pattern in fp_patterns):
-                # Aggressive filtering for known FP pattern
                 enhanced_finding['filtered'] = True
-                enhanced_finding['filter_reason'] = 'Known false positive pattern: Moodle legitimate HTML tags'
+                enhanced_finding['filter_reason'] = 'Pattern: Moodle legitimate HTML (known FP)'
+                ml_metadata['false_positive']['filtered_by'] = 'rule_pattern'
         
         # 2. Severity Prediction
         if self.severity_predictor:
@@ -210,60 +214,36 @@ class MLManager:
         processed_findings = []
         filtered_count = 0
         severity_adjusted_count = 0
-        
-        # Debug: Track FP predictions
-        fp_predictions = []
+        ml_filtered = 0
         pattern_filtered = 0
-        
-        # Debug: Sample first XSS finding to see description format
-        xss_findings = [f for f in findings if f.get('category') == 'Cross-Site Scripting (XSS)']
-        if xss_findings:
-            sample = xss_findings[0]
-            print(f"[Debug] Sample XSS finding:")
-            print(f"  Category: {sample.get('category')}")
-            print(f"  Description: {sample.get('description', 'N/A')[:100]}...")
         
         for finding in findings:
             enhanced = self.process_finding(finding, context)
             
-            # Debug: Log FP prediction
-            if enhanced.get('ml_metadata', {}).get('false_positive'):
-                fp_info = enhanced['ml_metadata']['false_positive']
-                fp_predictions.append({
-                    'category': finding.get('category', 'unknown'),
-                    'is_fp': fp_info['is_false_positive'],
-                    'confidence': fp_info['confidence']
-                })
+            # Track statistics per filter path
+            is_filtered = enhanced.get('filtered', False)
+            filter_reason = enhanced.get('filter_reason', '')
+            filtered_by = enhanced.get('ml_metadata', {}).get('false_positive', {}).get('filtered_by', '')
             
-            # Track statistics
-            if enhanced.get('filtered'):
+            if is_filtered:
                 filtered_count += 1
-                if 'pattern' in enhanced.get('filter_reason', '').lower():
+                if filtered_by == 'ml_model':
+                    ml_filtered += 1
+                elif filtered_by == 'rule_pattern':
                     pattern_filtered += 1
+            
             if enhanced.get('severity_adjusted'):
                 severity_adjusted_count += 1
             
-            # Include non-filtered findings OR low/info severity for informational purposes
-            severity = finding.get('severity', '').lower()
-            if not enhanced.get('filtered') or severity in ['low', 'info', 'informational']:
-                # Mark low/info FPs as informational
-                if enhanced.get('filtered') and severity in ['low', 'info', 'informational']:
-                    enhanced['informational_only'] = True
-                    enhanced['filtered'] = False  # Unmark as filtered so it shows
+            # Only pass through findings that were NOT filtered
+            if not is_filtered:
                 processed_findings.append(enhanced)
         
-        # Debug: Print FP prediction summary
-        if fp_predictions:
-            fp_count = sum(1 for p in fp_predictions if p['is_fp'])
-            high_conf_fp = sum(1 for p in fp_predictions if p['is_fp'] and p['confidence'] > 0.7)
-            print(f"[FP Reducer] ML Predictions: {fp_count}/{len(fp_predictions)} marked as FP")
-            print(f"[FP Reducer] High confidence (>70%): {high_conf_fp} findings")
-            if high_conf_fp == 0 and fp_count > 0:
-                avg_conf = np.mean([p['confidence'] for p in fp_predictions if p['is_fp']])
-                print(f"[FP Reducer] Average FP confidence: {avg_conf:.2%} (below 70% threshold)")
-        
-        print(f"[FP Reducer] Pattern-based filtering: {pattern_filtered} findings")
-        print(f"[FP Reducer] Total filtered: {filtered_count} findings")
+        # Detailed FP reduction log for thesis transparency
+        print(f"[FP Reducer] Total findings: {len(findings)}")
+        print(f"[FP Reducer] ML model filtered: {ml_filtered} (threshold: confidence > 60%)")
+        print(f"[FP Reducer] Rule-based filtered: {pattern_filtered} (Moodle-specific patterns)")
+        print(f"[FP Reducer] Total filtered: {filtered_count} | Remaining: {len(processed_findings)}")
         
         return {
             'findings': processed_findings,
