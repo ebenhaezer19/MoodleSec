@@ -470,7 +470,7 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
                     status_code = response.status_code
                 
                 # Scan endpoint
-                scan_results = scanner_engine.scan(
+                scan_results = await scanner_engine.scan(
                     url=target['url'],
                     method=target['method'],
                     params=target.get('parameters'),
