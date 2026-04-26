@@ -271,7 +271,7 @@ async def trigger_scan(scan_request: ScanRequest) -> ScanResult:
         pass
     
     # Run comprehensive scan using scanner engine
-    scan_results = scanner_engine.scan(
+    scan_results = await scanner_engine.scan(
         url=target_url,
         method=scan_request.method,
         params=scan_request.parameters,
@@ -279,17 +279,6 @@ async def trigger_scan(scan_request: ScanRequest) -> ScanResult:
         response_headers=response_headers,
         status_code=status_code
     )
-    
-    # Convert findings to ScanFinding objects
-    findings = [
-        ScanFinding(
-            severity=f.get('severity', 'Info'),
-            category=f.get('category', 'General'),
-            description=f.get('description', ''),
-            evidence=f.get('evidence')
-        )
-        for f in scan_results['findings']
-    ]
     
     # Enrich findings with risk scores
     enriched_findings = risk_scorer.batch_enrich_findings(scan_results['findings'])
