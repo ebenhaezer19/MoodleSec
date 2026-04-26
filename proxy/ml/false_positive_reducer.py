@@ -295,31 +295,28 @@ class FalsePositiveReducer:
         from sklearn.svm import SVC
         from sklearn.metrics import precision_score, recall_score, f1_score, classification_report
 
-        # Model 1: Random Forest (Anti-Overfitting Configuration)
-        # Reduced complexity to prevent overfitting on small datasets
-        # Changes: n_estimators 150→100, max_depth 12→8, added max_features
-        # min_samples_split 4→6, min_samples_leaf 2→3 for better generalization
+        # Model 1: Random Forest (Anti-Overfitting for ~64 samples)
+        # max_depth=3: 2^3=8 max leaves per tree — cannot memorize 64 samples
+        # Phase 0 lesson: high depth on small data → train 100% (memorization)
         rf_model = RandomForestClassifier(
-            n_estimators=100,        # Reduced from 150
-            max_depth=8,             # Reduced from 12 to prevent memorization
-            min_samples_split=6,     # Increased from 4
-            min_samples_leaf=3,      # Increased from 2
-            max_features='sqrt',     # Added: limit features per tree
+            n_estimators=100,        # Keep ensemble size
+            max_depth=3,             # KEY: 8→3 to prevent memorization
+            min_samples_split=8,     # Increased from 6
+            min_samples_leaf=5,      # Increased from 3: each leaf needs 5+ samples
+            max_features='sqrt',     # Limit features per tree
             random_state=42,
             class_weight='balanced'
         )
 
-        # Model 2: Gradient Boosting (Regularized)
-        # Reduced complexity for better generalization
-        # Note: GradientBoostingClassifier doesn't have class_weight parameter
-        # Instead, we handle imbalance through subsample and learning_rate tuning
+        # Model 2: Gradient Boosting (Regularized for small datasets)
+        # max_depth=2: shallow stumps prevent memorization, force generalization
         gb_model = GradientBoostingClassifier(
-            n_estimators=75,         # Reduced from 100
-            max_depth=4,             # Reduced from 5
-            learning_rate=0.05,      # Reduced from 0.1 for smoother learning
-            min_samples_split=6,     # Added regularization
-            min_samples_leaf=3,      # Added regularization
-            subsample=0.8,           # Added: use 80% of samples per tree
+            n_estimators=50,         # Reduced from 75
+            max_depth=2,             # KEY: 4→2 (decision stumps)
+            learning_rate=0.05,      # Keep slow learning rate
+            min_samples_split=8,     # Increased from 6
+            min_samples_leaf=5,      # Increased from 3
+            subsample=0.7,           # Reduced from 0.8: more stochasticity
             random_state=42
         )
 
