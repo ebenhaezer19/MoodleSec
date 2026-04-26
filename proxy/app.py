@@ -294,6 +294,23 @@ async def trigger_scan(scan_request: ScanRequest) -> ScanResult:
     # Enrich findings with risk scores
     enriched_findings = risk_scorer.batch_enrich_findings(scan_results['findings'])
     
+    # === ML FILTERING: FP Reducer + Severity Predictor (real-time inference) ===
+    print(f"[DAST Scan] BEFORE ML: {len(enriched_findings)} findings")
+    ml_results = ml_manager.filter_findings(enriched_findings)
+    enriched_findings = ml_results['findings']
+    print(f"[DAST Scan] AFTER ML: {len(enriched_findings)} findings "
+          f"({ml_results['filtered_count']} FPs removed, "
+          f"{ml_results['severity_adjusted_count']} severities adjusted)")
+    
+    # Recalculate summary after ML filtering
+    ml_summary = {
+        'critical': sum(1 for f in enriched_findings if f.get('severity', '').lower() == 'critical'),
+        'high':     sum(1 for f in enriched_findings if f.get('severity', '').lower() == 'high'),
+        'medium':   sum(1 for f in enriched_findings if f.get('severity', '').lower() == 'medium'),
+        'low':      sum(1 for f in enriched_findings if f.get('severity', '').lower() == 'low'),
+        'info':     sum(1 for f in enriched_findings if f.get('severity', '').lower() == 'info'),
+    }
+    
     # Log the scan
     scan_log = {
         "type": "dast_scan",
@@ -301,8 +318,14 @@ async def trigger_scan(scan_request: ScanRequest) -> ScanResult:
         "target_url": target_url,
         "method": scan_request.method,
         "parameters": scan_request.parameters,
-        "findings_count": len(findings),
-        "summary": scan_results['summary'],
+        "findings_count": len(enriched_findings),
+        "ml_stats": {
+            "original_findings": ml_results['original_count'],
+            "false_positives_removed": ml_results['filtered_count'],
+            "actual_vulnerabilities": ml_results['final_count'],
+            "severity_adjusted": ml_results['severity_adjusted_count'],
+        },
+        "summary": ml_summary,
         "timestamp": scan_results['timestamp']
     }
     append_log(LOG_DIR, scan_log)
@@ -314,13 +337,14 @@ async def trigger_scan(scan_request: ScanRequest) -> ScanResult:
         'target_url': target_url,
         'timestamp': scan_results['timestamp'],
         'total_findings': len(enriched_findings),
-        'summary': scan_results['summary'],
+        'ml_stats': ml_results,
+        'summary': ml_summary,
         'findings': enriched_findings
     }
     scan_history_db.save_scan(scan_data)
     print(f"[DAST Scan] Saved scan {scan_results['scan_id']} to database with {len(enriched_findings)} findings")
     
-    # Update findings with enriched data for response
+    # Convert to response model
     findings = [
         ScanFinding(
             severity=f.get('severity', 'Info'),
@@ -336,7 +360,7 @@ async def trigger_scan(scan_request: ScanRequest) -> ScanResult:
         target_url=target_url,
         timestamp=scan_results['timestamp'],
         findings=findings,
-        summary=scan_results['summary']
+        summary=ml_summary
     )
 
 
@@ -1242,8 +1266,22 @@ async def scan_api() -> Dict[str, Any]:
         print(f"[API Scan] Enriching {len(scan_results['findings'])} findings with risk scores...")
         enriched_findings = risk_scorer.batch_enrich_findings(scan_results['findings'])
         
+        # === ML FILTERING: FP Reducer + Severity Predictor (real-time inference) ===
+        print(f"[API Scan] BEFORE ML: {len(enriched_findings)} findings")
+        ml_result = ml_manager.filter_findings(enriched_findings)
+        enriched_findings = ml_result['findings']
+        print(f"[API Scan] AFTER ML: {len(enriched_findings)} findings "
+              f"({ml_result['filtered_count']} FPs removed, "
+              f"{ml_result['severity_adjusted_count']} severities adjusted)")
+        
         results['total_findings'] = len(enriched_findings)
         results['all_findings'] = enriched_findings
+        results['ml_stats'] = {
+            'original_count': ml_result['original_count'],
+            'fp_filtered': ml_result['filtered_count'],
+            'severity_adjusted': ml_result['severity_adjusted_count'],
+            'final_count': ml_result['final_count'],
+        }
         results['summary'] = _generate_finding_summary(enriched_findings)
         results['discovered_endpoints'] = scan_results['discovered_endpoints']
         
@@ -1254,6 +1292,7 @@ async def scan_api() -> Dict[str, Any]:
             'target_url': MOODLE_URL,
             'timestamp': timestamp,
             'total_findings': results['total_findings'],
+            'ml_stats': ml_result,
             'summary': results['summary'],
             'findings': results['all_findings']
         }
@@ -1279,6 +1318,56 @@ async def scan_api() -> Dict[str, Any]:
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"API scan failed: {str(e)}")
+
+
+
+@app.post("/ml/post-process-zap")
+async def ml_post_process_zap(findings: List[Dict[str, Any]] = Body(...)) -> Dict[str, Any]:
+    """
+    Real-time ML post-processing for ZAP scan findings.
+
+    Called by moodle-plugin (zap_scan.php / zap_results.php) immediately after
+    a ZAP scan completes so that FP Reducer and Severity Predictor are applied
+    even though ZAP saves directly to the Moodle DB (bypassing the proxy).
+
+    Args:
+        findings: List of raw ZAP findings (JSON array in request body)
+
+    Returns:
+        ML-filtered findings + ml_stats summary
+    """
+    if not findings:
+        return {
+            'findings': [],
+            'ml_stats': {
+                'original_count': 0,
+                'fp_filtered': 0,
+                'severity_adjusted': 0,
+                'final_count': 0,
+            },
+            'ml_enabled': ml_manager.enable_ml,
+        }
+
+    print(f"[ZAP ML Post-Process] Received {len(findings)} raw ZAP findings")
+
+    # Run ML pipeline (FP Reducer + Severity Predictor)
+    ml_result = ml_manager.filter_findings(findings)
+
+    print(f"[ZAP ML Post-Process] Done: {ml_result['filtered_count']} FPs removed, "
+          f"{ml_result['severity_adjusted_count']} severities adjusted, "
+          f"{ml_result['final_count']} remain")
+
+    return {
+        'findings': ml_result['findings'],
+        'ml_stats': {
+            'original_count': ml_result['original_count'],
+            'fp_filtered': ml_result['filtered_count'],
+            'severity_adjusted': ml_result['severity_adjusted_count'],
+            'final_count': ml_result['final_count'],
+        },
+        'ml_enabled': True,
+        'timestamp': datetime.utcnow().isoformat() + 'Z',
+    }
 
 
 @app.post("/api/scan-native-auth")

@@ -208,6 +208,83 @@ function local_security_dashboard_get_logs($limit = 100) {
 }
 
 /**
+ * Apply ML FP Reducer + Severity Predictor to a list of findings in real-time.
+ *
+ * Calls the proxy's /ml/post-process-zap endpoint. Used by ZAP scan pages so
+ * that findings are ML-filtered even though ZAP writes directly to the Moodle DB
+ * (bypassing the proxy pipeline).
+ *
+ * @param  array $findings  Raw findings array (each item has severity, category,
+ *                          description, evidence, url, etc.)
+ * @return array {
+ *   'findings'  => array   ML-filtered & severity-adjusted findings,
+ *   'ml_stats'  => array   {original_count, fp_filtered, severity_adjusted, final_count},
+ *   'ml_enabled' => bool
+ * }
+ */
+function local_security_dashboard_ml_filter_findings(array $findings): array {
+    $proxy_url = get_config('local_security_dashboard', 'proxy_url');
+    if (empty($proxy_url)) {
+        $proxy_url = 'http://localhost:8999';
+    }
+
+    // Graceful passthrough when proxy is unavailable or findings list is empty.
+    if (empty($findings)) {
+        return [
+            'findings'   => [],
+            'ml_stats'   => ['original_count' => 0, 'fp_filtered' => 0,
+                             'severity_adjusted' => 0, 'final_count' => 0],
+            'ml_enabled' => false,
+        ];
+    }
+
+    $url = rtrim($proxy_url, '/') . '/ml/post-process-zap';
+
+    try {
+        $curl = new curl();
+        $curl->setopt([
+            'CURLOPT_TIMEOUT'        => 30,
+            'CURLOPT_CONNECTTIMEOUT' => 5,
+        ]);
+
+        $response = $curl->post($url, json_encode(array_values($findings)), [
+            'CURLOPT_HTTPHEADER' => ['Content-Type: application/json'],
+        ]);
+
+        if ($curl->get_errno()) {
+            error_log('[ML Filter] cURL error: ' . $curl->error);
+            return ['findings' => $findings,
+                    'ml_stats' => ['original_count' => count($findings), 'fp_filtered' => 0,
+                                   'severity_adjusted' => 0, 'final_count' => count($findings)],
+                    'ml_enabled' => false];
+        }
+
+        $result = json_decode($response, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE || !isset($result['findings'])) {
+            error_log('[ML Filter] Bad JSON from proxy: ' . substr($response, 0, 200));
+            return ['findings' => $findings,
+                    'ml_stats' => ['original_count' => count($findings), 'fp_filtered' => 0,
+                                   'severity_adjusted' => 0, 'final_count' => count($findings)],
+                    'ml_enabled' => false];
+        }
+
+        error_log('[ML Filter] ZAP: ' . count($findings) . ' raw → '
+                  . ($result['ml_stats']['fp_filtered'] ?? 0) . ' FPs removed → '
+                  . ($result['ml_stats']['final_count'] ?? count($result['findings'])) . ' remain');
+
+        return $result;
+
+    } catch (Exception $e) {
+        error_log('[ML Filter] Exception: ' . $e->getMessage());
+        return ['findings' => $findings,
+                'ml_stats' => ['original_count' => count($findings), 'fp_filtered' => 0,
+                               'severity_adjusted' => 0, 'final_count' => count($findings)],
+                'ml_enabled' => false];
+    }
+}
+
+/**
  * Trigger security scan
  */
 function local_security_dashboard_trigger_scan($path, $method = 'GET', $parameters = null) {

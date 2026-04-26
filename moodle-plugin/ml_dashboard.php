@@ -81,9 +81,9 @@ if ($ml_status) {
             'False Positive Reducer',
             '🎯',
             $fp_model,
-            'Filters out false positives with 97.6% confidence',
+            'Filters false positives — 89.3% balanced accuracy (RF+GB Ensemble, Phase 3)',
             [
-                'Algorithm' => 'Random Forest',
+                'Algorithm' => 'RF + GB Ensemble + CalibratedClassifierCV',
                 'Estimators' => $fp_model['n_estimators'] ?? 'N/A',
                 'Max Depth' => $fp_model['max_depth'] ?? 'N/A',
                 'Features' => $fp_model['n_features'] ?? 'N/A'
@@ -153,18 +153,18 @@ if ($ml_status) {
     
     echo html_writer::tag('h5', 'Training Data Sources', ['class' => 'card-title']);
     echo html_writer::start_tag('ul');
-    echo html_writer::tag('li', 'Moodle CVE Database (2020-2021)');
-    echo html_writer::tag('li', 'OWASP Top 10 Vulnerability Patterns');
-    echo html_writer::tag('li', 'Synthetic Attack Scenarios');
-    echo html_writer::tag('li', 'Common False Positive Patterns');
+    echo html_writer::tag('li', 'Phase 0: 186 synthetic samples (data leakage removed, realistic overlapping distributions)');
+    echo html_writer::tag('li', 'Phase 2: 46 real HAR samples from OWASP ZAP (imbalanced: 82.6% TP / 17.4% FP)');
+    echo html_writer::tag('li', 'Phase 3: 76 real balanced samples from HAR files (38 TP SQLi + 38 Normal traffic)');
+    echo html_writer::tag('li', '40 synthetic augmented TP samples (SQLi, XSS, CSRF, Auth Bypass, Path Traversal)');
     echo html_writer::end_tag('ul');
     
-    echo html_writer::tag('h5', 'Dataset Composition', ['class' => 'card-title mt-3']);
+    echo html_writer::tag('h5', 'Dataset Composition (Phase 3 Final)', ['class' => 'card-title mt-3']);
     echo html_writer::start_tag('ul');
-    echo html_writer::tag('li', 'False Positive Reduction: 200 samples (70% TP, 30% FP)');
-    echo html_writer::tag('li', 'Severity Prediction: 200 samples (5 severity levels)');
-    echo html_writer::tag('li', 'Anomaly Detection: 300 normal behavior samples');
-    echo html_writer::tag('li', 'Rate Limiting: 200 risk scoring samples');
+    echo html_writer::tag('li', 'FP Reducer: 76 real balanced (38:38) + 40 synthetic TP augmentation');
+    echo html_writer::tag('li', 'Severity Predictor: 200 samples / 5 severity levels (XGBoost + GPU)');
+    echo html_writer::tag('li', 'Anomaly Detector: 306 normal behaviour samples (Isolation Forest, unsupervised)');
+    echo html_writer::tag('li', 'Rate Limiter: 200 risk scoring samples (XGBoost Regressor + GPU)');
     echo html_writer::end_tag('ul');
     
     echo html_writer::end_div(); // card-body
@@ -174,10 +174,10 @@ if ($ml_status) {
     echo html_writer::tag('h3', '📈 Performance Metrics', ['class' => 'mt-5 mb-3']);
     echo html_writer::start_div('row');
     
-    echo render_metric_card('False Positive Reduction', '100%', 'Test Accuracy', 'success');
-    echo render_metric_card('Severity Prediction', '100%', 'Test Accuracy', 'success');
-    echo render_metric_card('Anomaly Detection', '90%', 'Detection Rate', 'info');
-    echo render_metric_card('Rate Limiter', '0.72', 'R² Score', 'primary');
+    echo render_metric_card('FP Reducer (Phase 3)', '89.3%', 'Balanced Accuracy', 'success');
+    echo render_metric_card('Severity Prediction', '100%', 'Test Accuracy (XGBoost)', 'success');
+    echo render_metric_card('Anomaly Detection', '~90%', 'Detection Rate', 'info');
+    echo render_metric_card('Rate Limiter', '0.74', 'Validation R² (XGBoost)', 'primary');
     
     echo html_writer::end_div(); // row
     

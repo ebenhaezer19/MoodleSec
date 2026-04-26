@@ -38,8 +38,7 @@ $PAGE->set_title(get_string('scan_results', 'local_security_dashboard'));
 $PAGE->set_heading(get_string('scan_results', 'local_security_dashboard'));
 $PAGE->set_pagelayout('admin');
 
-// Load scan results
-require_once($CFG->dirroot . '/local/security_dashboard/lib/zap_integration.php');
+require_once($CFG->dirroot . '/local/security_dashboard/lib.php');
 
 $scan = local_security_dashboard_get_scan($scan_id);
 if (!$scan) {
@@ -49,9 +48,80 @@ if (!$scan) {
     die();
 }
 
-$findings = local_security_dashboard_get_scan_findings($scan_id);
+// Load raw findings from DB
+$findings_raw = local_security_dashboard_get_scan_findings($scan_id);
+
+// === REAL-TIME ML FILTERING (FP Reducer + Severity Predictor) ===
+// Convert DB objects to plain arrays for the proxy API call.
+$findings_array = [];
+foreach ($findings_raw as $f) {
+    $findings_array[] = [
+        'severity'    => $f->severity    ?? 'Info',
+        'category'    => $f->category    ?? 'General',
+        'description' => $f->description ?? '',
+        'evidence'    => $f->evidence    ?? '',
+        'url'         => $scan->target_url ?? '',
+        'title'       => $f->title       ?? ($f->category ?? ''),
+        'remediation' => $f->remediation ?? '',
+        'cwe_id'      => $f->cwe_id      ?? null,
+    ];
+}
+
+$ml_result  = local_security_dashboard_ml_filter_findings($findings_array);
+$ml_stats   = $ml_result['ml_stats'];
+$ml_enabled = $ml_result['ml_enabled'] ?? true;
+
+// Rebuild the findings list from ML-filtered results (preserving DB fields).
+// We match by index (same ordering as $findings_raw).
+$filtered_findings = [];
+if (!empty($ml_result['findings'])) {
+    // Build a lookup of which original indices survived.
+    // Strategy: find non-filtered items from ml_result and reconstruct.
+    // Simpler: iterate ml_result findings (already filtered array of assoc arrays)
+    // and wrap them in a stdClass compatible with the template below.
+    foreach ($ml_result['findings'] as $mf) {
+        $obj = new stdClass();
+        $obj->severity    = $mf['severity']    ?? 'Info';
+        $obj->category    = $mf['category']    ?? 'General';
+        $obj->description = $mf['description'] ?? '';
+        $obj->evidence    = $mf['evidence']    ?? '';
+        $obj->title       = $mf['title']       ?? ($mf['category'] ?? '');
+        $obj->remediation = $mf['remediation'] ?? '';
+        $obj->cwe_id      = $mf['cwe_id']      ?? null;
+        // Preserve ML metadata for badge display
+        $obj->ml_is_fp_reduced       = !empty($mf['ml_processed']);
+        $obj->ml_severity_adjusted   = !empty($mf['severity_adjusted']);
+        $obj->ml_original_severity   = $mf['original_severity'] ?? null;
+        $filtered_findings[] = $obj;
+    }
+} else {
+    // Fallback: proxy unavailable, show raw findings
+    $filtered_findings = $findings_raw;
+}
+
+$findings = $filtered_findings;   // use filtered set from here on
 
 echo $OUTPUT->header();
+
+// === ML STATS BANNER ===
+if ($ml_enabled && !empty($ml_stats)) {
+    $orig    = intval($ml_stats['original_count']   ?? count($findings_raw));
+    $removed = intval($ml_stats['fp_filtered']      ?? 0);
+    $adj     = intval($ml_stats['severity_adjusted'] ?? 0);
+    $final   = intval($ml_stats['final_count']      ?? count($findings));
+
+    $banner_class = $removed > 0 ? 'alert-info' : 'alert-success';
+    echo html_writer::start_div("alert $banner_class mt-2");
+    echo html_writer::tag('strong', '🤖 ML Processing Complete &nbsp;');
+    echo html_writer::tag('span',
+        "Raw findings: <strong>{$orig}</strong> &nbsp;|&nbsp; "
+        . "FPs removed: <strong>{$removed}</strong> &nbsp;|&nbsp; "
+        . "Severities adjusted: <strong>{$adj}</strong> &nbsp;|&nbsp; "
+        . "Final: <strong>{$final}</strong>",
+        ['style' => 'font-size:0.95em;']
+    );
+    echo html_writer::end_div();
+}
 
 // Scan Header
 echo html_writer::start_div('card');
