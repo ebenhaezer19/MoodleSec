@@ -513,7 +513,24 @@ class FalsePositiveReducer:
                 self.scaler = model_data['scaler']
                 self.is_trained = model_data['is_trained']
                 
-                print(f"[FP Reducer] Loaded trained model from {self.model_path}")
+                # Log detailed version info for debugging
+                timestamp = model_data.get('timestamp', 'UNKNOWN (pre-v2 model — no timestamp)')
+                model_type = type(self.model).__name__
+                n_features = len(self.scaler.mean_) if hasattr(self.scaler, 'mean_') else 'unknown'
+                
+                # Detect if it's the v2.0 Calibrated Ensemble
+                is_v2 = (
+                    model_type == 'CalibratedClassifierCV' and
+                    'timestamp' in model_data
+                )
+                version_tag = "v2.0 (Calibrated RF+GB Ensemble)" if is_v2 else "v1.x (legacy)"
+                
+                print(f"[FP Reducer] ✓ Loaded model from {self.model_path}")
+                print(f"[FP Reducer]   Version   : {version_tag}")
+                print(f"[FP Reducer]   Type      : {model_type}")
+                print(f"[FP Reducer]   Timestamp : {timestamp}")
+                print(f"[FP Reducer]   Features  : {n_features}")
+                
             except Exception as e:
                 print(f"[FP Reducer] Failed to load model: {e}")
                 self.is_trained = False
