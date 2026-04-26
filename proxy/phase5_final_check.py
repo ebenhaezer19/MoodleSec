@@ -16,7 +16,24 @@ print("PHASE 5 FINAL CHECK — THESIS DEFENSE VALIDATION")
 print("=" * 70)
 
 # ── Rebuild training data (same as retrain_fp_reducer.py) ────────
-csv_path = 'ml/training_data/phase3_balanced_dataset_FINAL.csv'
+proxy_dir = os.path.dirname(os.path.abspath(__file__))
+candidates = [
+    os.path.join(proxy_dir, 'ml', 'training_data', 'phase3_balanced_dataset_FINAL.csv'),
+    os.path.join(proxy_dir, '..', 'ml', 'training_data', 'phase3_balanced_dataset_FINAL.csv'),
+    os.path.join(proxy_dir, '..', 'ml_training_data', 'phase3_balanced_dataset_FINAL.csv'),
+    'ml/training_data/phase3_balanced_dataset_FINAL.csv',
+    '../ml/training_data/phase3_balanced_dataset_FINAL.csv',
+]
+csv_path = next((p for p in candidates if os.path.exists(p)), None)
+if csv_path is None:
+    print("[ERROR] Cannot find phase3_balanced_dataset_FINAL.csv")
+    print("Searched:")
+    for p in candidates:
+        print(f"  {os.path.abspath(p)}")
+    print("\nPlease run from /proxy directory or copy the CSV to proxy/ml/training_data/")
+    sys.exit(1)
+print(f"Found CSV: {os.path.abspath(csv_path)}")
+
 rows = []
 with open(csv_path) as f:
     for row in csv.DictReader(f):
