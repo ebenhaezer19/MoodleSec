@@ -496,15 +496,15 @@ class FalsePositiveReducer:
             'timestamp': datetime.utcnow().isoformat() + 'Z'
         }
         
-        with open(self.model_path, 'wb') as f:
-            pickle.dump(model_data, f)
+        import joblib
+        joblib.dump(model_data, self.model_path)
     
     def _load_model(self):
         """Load trained model from disk if available."""
         if os.path.exists(self.model_path):
             try:
-                with open(self.model_path, 'rb') as f:
-                    model_data = pickle.load(f)
+                import joblib
+                model_data = joblib.load(self.model_path)
                 
                 self.model = model_data['model']
                 self.scaler = model_data['scaler']
