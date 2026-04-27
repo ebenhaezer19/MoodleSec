@@ -1,0 +1,2411 @@
+ADAPTIVE SECURITY PROXY UNTUK MOODLE: SISTEM AUDIT KERENTANAN OTOMATIS BERBASIS CVSS RISK SCORING DENGAN MEKANISME SEMI SELF-HEALING
+
+BAB I
+PENDAHULUAN
+1.1 Latar Belakang
+Learning Management System (LMS) seperti Moodle telah menjadi infrastruktur kritis dalam ekosistem pendidikan digital modern. Sebagai platform open-source yang digunakan oleh jutaan institusi pendidikan di seluruh dunia, Moodle menyimpan data sensitif mahasiswa, materi pembelajaran, dan informasi akademik yang bernilai tinggi. Namun, popularitas dan kompleksitas arsitektur Moodle membuatnya menjadi target utama serangan siber, khususnya melalui eksploitasi kerentanan aplikasi web seperti SQL Injection, Cross-Site Scripting (XSS), Cross-Site Request Forgery (CSRF), dan Path Traversal.
+Pendekatan keamanan tradisional menggunakan Web Application Firewall (WAF) konvensional dan scanner kerentanan statis memiliki beberapa keterbatasan fundamental. Pertama, sistem rule-based menghasilkan tingkat false positive yang tinggi karena tidak mempertimbangkan konteks spesifik aplikasi Moodle. Kedua, pemindaian pasif tidak dapat mendeteksi kerentanan yang hanya muncul dalam kondisi runtime tertentu. Ketiga, penilaian risiko menggunakan skor CVSS standar sering tidak mencerminkan dampak aktual terhadap lingkungan produksi yang spesifik.
+Penelitian ini mengembangkan sistem MoodleSec, sebuah Adaptive Security Proxy yang mengintegrasikan Dynamic Application Security Testing (DAST), machine learning untuk reduksi false positive, dan adaptive CVSS risk scoring dalam satu arsitektur berlapis. Sistem ini diimplementasikan sebagai plugin Moodle (admin tool) yang dapat melakukan audit kerentanan otomatis dengan mengalirkan trafik pengujian melalui proxy service berbasis Python Flask yang menjalankan multiple security scanners. Hasil pemindaian dari berbagai sumber (OWASP ZAP, Acunetix, dan scanner custom) diproses secara terpadu, dianalisis menggunakan machine learning, dan disajikan dalam dashboard interaktif dengan sistem notifikasi real-time melalui Slack namun ini sifatnya opsional untuk sementara waktu.
+Inovasi utama penelitian ini terletak pada tiga aspek: (1) Integrasi multi-scanner dengan normalisasi hasil melalui proxy service yang dapat memproses output dari OWASP ZAP dan Acunetix secara otomatis; (2) Machine learning pipeline dengan ensemble model (Random Forest dan XGBoost) yang dilengkapi probability calibration untuk meningkatkan akurasi klasifikasi true positive vs false positive; (3) Mekanisme semi self-healing yang memberikan rekomendasi mitigasi kontekstual berdasarkan adaptive CVSS scoring dengan mempertimbangkan faktor-faktor seperti endpoint sensitivity, role-based impact, dan historical attack patterns. Sistem ini dilengkapi dengan scheduler untuk scanning otomatis, comprehensive reporting (PDF export), dan integrasi notifikasi untuk memfasilitasi respons cepat terhadap temuan kerentanan kritis.
+1.2 Rumusan Masalah
+Berdasarkan latar belakang yang telah diuraikan, penelitian ini merumuskan beberapa permasalahan utama:
+1.Bagaimana merancang arsitektur proxy service yang dapat mengintegrasikan multiple security scanners (OWASP ZAP, Acunetix, custom scanners) untuk melakukan pemindaian kerentanan secara otomatis terhadap instalasi Moodle tanpa mengganggu operasional sistem produksi?
+2.Bagaimana mengimplementasikan machine learning pipeline dengan ensemble model dan probability calibration untuk mengurangi tingkat false positive dalam deteksi kerentanan berbasis pattern matching?
+3.Bagaimana mengembangkan sistem adaptive CVSS scoring yang dapat menyesuaikan penilaian risiko berdasarkan konteks spesifik lingkungan Moodle seperti endpoint sensitivity, role requirements, dan historical attack patterns?
+4.Bagaimana merancang mekanisme semi self-healing yang memberikan rekomendasi mitigasi kontekstual dengan version compatibility suggestions dan comprehensive reporting untuk memfasilitasi respons keamanan yang efektif?
+1.3 Tujuan Penelitian
+Penelitian ini memiliki tujuan sebagai berikut:
+1.Mengembangkan plugin Moodle (admin tool) yang terintegrasi dengan proxy service berbasis Python untuk audit kerentanan otomatis dengan kemampuan multi-scanner integration dan automated data normalization.
+2.Mengimplementasikan machine learning pipeline dengan ensemble classifier (Random Forest + XGBoost) yang dilengkapi probability calibration, auto-labeling mechanism, dan interactive labeling tools untuk meningkatkan akurasi deteksi dan mengurangi false positive rate.
+3.Merancang adaptive CVSS scoring engine yang mempertimbangkan faktor kontekstual seperti endpoint type (admin/user/API), authentication requirements, role-based privileges, dan attack frequency untuk menghasilkan risk assessment yang lebih akurat.
+4.Membangun comprehensive security management system dengan scheduler untuk automated scanning, PDF report generation, real-time Slack notifications, dan version recommendation engine untuk memfasilitasi long-term security improvements.
+1.4 Batasan Masalah
+Untuk memfokuskan ruang lingkup penelitian, ditetapkan batasan masalah sebagai berikut:
+1.Sistem difokuskan pada deteksi kerentanan aplikasi web kategori OWASP Top 10, khususnya SQL Injection (CWE-89), Cross-Site Scripting/XSS (CWE-79), Cross-Site Request Forgery/CSRF (CWE-352), dan Path Traversal (CWE-22).
+2.Pemindaian kerentanan mencakup panel administrator, panel pengguna biasa (student/teacher), dan REST API endpoints Moodle, namun tidak mencakup analisis kerentanan pada plugin third-party yang tidak terverifikasi secara mendalam.
+3.Machine learning model menggunakan supervised learning dengan ensemble approach (Random Forest + XGBoost) untuk binary classification (true positive vs false positive) dengan dataset berlabel yang dikumpulkan dari OWASP ZAP reports, Acunetix exports, dan manual penetration testing.
+4.Adaptive CVSS scoring menggunakan framework CVSS v3.1 sebagai baseline dengan enhancement berupa contextual multipliers yang mempertimbangkan Moodle-specific factors seperti endpoint sensitivity scoring dan role-based impact assessment.
+5.Sistem diimplementasikan sebagai Moodle admin tool plugin dengan backend proxy service menggunakan Python Flask framework, SQLite database untuk development, dan support untuk PostgreSQL/MySQL dalam production deployment.
+6.Testing dilakukan pada Moodle versi 4.x dengan environment lokal menggunakan XAMPP/MAMP atau Docker containerization pada sistem operasi Windows/Linux/macOS.
+1.5 Manfaat Penelitian
+Penelitian ini diharapkan memberikan kontribusi sebagai berikut:
+Manfaat Akademik:
+1.Memberikan kontribusi pada body of knowledge di bidang application security, khususnya dalam integrasi DAST dengan machine learning untuk konteks LMS.
+2.Mengembangkan framework adaptive risk scoring yang dapat diadaptasi untuk aplikasi web kompleks lainnya.
+3.Menyediakan dataset berlabel hasil audit kerentanan Moodle untuk penelitian lanjutan di bidang cybersecurity.
+Manfaat Praktis:
+1.Menyediakan tool open-source yang dapat digunakan oleh administrator Moodle untuk melakukan audit keamanan otomatis secara berkala.
+2.Mengurangi beban kerja security engineer dalam melakukan triase dan analisis false positive dari scanner konvensional.
+3.Meningkatkan postur keamanan instalasi Moodle melalui deteksi proaktif dan rekomendasi mitigasi yang kontekstual dan prioritized.
+1.6 Metodologi Penelitian
+Penelitian ini menggunakan pendekatan Research and Development (R&D) dengan tahapan sebagai berikut:
+1. Studi Literatur Mengkaji penelitian terkait Dynamic Application Security Testing, machine learning untuk cybersecurity, CVSS risk scoring, vulnerability assessment methodologies, dan security automation frameworks dalam konteks web application security dan LMS security.
+2. Analisis Kebutuhan Sistem Melakukan analisis terhadap:
+Arsitektur keamanan Moodle dan pola serangan umum terhadap LMS
+Kebutuhan integrasi multiple security scanners (OWASP ZAP, Acunetix)
+Requirement untuk ML-based false positive reduction
+Kebutuhan reporting dan notification system
+Workflow automated scanning dengan scheduler
+3. Perancangan Sistem Merancang arsitektur MoodleSec dengan komponen:
+Moodle Plugin Layer: Admin tool plugin dengan UI dashboard, scan configuration, dan report viewing
+Proxy Service Layer: Python Flask application untuk scanner orchestration, data normalization, dan API endpoints
+Scanner Engine Layer: Integration dengan OWASP ZAP, Acunetix parser, dan custom security scanners (SQL Injection, XSS, CSRF, Path Traversal)
+ML Pipeline Layer: Feature extraction, ensemble classification, probability calibration, dan auto-labeling mechanism
+Risk Scoring Layer: CVSS calculator dan adaptive scoring engine
+Reporting Layer: PDF generation, dashboard visualization, dan Slack integration
+4. Implementasi Mengembangkan sistem menggunakan:
+Frontend: PHP untuk Moodle plugin dengan Mustache templating
+Backend: Python Flask untuk proxy service (port 8999)
+Database: SQLite untuk development, PostgreSQL/MySQL untuk production
+ML Framework: scikit-learn untuk ensemble models (RandomForestClassifier + XGBClassifier) dengan CalibratedClassifierCV untuk probability calibration
+Scanner Integration: OWASP ZAP API, Acunetix JSON parser, custom pattern-based detectors
+Reporting: ReportLab untuk PDF generation, matplotlib untuk visualization
+Integration: Slack Webhook API untuk real-time notifications (Optional)
+5. Pengujian dan Evaluasi Melakukan pengujian:
+Functional Testing: Validasi setiap modul scanner, ML classification accuracy, CVSS calculation correctness
+Integration Testing: Testing end-to-end workflow dari scan trigger hingga report generation
+Performance Testing: Scan duration, memory usage, concurrent scan handling
+ML Model Evaluation: Precision, Recall, F1-Score, ROC-AUC untuk ensemble classifier
+False Positive Analysis: Measuring FP reduction rate dibandingkan baseline scanner output
+Real-world Testing: Deployment pada actual Moodle installation dengan different configurations
+6. Analisis Hasil dan Pembahasan Menganalisis:
+Efektivitas multi-scanner integration dalam coverage improvement
+Performance metrics ML ensemble model vs individual classifiers
+Adaptive CVSS scoring accuracy vs standard CVSS
+System usability dan administrator feedback
+Comparison dengan existing security scanning tools
+7. Penyusunan Dokumentasi Mendokumentasikan:
+Source code dengan comprehensive comments
+API documentation untuk proxy service endpoints
+User manual untuk Moodle administrators
+Technical documentation untuk future development
+Research findings dalam bentuk skripsi dan publikasi ilmiah
+1.7 Sistematika Penulisan
+Sistematika penulisan skripsi ini disusun sebagai berikut:
+BAB I PENDAHULUAN
+Bab ini menguraikan latar belakang penelitian, rumusan masalah, tujuan penelitian, batasan masalah, manfaat penelitian, metodologi penelitian, dan sistematika penulisan.
+BAB II LANDASAN TEORI
+Bab ini menyajikan teori-teori fundamental yang menjadi dasar penelitian, meliputi konsep Learning Management System Moodle, Dynamic Application Security Testing, Machine Learning untuk Cybersecurity, Common Vulnerability Scoring System (CVSS), Self-Healing Systems, dan Container Security dengan Docker.
+BAB III PERANCANGAN SISTEM
+Bab ini menjelaskan arsitektur sistem secara detail, perancangan setiap layer dalam adaptive security proxy, desain database, algoritma adaptive CVSS scoring, dan mekanisme semi self-healing.
+BAB IV IMPLEMENTASI SISTEM
+Bab ini menguraikan detail implementasi teknis sistem, meliputi environment setup, pengembangan setiap modul, integrasi komponen, dan konfigurasi deployment.
+BAB V PENGUJIAN DAN EVALUASI
+Bab ini menyajikan metodologi pengujian, hasil pengujian fungsional, performance evaluation, analisis akurasi machine learning model, dan validasi adaptive CVSS scoring.
+BAB VI PENUTUP
+Bab ini berisi kesimpulan dari hasil penelitian dan saran untuk pengembangan lebih lanjut.
+
+BAB II
+LANDASAN TEORI
+2.1 Learning Management System (LMS) Moodle
+2.1.1 Konsep Learning Management System
+Learning Management System merupakan platform perangkat lunak yang dirancang untuk mengelola, mendistribusikan, dan melacak aktivitas pembelajaran secara digital. LMS menyediakan infrastruktur bagi institusi pendidikan untuk menyelenggarakan pembelajaran online, mengelola konten kursus, memfasilitasi interaksi antara pengajar dan peserta didik, serta mengadministrasikan penilaian dan pelaporan hasil pembelajaran.
+Dalam konteks keamanan informasi, LMS dikategorikan sebagai critical information infrastructure karena menyimpan data sensitif yang mencakup informasi personal identifiable (PII) mahasiswa, materi pembelajaran yang dilindungi hak cipta, dan record akademik yang bersifat confidential. Kompromis terhadap keamanan LMS dapat mengakibatkan data breach, manipulasi nilai akademik, dan gangguan terhadap proses pembelajaran.
+2.1.2 Arsitektur Keamanan Moodle
+Moodle mengimplementasikan arsitektur keamanan berlapis (defense-in-depth) yang mencakup beberapa mekanisme proteksi:
+Authentication Layer:
+Moodle mendukung berbagai metode autentikasi termasuk manual authentication, LDAP/AD integration, OAuth 2.0, dan SAML single sign-on. Sistem password policy dapat dikonfigurasi untuk enforce kompleksitas password, expiration period, dan lockout mechanism setelah failed login attempts.
+Authorization dan Access Control:
+Moodle menggunakan role-based access control (RBAC) dengan granular permission system. Setiap role (administrator, teacher, student, guest) memiliki capabilities yang dapat dikustomisasi pada context level (system, course category, course, activity module). Principle of least privilege diterapkan dengan memberikan minimum permissions yang diperlukan untuk setiap role.
+Data Protection:
+Moodle mengimplementasikan prepared statements untuk mencegah SQL injection pada database layer. Output encoding dan sanitization diterapkan secara konsisten untuk mencegah XSS attacks. CSRF protection diimplementasikan melalui session token validation pada setiap state-changing operation.
+Session Management:
+Moodle menggunakan PHP session dengan secure flag dan httponly flag untuk mencegah session hijacking. Session timeout dapat dikonfigurasi, dan sistem mendukung concurrent session limitation untuk mencegah session sharing.
+Namun demikian, kompleksitas kode base Moodle yang besar (lebih dari 2 juta lines of code) dan ekosistem plugin yang extensive menciptakan attack surface yang luas. Penelitian oleh CVE Details menunjukkan bahwa Moodle memiliki historical vulnerabilities dengan Common Weakness Enumeration (CWE) yang paling sering muncul adalah CWE-79 (XSS), CWE-89 (SQL Injection), dan CWE-352 (CSRF).
+2.2 Dynamic Application Security Testing (DAST)
+2.2.1 Konsep DAST
+Dynamic Application Security Testing merupakan metodologi pengujian keamanan aplikasi yang dilakukan pada runtime environment dengan menganalisis aplikasi dari perspektif eksternal (black-box testing). DAST melakukan simulasi serangan terhadap aplikasi yang sedang berjalan untuk mengidentifikasi kerentanan yang dapat dieksploitasi oleh attacker.
+Berbeda dengan Static Application Security Testing (SAST) yang menganalisis source code tanpa mengeksekusi aplikasi, DAST memiliki keunggulan dalam mendeteksi kerentanan runtime seperti authentication bypass, session management flaws, dan server misconfiguration yang tidak dapat diidentifikasi melalui analisis statis.
+2.2.2 OWASP ZAP dan Acunetix sebagai DAST Engine
+Dalam penelitian ini, sistem MoodleSec mengintegrasikan dua major security scanning tools:
+OWASP Zed Attack Proxy (ZAP): OWASP ZAP merupakan open-source web application security scanner yang dikembangkan oleh OWASP community. ZAP dirancang dengan arsitektur plugin-based yang extensible dan mendukung berbagai mode operasi. Sistem MoodleSec menggunakan ZAP API untuk automated scanning dengan konfigurasi:
+Active Scanner: Mengirimkan attack payloads untuk testing SQL Injection, XSS, Command Injection, Path Traversal
+Passive Scanner: Menganalisis HTTP traffic untuk mengidentifikasi missing security headers, information disclosure, insecure cookies
+Spider: Crawling application untuk discover endpoints dan build site tree
+Authentication: Support untuk form-based authentication dan session management
+Output ZAP berupa XML/JSON reports yang berisi detailed findings dengan severity levels, CWE mappings, dan remediation recommendations.
+Acunetix: Acunetix adalah commercial web vulnerability scanner dengan advanced detection capabilities. Sistem MoodleSec dapat memproses Acunetix export files (JSON format) untuk:
+Import historical scan results dari Acunetix 24.x
+Normalize vulnerability data ke format MoodleSec
+Merge findings dengan ZAP results untuk comprehensive coverage
+Leverage Acunetix's advanced detection untuk complex vulnerabilities
+Penelitian ini mengimplementasikan parser untuk Acunetix JSON export format yang dapat handle vulnerability_types structure dan extract detailed technical information.
+2.2.3 Custom Security Scanners
+Selain integrasi dengan ZAP dan Acunetix, sistem MoodleSec mengimplementasikan custom security scanners yang dioptimasi untuk Moodle context:
+SQL Injection Detector (sql_injection.py):
+Pattern matching untuk SQL error messages (MySQL, PostgreSQL, MSSQL, Oracle)
+Detection SQL keywords dalam parameters (SELECT, UNION, DROP, INSERT)
+Analysis suspicious characters (', ", --, #, ;)
+Severity classification berdasarkan evidence strength
+CWE-89 mapping dengan detailed remediation steps
+XSS (Cross-Site Scripting) Detector (xss_detector.py):
+Reflected XSS detection melalui parameter value reflection dalam response
+Dangerous HTML tag detection (<script>, <iframe>, <object>, <embed>)
+Inline event handler detection (onclick, onerror, onload)
+JavaScript protocol detection (javascript:, data:text/html)
+DOM-based XSS indicators (innerHTML, eval, document.write)
+Input sanitization validation
+CWE-79 mapping dengan context-specific recommendations
+CSRF Validator (csrf_validator.py):
+CSRF token presence validation dalam forms
+Token validation dalam POST/PUT/DELETE/PATCH requests
+SameSite cookie attribute checking
+Common token name recognition (csrf_token, sesskey, _token)
+Moodle-specific sesskey validation
+CWE-352 mapping dengan mitigation guidelines
+Path Traversal Detector (path_traversal.py):
+Path traversal pattern detection (../, ..\\, URL-encoded variants)
+Sensitive file access attempts (/etc/passwd, c:\\windows\\system32\\config)
+Absolute path detection dalam parameters
+Directory listing indicators
+File extension validation
+CWE-22 mapping dengan secure coding recommendations
+Scanner Engine Orchestration: Semua scanners di-orchestrate oleh scanner_engine.py yang provides:
+Parallel execution untuk performance optimization
+Deduplication untuk menghindari duplicate findings
+Severity-based sorting (Critical → High → Medium → Low → Info)
+Summary statistics generation
+Per-scanner enable/disable configuration
+Error handling dan resilience
+Output dari scanner engine berupa structured JSON dengan format:
+{
+  "scan_id": "unique_scan_identifier",
+  "timestamp": "ISO-8601 datetime",
+  "target_url": "scanned endpoint",
+  "total_findings": integer,
+  "summary": {
+    "critical": count, "high": count, 
+    "medium": count, "low": count, "info": count
+  },
+  "findings": [array of vulnerability objects],
+  "scanner_results": {status per scanner}
+}
+2.2.4 Keterbatasan DAST Tradisional
+Meskipun DAST memiliki keunggulan dalam mendeteksi runtime vulnerabilities, pendekatan konvensional memiliki beberapa limitasi signifikan:
+High False Positive Rate: DAST scanner berbasis pattern matching sering menghasilkan false positive. Dalam data training yang dikumpulkan untuk penelitian ini, initial scan results menunjukkan false positive rate mencapai 40-60% sebelum ML filtering. Misalnya, SQL error pattern dapat triggered oleh legitimate error messages, atau XSS alert dapat dipicu oleh reflected input dalam konteks yang sudah di-sanitize dengan benar.
+Coverage Limitation: DAST hanya dapat menguji endpoint dan functionality yang discoverable melalui crawling. Hidden functionality, authenticated pages dengan complex authentication flow, dan dynamically generated content sering tidak tercakup dalam scanning. Untuk mengatasi ini, MoodleSec mengimplementasikan enhanced crawler dengan authenticated session support.
+Context-Agnostic Risk Assessment: DAST scanner tradisional memberikan severity rating berdasarkan vulnerability type tanpa mempertimbangkan konteks spesifik environment. Sebuah XSS pada public forum post memiliki impact yang berbeda dengan XSS pada admin panel grade management, namun conventional DAST memberikan severity rating yang sama. Ini menjadi motivasi untuk adaptive CVSS scoring dalam penelitian ini.
+No Exploitation Verification: Pattern-based DAST mendeteksi potential vulnerabilities tanpa actual exploitation, yang dapat menghasilkan false positives ketika protective measures (WAF, input validation) sudah implemented tetapi tidak terdeteksi oleh scanner. Machine learning layer dalam MoodleSec dirancang untuk mengurangi jenis false positive ini.
+Keterbatasan-keterbatasan ini menjadi motivasi utama pengembangan ML-enhanced security testing dengan ensemble classification dan probability calibration dalam penelitian ini.
+2.3 Machine Learning untuk Cybersecurity
+2.3.1 Supervised Learning untuk Klasifikasi Kerentanan
+Machine learning telah terbukti efektif dalam meningkatkan akurasi sistem deteksi keamanan melalui kemampuannya untuk belajar dari data historical dan mengidentifikasi pattern yang complex. Dalam konteks security testing, supervised learning digunakan untuk mengklasifikasikan alert hasil scanning menjadi true positive atau false positive.
+Feature Engineering untuk Security Data:
+Kualitas model machine learning sangat bergantung pada feature representation yang tepat. Untuk klasifikasi alert kerentanan, features yang relevan mencakup:
+Request characteristics: HTTP method, URL pattern, parameter count, parameter types, request size
+Response characteristics: HTTP status code, response time, response size, error message patterns
+Context features: Endpoint type (admin/user), authentication state, user role, historical attack frequency pada endpoint
+Alert metadata: Alert type, confidence score dari DAST engine, severity rating, affected parameter
+Feature extraction dilakukan dengan mengkombinasikan statistical features, lexical features dari text content, dan contextual features dari application state.
+Algoritma Klasifikasi:
+Beberapa algoritma supervised learning yang efektif untuk klasifikasi security alerts:
+Random Forest Classifier:
+Ensemble method yang robust terhadap overfitting dan dapat menangani high-dimensional feature space. Random Forest memberikan feature importance scores yang berguna untuk interpretability.
+Gradient Boosting Machines (XGBoost, LightGBM):
+Boosting algorithms yang mencapai state-of-the-art performance pada berbagai security classification tasks. Gradient boosting efektif untuk imbalanced dataset yang umum dalam security domain (true positive jauh lebih sedikit dari false positive).
+Support Vector Machines (SVM):
+Effective untuk binary classification dengan clear margin of separation. Kernel trick memungkinkan SVM menangani non-linearly separable data.
+2.3.2 Training Data dan Labeling Strategy
+Kualitas model machine learning ditentukan oleh kualitas dan kuantitas training data. Dalam penelitian ini, dataset dibentuk melalui beberapa strategi:
+Synthetic Data Generation:
+Menggunakan DAST engine untuk melakukan comprehensive scanning terhadap Moodle test instance dengan berbagai konfigurasi. Setiap alert yang dihasilkan kemudian dilabel secara manual oleh kami berdasarkan verification hasil exploitation.
+Historical CVE Data:
+Mengintegrasikan data dari National Vulnerability Database (NVD) dan Moodle security advisories untuk mengidentifikasi known vulnerabilities. Known CVEs digunakan sebagai ground truth positive samples.
+Adversarial Testing:
+Melakukan intentional vulnerability injection pada controlled Moodle instance untuk menghasilkan verified true positive samples. Metode ini memastikan balanced dataset dengan sufficient positive examples.
+Expert Validation:
+Semua labeling dikonfirmasi oleh security expert, baik dari kami atau sumber tertentu, melalui manual verification process untuk memastikan label accuracy. Inter-rater reliability dihitung menggunakan Cohen's Kappa untuk mengukur agreement antar expert.
+2.3.3 Model Evaluation Metrics
+Evaluasi model machine learning untuk security classification menggunakan metrik yang sesuai dengan imbalanced data characteristics:
+Precision:
+$$\text{Precision} = \frac{TP}{TP + FP}$$
+Precision mengukur akurasi positive predictions. Dalam konteks vulnerability classification, high precision berarti minimal false positive yang sampai ke security team untuk dianalisis.
+Recall (Sensitivity):
+$$\text{Recall} = \frac{TP}{TP + FN}$$
+Recall mengukur kemampuan model mendeteksi semua true vulnerabilities. High recall krusial dalam security context untuk memastikan tidak ada critical vulnerability yang terlewat.
+F1-Score:
+$$\text{F1} = 2 \times \frac{\text{Precision} \times \text{Recall}}{\text{Precision} + \text{Recall}}$$
+F1-score memberikan harmonic mean antara precision dan recall, providing balanced evaluation metric.
+Area Under ROC Curve (AUC-ROC):
+ROC curve memplot True Positive Rate terhadap False Positive Rate pada berbagai threshold values. AUC-ROC memberikan aggregate measure of performance across all classification thresholds. Nilai AUC mendekati 1.0 mengindikasikan perfect classifier.
+Confusion Matrix Analysis:
+Analisis detail terhadap True Positive, True Negative, False Positive, dan False Negative memberikan insight tentang karakteristik error model dan trade-off antara precision dan recall.
+2.4 Common Vulnerability Scoring System (CVSS)
+2.4.1 Framework CVSS v3.1
+Common Vulnerability Scoring System merupakan open framework standardized untuk mengkomunikasikan karakteristik dan severity dari software vulnerabilities. CVSS dikembangkan oleh Forum of Incident Response and Security Teams (FIRST) dan telah menjadi industry standard untuk vulnerability assessment.
+CVSS v3.1 menggunakan three metric groups untuk menghitung numerical severity score:
+Base Metrics:
+Base metrics merepresentasikan karakteristik intrinsik vulnerability yang constant over time dan across user environments. Base metrics terdiri dari:
+Exploitability Metrics:
+Attack Vector (AV): Network (N), Adjacent (A), Local (L), Physical (P)
+Attack Complexity (AC): Low (L), High (H)
+Privileges Required (PR): None (N), Low (L), High (H)
+User Interaction (UI): None (N), Required (R)
+Impact Metrics:
+Confidentiality Impact (C): High (H), Low (L), None (N)
+Integrity Impact (I): High (H), Low (L), None (N)
+Availability Impact (A): High (H), Low (L), None (N)
+Base Score dihitung dengan formula: $$\text{Base Score} = \text{Roundup}(\text{Impact} + \text{Exploitability})$$
+Temporal Metrics:
+Temporal metrics mengukur karakteristik vulnerability yang berubah over time, seperti:
+Exploit Code Maturity (E): Not Defined, Unproven, Proof-of-Concept, Functional, High
+Remediation Level (RL): Not Defined, Official Fix, Temporary Fix, Workaround, Unavailable
+Report Confidence (RC): Not Defined, Unknown, Reasonable, Confirmed
+Environmental Metrics:
+Environmental metrics memungkinkan organizations untuk customize CVSS score berdasarkan importance of affected IT asset dan characteristics of their environment. Environmental metrics mencakup:
+Modified Base Metrics: Organisasi dapat meng-adjust base metrics untuk reflect local circumstances
+Security Requirements: Confidentiality Requirement (CR), Integrity Requirement (IR), Availability Requirement (AR)
+2.4.2 Keterbatasan CVSS dalam Konteks Aplikasi Spesifik
+Meskipun CVSS telah widely adopted, framework ini memiliki limitasi ketika diaplikasikan pada konteks aplikasi spesifik seperti Moodle:
+Context-Agnostic Base Scoring:
+Base score tidak mempertimbangkan di mana vulnerability berada dalam aplikasi. SQL injection pada student profile page memiliki base score yang sama dengan SQL injection pada grade management system, padahal impact terhadap institusi sangat berbeda.
+Static Environmental Metrics:
+Environmental metrics dalam CVSS dirancang untuk di-set secara manual oleh organization dan bersifat static. Dalam dynamic environment dengan varying user contexts dan attack patterns yang evolving, static environmental metrics tidak cukup responsive.
+Insufficient Consideration of Attack Path:
+CVSS tidak secara eksplisit memodelkan attack chain atau prerequisite conditions. Vulnerability dengan High base score mungkin tidak exploitable dalam production karena requires specific preconditions yang tidak terpenuhi.
+Limited Role-Based Differentiation:
+CVSS Privileges Required metric hanya membedakan None/Low/High, tidak cukup granular untuk application dengan complex RBAC seperti Moodle yang memiliki sophisticated role hierarchy.
+Keterbatasan-keterbatasan ini memotivasi pengembangan adaptive CVSS scoring mechanism dalam penelitian ini yang mengintegrasikan contextual factors dari Moodle environment.
+2.5 Self-Healing Systems dalam Application Security
+2.5.1 Konsep Self-Healing Systems
+Self-healing systems merupakan paradigma sistem yang memiliki kemampuan untuk automatically detect, diagnose, dan recover dari failures atau attacks tanpa human intervention. Dalam konteks cybersecurity, self-healing mengacu pada automated defensive mechanisms yang dapat merespons detected threats secara real-time.
+Autonomic Computing Framework:
+Konsep self-healing berakar pada autonomic computing yang diinisiasi oleh IBM, dengan prinsip MAPE-K loop:
+Monitor: Continuous monitoring of system state dan environment
+Analyze: Analisis collected data untuk detect anomalies atau threats
+Plan: Merencanakan corrective actions berdasarkan analysis results
+Execute: Implementasi planned actions untuk mitigate threats
+Knowledge: Shared knowledge base yang evolving based on experiences
+2.5.2 Tingkatan Autonomi dalam Self-Healing Security
+Self-healing security systems dapat dikategorikan berdasarkan level of autonomy:
+Level 1 - Alerting Only:
+System hanya melakukan detection dan generate alerts untuk human operators. Tidak ada automated response. Ini adalah pendekatan traditional security monitoring.
+Level 2 - Recommendation-Based:
+System melakukan detection, analysis, dan generate recommended actions, tetapi requires explicit human approval sebelum execution. Ini adalah semi-autonomous approach.
+Level 3 - Conditional Automation:
+System dapat automatically execute predefined responses untuk well-understood threats dengan low risk of false positive, sedangkan complex cases escalated ke human operators.
+Level 4 - Full Autonomy:
+System independently detects, analyzes, dan executes responses tanpa human intervention. Level ini requires extremely high confidence in detection accuracy dan comprehensive understanding of potential side effects.
+2.5.3 Semi Self-Healing: Balancing Automation dan Control
+Penelitian ini mengadopsi pendekatan semi self-healing (Level 2-3) dengan pertimbangan sebagai berikut:
+Risk Mitigation Strategy:
+Full autonomy dalam security response dapat menimbulkan availability issues jika terjadi false positive. Blocking legitimate users atau disabling critical functionality dapat lebih harmful daripada potential attack. Semi self-healing memberikan safety net melalui human confirmation untuk high-impact actions.
+Temporary Mitigation Actions:
+System dapat automatically implement temporary protective measures dengan reversibility guarantee:
+Rate limiting untuk suspected brute force attempts
+Temporary session invalidation untuk suspicious activity patterns
+Request blocking untuk high-confidence attack signatures
+Logging enhancement untuk forensic analysis
+Human-in-the-Loop Confirmation:
+Untuk actions dengan potential impact pada system availability atau functionality:
+System generates detailed recommendation dengan risk assessment
+Admin diberikan evidence package: attack logs, confidence score, potential impact analysis
+Explicit approval required sebelum execution
+Rollback mechanism tersedia untuk undo actions
+Escalation Criteria:
+Clear criteria untuk determining kapan automated response appropriate vs requires human judgment:
+Confidence score threshold (e.g., >0.95 for automated response)
+Impact level (low impact = automated, high impact = human approval)
+Attack pattern familiarity (known patterns = automated, novel patterns = human review)
+2.6 Container Security dengan Docker
+2.6.1 Docker Containerization untuk Isolation
+Docker containerization digunakan dalam penelitian ini untuk mengisolasi scanning environment dari production Moodle instance. Container provides operating system-level virtualization yang lightweight dibandingkan full virtual machines namun tetap providing strong isolation boundaries.
+Security Advantages of Containerization:
+Process Isolation:
+Containers running dalam separate namespaces dengan isolated process tree. Scanning process dalam container tidak dapat directly access atau interfere dengan host system processes.
+Filesystem Isolation:
+Container memiliki separate filesystem layer dengan copy-on-write mechanism. Modifications dalam container tidak affect host filesystem. Ini crucial untuk preventing scanning activities dari accidentally modifying production data.
+Network Isolation:
+Docker networking provides isolated network namespaces. Scanning traffic dapat di-route melalui dedicated network interface tanpa exposing production network traffic.
+Resource Limitation:
+Docker allows setting resource constraints (CPU, memory, I/O) untuk preventing resource exhaustion attacks atau preventing runaway scanning processes dari impacting production performance.
+2.6.2 Security Best Practices untuk Docker Deployment
+Implementasi container security dalam penelitian ini mengikuti industry best practices:
+Minimal Base Images:
+Menggunakan minimal base images (Alpine Linux) untuk reducing attack surface. Hanya essential packages yang di-install dalam container image.
+Non-Root User Execution:
+Container process running dengan non-root user untuk applying principle of least privilege. Ini prevents privilege escalation vulnerabilities dalam container dari compromising host system.
+Read-Only Filesystem:
+Container filesystem di-mount sebagai read-only where possible, dengan writable volumes hanya untuk necessary directories (logs, temporary data).
+Secrets Management:
+Sensitive data seperti database credentials dan API keys tidak hardcoded dalam container images. Menggunakan Docker secrets atau environment variables dengan encryption.
+Regular Image Updates:
+Base images dan dependencies regularly updated untuk patching known vulnerabilities. Vulnerability scanning pada container images menggunakan tools seperti Trivy atau Clair.
+Network Segmentation:
+Scanning containers connected ke isolated network segment dengan firewall rules yang strictly control inbound/outbound traffic. Production database accessible hanya through controlled interfaces.
+
+BAB III
+PERANCANGAN SISTEM
+3.1 Arsitektur Sistem Keseluruhan
+3.1.1 Desain Arsitektur MoodleSec System
+Sistem MoodleSec dirancang dengan arsitektur modular yang memisahkan concerns antara frontend (Moodle Plugin), backend (Proxy Service), dan supporting components (ML Pipeline, CVSS Engine, Reporting). Arsitektur ini dapat divisualisasikan sebagai berikut:
+┌─────────────────────────────────────────────────────────┐
+│             MOODLE PLUGIN LAYER (PHP)                   │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │  Admin Tool Plugin                                │   │
+│  │  • Security Dashboard (security_dashboard.php)    │   │
+│  │  • Scan Configuration Interface                  │   │
+│  │  • Report Viewer & PDF Export                    │   │
+│  │  • Scheduler Management UI                       │   │
+│  │  • ML Training Dashboard                         │   │
+│  │  • Settings & Integration Config                 │   │
+│  └────────────────────┬─────────────────────────────┘   │
+└────────────────────────┼─────────────────────────────────┘
+                         │ HTTP/JSON API (Port 8999)
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│         PROXY SERVICE LAYER (Python Flask)              │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │  Flask Application (app.py)                      │   │
+│  │  • REST API Endpoints                            │   │
+│  │  • Request Routing                               │   │
+│  │  • Session Management                            │   │
+│  │  • CORS Configuration                            │   │
+│  └──────────────────────────────────────────────────┘   │
+│                                                          │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │  Scanner Integration Layer                       │   │
+│  │  ┌────────────────────────────────────────────┐  │   │
+│  │  │  scanner_engine.py - Orchestrator          │  │   │
+│  │  │  • Multi-scanner coordination              │  │   │
+│  │  │  • Result deduplication                    │  │   │
+│  │  │  • Severity aggregation                    │  │   │
+│  │  └────────────────────────────────────────────┘  │   │
+│  │  ┌────────────────────────────────────────────┐  │   │
+│  │  │  Custom Scanners                           │  │   │
+│  │  │  • sql_injection.py    (CWE-89)           │  │   │
+│  │  │  • xss_detector.py     (CWE-79)           │  │   │
+│  │  │  • csrf_validator.py   (CWE-352)          │  │   │
+│  │  │  • path_traversal.py   (CWE-22)           │  │   │
+│  │  └────────────────────────────────────────────┘  │   │
+│  │  ┌────────────────────────────────────────────┐  │   │
+│  │  │  External Scanner Integration              │  │   │
+│  │  │  • OWASP ZAP API Client                   │  │   │
+│  │  │  • Acunetix JSON Parser                   │  │   │
+│  │  └────────────────────────────────────────────┘  │   │
+│  └──────────────────────────────────────────────────┘   │
+│                                                          │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │  Machine Learning Pipeline                       │   │
+│  │  ┌────────────────────────────────────────────┐  │   │
+│  │  │  Feature Extraction (ml/feature_extractor) │  │   │
+│  │  │  • 44-dimensional feature vectors          │  │   │
+│  │  │  • Normalization & encoding                │  │   │
+│  │  └────────────────────────────────────────────┘  │   │
+│  │  ┌────────────────────────────────────────────┐  │   │
+│  │  │  Ensemble Classifier                       │  │   │
+│  │  │  • Random Forest (200 trees)               │  │   │
+│  │  │  • XGBoost (150 estimators)                │  │   │
+│  │  │  • Probability Calibration                 │  │   │
+│  │  │  • Weighted Ensemble (0.6 RF + 0.4 XGB)    │  │   │
+│  │  └────────────────────────────────────────────┘  │   │
+│  │  ┌────────────────────────────────────────────┐  │   │
+│  │  │  Training Pipeline                         │  │   │
+│  │  │  • Auto-labeling (threshold 0.7)           │  │   │
+│  │  │  • Interactive labeling tool               │  │   │
+│  │  │  • Model retraining (retrain_models.py)    │  │   │
+│  │  └────────────────────────────────────────────┘  │   │
+│  └──────────────────────────────────────────────────┘   │
+│                                                          │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │  Risk Scoring Engine                             │   │
+│  │  ┌────────────────────────────────────────────┐  │   │
+│  │  │  CVSS Calculator (risk/cvss_calculator.py) │  │   │
+│  │  │  • Base score calculation                  │  │   │
+│  │  │  • Temporal metrics                        │  │   │
+│  │  └────────────────────────────────────────────┘  │   │
+│  │  ┌────────────────────────────────────────────┐  │   │
+│  │  │  Adaptive Scoring                          │  │   │
+│  │  │  • ML confidence multiplier                │  │   │
+│  │  │  • Endpoint sensitivity factor             │  │   │
+│  │  │  • Role-based impact assessment            │  │   │
+│  │  │  • Historical attack patterns              │  │   │
+│  │  └────────────────────────────────────────────┘  │   │
+│  └──────────────────────────────────────────────────┘   │
+│                                                          │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │  Reporting & Integration Layer                   │   │
+│  │  • PDF Report Generator (reporting/)             │   │
+│  │  • Executive Summary Reports                     │   │
+│  │  • Slack Notification Integration                │   │
+│  │  • Scan History Management                       │   │
+│  └──────────────────────────────────────────────────┘   │
+│                                                          │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │  Data Management                                 │   │
+│  │  • SQLite Database (development)                 │   │
+│  │  • Training Data Storage (proxy/data/)           │   │
+│  │  • Raw Scan Data (raw/owasp_zap, raw/acunetix)  │   │
+│  │  • Backup Management (data/backup/)              │   │
+│  └──────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│         SUPPORTING SERVICES                             │
+│  • CVSS Engine (cvss-engine/) - Standalone service      │
+│  • Scheduler (scheduler/) - Automated scan triggers     │
+│  • Crawler (crawler/) - Enhanced endpoint discovery     │   │
+└─────────────────────────────────────────────────────────┘
+Prinsip Desain Utama:
+1.Separation of Concerns: Moodle plugin fokus pada UI/UX dan integration dengan Moodle APIs, sementara proxy service handle complex security logic, ML processing, dan scanner orchestration.
+2.Modular Architecture: Setiap scanner dapat di-enable/disable independently. ML pipeline dapat di-bypass jika diperlukan. Reporting dapat di-extend dengan custom formats.
+3.API-First Design: Semua functionality exposed via RESTful API, memungkinkan integration dengan external tools dan future mobile app development.
+4.Scalability: Proxy service stateless, dapat di-scale horizontally. Database dapat di-migrate dari SQLite ke PostgreSQL/MySQL untuk production deployment.
+5.Fail-Safe Operation: Kegagalan pada ML layer tidak memblokir scan results. Scanner errors di-handle gracefully dengan detailed logging.
+3.1.2 Data Flow Architecture
+Scan Execution Flow:
+1. Admin triggers scan via Moodle Plugin UI
+   ↓
+2. Moodle Plugin sends HTTP POST to Proxy Service
+   /scan-trigger endpoint
+   ↓
+3. Proxy Service orchestrates scanner execution:
+   - scanner_engine.scan() invoked
+   - Multiple scanners run in parallel
+   - Results aggregated and deduplicated
+   ↓
+4. Raw findings passed to ML Pipeline:
+   - Feature extraction (44 features)
+   - Ensemble classification
+   - Confidence score calculation
+   ↓
+5. ML-enhanced findings sent to Risk Scoring:
+   - CVSS base score calculation
+   - Adaptive adjustments applied
+   - Priority assignment (P1/P2/P3/P4)
+   ↓
+6. Results stored in database with:
+   - Finding details & evidence
+   - ML classification & confidence
+   - CVSS scores (base & adaptive)
+   - Timestamps & scan metadata
+   ↓
+7. Notifications sent:
+   - Slack webhook for critical findings
+   - Email alerts (if configured)
+   ↓
+8. Response returned to Moodle Plugin:
+   - Summary statistics
+   - Top priority findings
+   - Scan ID for detailed report access
+   ↓
+9. Admin views results in dashboard:
+   - Interactive findings table
+   - Severity distribution chart
+   - Export to PDF option
+ML Training Data Flow:
+1. Findings collected from production scans
+   ↓
+2. Auto-labeling applied:
+   - High-confidence patterns labeled automatically
+   - Threshold: 0.7 confidence
+   ↓
+3. Low-confidence findings flagged for review:
+   - Interactive labeling tool presented
+   - Security expert provides labels
+   ↓
+4. Labeled data merged with training set:
+   - merge_training_data.py script
+   - Duplicate detection
+   - Version control with Git
+   ↓
+5. Model retraining triggered (periodic or manual):
+   - retrain_models.py executed
+   - Both RF and XGBoost trained
+   - Probability calibration applied
+   ↓
+6. Model evaluation:
+   - Precision, Recall, F1-Score calculated
+   - Comparison with current production model
+   ↓
+7. Model deployment:
+   - If performance improvement significant
+   - Old model archived with versioning
+   - New model activated in production
+3.2 Perancangan Moodle Plugin Layer
+3.2.1 Plugin Structure
+Plugin diimplementasikan sebagai admin tool dengan struktur direktori:
+moodle-plugin/
+├── version.php              # Plugin metadata & dependencies
+├── settings.php             # Admin configuration interface
+├── db/
+│   ├── install.xml         # Database schema definition
+│   └── upgrade.php         # Database upgrade scripts
+├── classes/
+│   ├── task/
+│   │   └── scheduled_scan_task.php  # Scheduled task untuk automated scanning
+│   ├── api_client.php       # HTTP client untuk proxy service communication
+│   ├── dashboard.php        # Dashboard logic & data aggregation
+│   └── report_generator.php # Report formatting & export
+├── lang/
+│   └── en/
+│       └── tool_moodlesec.php  # Language strings
+├── templates/
+│   ├── security_dashboard.mustache   # Main dashboard template
+│   ├── finding_detail.mustache       # Individual finding view
+│   ├── scan_config.mustache          # Scan configuration form
+│   └── ml_dashboard.mustache         # ML model status & metrics
+└── examples/
+    └── scan_examples.php    # Example API usage
+3.2.2 Key Plugin Components
+API Client (api_client.php):
+class api_client {
+    private $base_url;
+    private $timeout;
+    
+    public function __construct($base_url = 'http://localhost:8999') {
+        $this->base_url = $base_url;
+        $this->timeout = 30;
+    }
+    
+    public function trigger_scan($config) {
+        $endpoint = $this->base_url . '/scan-trigger';
+        return $this->make_request('POST', $endpoint, $config);
+    }
+    
+    public function get_scan_history($limit = 10) {
+        $endpoint = $this->base_url . '/scan-history';
+        return $this->make_request('GET', $endpoint, ['limit' => $limit]);
+    }
+    
+    public function get_ml_status() {
+        $endpoint = $this->base_url . '/ml/status';
+        return $this->make_request('GET', $endpoint);
+    }
+    
+    public function get_executive_summary($scan_id) {
+        $endpoint = $this->base_url . '/executive-summary/' . $scan_id;
+        return $this->make_request('GET', $endpoint);
+    }
+    
+    private function make_request($method, $url, $data = null) {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
+        
+        if ($method === 'POST' && $data) {
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json'
+            ]);
+        }
+        
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($http_code !== 200) {
+            throw new moodle_exception('api_error', 'tool_moodlesec');
+        }
+        
+        return json_decode($response, true);
+    }
+}
+Dashboard Controller (security_dashboard.php):
+require_once('classes/api_client.php');
+
+// Initialize API client
+$api = new api_client();
+
+// Fetch scan history
+$scan_history = $api->get_scan_history(10);
+
+// Fetch ML model status
+$ml_status = $api->get_ml_status();
+
+// Aggregate statistics
+$stats = [
+    'total_scans' => count($scan_history),
+    'critical_findings' => array_sum(array_column($scan_history, 'critical_count')),
+    'high_findings' => array_sum(array_column($scan_history, 'high_count')),
+    'ml_accuracy' => $ml_status['ensemble_accuracy'],
+    'fp_reduction_rate' => $ml_status['fp_reduction_rate']
+];
+
+// Prepare template data
+$template_data = [
+    'stats' => $stats,
+    'recent_scans' => $scan_history,
+    'ml_enabled' => $ml_status['is_trained'],
+    'can_trigger_scan' => has_capability('tool/moodlesec:triggerscan', $context)
+];
+
+// Render dashboard
+echo $OUTPUT->render_from_template('tool_moodlesec/security_dashboard', $template_data);
+Scheduled Task (scheduled_scan_task.php):
+namespace tool_moodlesec\task;
+
+class scheduled_scan_task extends \core\task\scheduled_task {
+    
+    public function get_name() {
+        return get_string('scheduledscantask', 'tool_moodlesec');
+    }
+    
+    public function execute() {
+        $api = new \tool_moodlesec\api_client();
+        
+        // Get scheduler configuration from settings
+        $config = get_config('tool_moodlesec');
+        
+        if (!$config->enable_scheduled_scans) {
+            mtrace('Scheduled scans disabled');
+            return;
+        }
+        
+        $scan_config = [
+            'scan_type' => 'full',
+            'target_url' => $CFG->wwwroot,
+            'scan_intensity' => $config->scan_intensity,
+            'enable_ml' => $config->enable_ml_classification
+        ];
+        
+        try {
+            $result = $api->trigger_scan($scan_config);
+            mtrace('Scan initiated: ' . $result['scan_id']);
+            
+            // Send notification if critical findings detected
+            if ($result['summary']['critical'] > 0) {
+                $this->send_critical_alert($result);
+            }
+            
+        } catch (Exception $e) {
+            mtrace('Scan failed: ' . $e->getMessage());
+        }
+    }
+    
+    private function send_critical_alert($scan_result) {
+        $recipients = explode(',', get_config('tool_moodlesec', 'notification_emails'));
+        
+        foreach ($recipients as $email) {
+            email_to_user(
+                (object)['email' => trim($email)],
+                get_admin(),
+                get_string('critical_findings_subject', 'tool_moodlesec'),
+                get_string('critical_findings_body', 'tool_moodlesec', $scan_result)
+            );
+        }
+    }
+}
+
+┌─────────────────────────────────────────────┐ │ Client / User Request │ │ (Admin Panel / User Panel / API) │ └──────────────────┬──────────────────────────┘ │ ▼ ┌─────────────────────────────────────────────┐ │ Adaptive Security Proxy (FastAPI) │ │ ┌──────────────────────────────────────┐ │ │ │ Layer 2: ML Optimization Engine │ │ │ │ • Feature Extraction │ │ │ │ • False Positive Classification │ │ │ │ • Anomaly Risk Probability │ │ │ │ • Confidence Score Output │ │ │ └──────────────────┬───────────────────┘ │ │ ▼ │ │ ┌──────────────────────────────────────┐ │ │ │ Layer 3: Adaptive CVSS Scoring │ │ │ │ • Contextual CVSS Adjustment │ │ │ │ • Environment-aware Risk Ranking │ │ │ │ • Role-based Impact Assessment │ │ │ │ • Severity Prioritization Engine │ │ │ └──────────────────┬───────────────────┘ │ │ ▼ │ │ ┌──────────────────────────────────────┐ │ │ │ Layer 4: Semi Self-Healing Engine │ │ │ │ • Temporary Mitigation Action │ │ │ │ • Rate Limiting / Block Strategy │ │ │ │ • Human-in-the-loop Confirmation │ │ │ │ • Rollback Mechanism │ │ │ └──────────────────────────────────────┘ │ └──────────────────┬──────────────────────────┘ │ ▼ ┌─────────────────────────────────────────────┐ │ Enhanced Security Report & Dashboard │ │ • Risk Score with Confidence Level │ │ • Attack Evidence (Real-life Logs) │ │ • Prioritized Vulnerability List │ │ • Actionable Recommendations │ │ • Version Compatibility Suggestions │ └─────────────────────────────────────────────┘
+
+**Prinsip Desain Utama:**
+
+1. **Defense in Depth:** Setiap layer memberikan kontribusi independen terhadap akurasi deteksi dan penilaian risiko, menciptakan multiple checkpoints untuk mengurangi false positive dan false negative.
+
+2. **Separation of Concerns:** Setiap layer memiliki responsibility yang terdefinisi dengan jelas: deteksi (Layer 1), optimasi (Layer 2), penilaian (Layer 3), dan mitigasi (Layer 4).
+
+3. **Progressive Enhancement:** Informasi mengalir dari layer bawah ke atas dengan progressive enrichment. Raw alerts dari DAST engine diperkaya dengan ML confidence scores, kemudian dengan adaptive risk scores, dan akhirnya dengan actionable recommendations.
+
+4. **Fail-Safe Design:** Kegagalan pada higher layers tidak memblokir output dari lower layers. Jika ML model unavailable, sistem tetap berfungsi dengan traditional DAST results.
+
+#### 3.1.2 Isolasi Lingkungan Pengujian dengan Docker
+
+Untuk mencegah impact terhadap production data, sistem menggunakan Docker containerization untuk mengisolasi scanning environment:
+
+**Container Architecture:**
+
+┌────────────────────────────────────────┐ │ Host System (Production) │ │ ┌──────────────────────────────────┐ │ │ │ Production Moodle Instance │ │ │ │ • Live Database (Read-Only) │ │ │ │ • Production Codebase │ │ │ └──────────────────────────────────┘ │ │ │ │ ┌──────────────────────────────────┐ │ │ │ Docker Container (Isolated) │ │ │ │ ┌────────────────────────────┐ │ │ │ │ │ Test Moodle Instance │ │ │ │ │ │ • Clone Database (R/W) │ │ │ │ │ │ • Identical Configuration │ │ │ │ │ └────────────────────────────┘ │ │ │ │ ┌────────────────────────────┐ │ │ │ │ │ OWASP ZAP Proxy │ │ │ │ │ │ • Active Scanner │ │ │ │ │ │ • Passive Scanner │ │ │ │ │ └────────────────────────────┘ │ │ │ │ ┌────────────────────────────┐ │ │ │ │ │ Adaptive Security Proxy │ │ │ │ │ │ • FastAPI Application │ │ │ │ │ │ • ML Model Runtime │ │ │ │ │ └────────────────────────────┘ │ │ │ └──────────────────────────────────┘ │ └────────────────────────────────────────┘
+
+**Data Flow dalam Isolated Environment:**
+
+1. **Pre-Scan Setup:**
+   - System creates database snapshot dari production Moodle
+   - Database clone di-restore ke isolated container dengan anonymized sensitive data
+   - Test instance configured dengan identical settings tetapi separate network segment
+
+2. **Scanning Execution:**
+   - All scanning traffic routed through container network
+   - OWASP ZAP proxy intercepts dan analyzes requests/responses
+   - No direct connection antara scanning process dan production database
+
+3. **Post-Scan Cleanup:**
+   - Container destroyed setelah scanning complete
+   - Temporary database dropped
+   - Only results dan logs exported ke host system
+
+### 3.2 Perancangan Layer 1: Traditional DAST Analysis
+
+#### 3.2.1 Integrasi OWASP ZAP Engine
+
+Layer pertama mengimplementasikan traditional dynamic application security testing menggunakan OWASP ZAP sebagai core scanning engine:
+
+**ZAP Configuration untuk Moodle Context:**
+
+```python
+# Pseudocode untuk ZAP Configuration
+zap_config = {
+    "scan_policy": {
+        "attack_strength": "HIGH",
+        "alert_threshold": "LOW",  # Capture all potential issues
+        "scan_categories": [
+            "INJECTION",           # SQL, Command, LDAP injection
+            "XSS",                 # Reflected, Stored, DOM-based
+            "AUTHENTICATION",      # Broken auth, session management
+            "AUTHORIZATION",       # Access control issues
+            "CSRF",                # Cross-site request forgery
+            "SENSITIVE_DATA",      # Information disclosure
+            "XML",                 # XXE, XML injection
+            "SSRF"                 # Server-side request forgery
+        ]
+    },
+    "spider_config": {
+        "max_depth": 5,
+        "max_children": 10,
+        "user_agent": "MoodleSecurityAudit/1.0",
+        "handle_odata_params": True,
+        "parse_comments": True,
+        "parse_robots_txt": True,
+        "parse_sitemap_xml": True
+    },
+    "authentication": {
+        "type": "form_based",
+        "login_url": "/login/index.php",
+        "username_field": "username",
+        "password_field": "password",
+        "logged_in_indicator": "Dashboard",
+        "logged_out_indicator": "Log in"
+    },
+    "session_management": {
+        "method": "cookie_based",
+        "session_token_name": "MoodleSession"
+    }
+}
+Scan Scope Definition:
+Scanning dilakukan terhadap tiga kategori endpoint Moodle:
+1.Admin Panel Scope:
+oUser management (/admin/user.php)
+oCourse management (/course/management.php)
+oPlugin management (/admin/plugins.php)
+oSystem settings (/admin/settings.php)
+oGrade management (/grade/edit/tree/index.php)
+2.User Panel Scope:
+oUser profile (/user/profile.php)
+oCourse enrollment (/enrol/index.php)
+oAssignment submission (/mod/assign/view.php)
+oForum participation (/mod/forum/view.php)
+oQuiz attempt (/mod/quiz/attempt.php)
+3.API Endpoints:
+oRESTful web services (/webservice/rest/server.php)
+oAJAX endpoints (/lib/ajax/*.php)
+oMobile app API (/login/token.php)
+Attack Pattern Library:
+System menggunakan comprehensive attack pattern library yang mencakup:
+SQL Injection Payloads:
+- Classic: ' OR '1'='1
+- Union-based: ' UNION SELECT NULL,NULL--
+- Boolean-based blind: ' AND 1=1--
+- Time-based blind: ' AND SLEEP(5)--
+- Error-based: ' AND 1=CONVERT(int,(SELECT @@version))--
+
+XSS Payloads:
+- Basic: <script>alert('XSS')</script>
+- Event handler: <img src=x onerror=alert('XSS')>
+- Encoded: %3Cscript%3Ealert('XSS')%3C/script%3E
+- DOM-based: #<img src=x onerror=alert(document.domain)>
+- Stored: Persistent payload injection
+
+CSRF Payloads:
+- State-changing operations without token
+- Token replay attacks
+- Token prediction attempts
+
+Authentication/Authorization:
+- Privilege escalation attempts
+- Horizontal access control bypass
+- Vertical access control bypass
+- Session fixation
+- Session hijacking attempts
+3.2.2 Alert Generation dan Structured Output
+Setiap vulnerability yang terdeteksi oleh ZAP di-transform menjadi structured alert format:
+{
+  "alert_id": "uuid-v4-string",
+  "timestamp": "ISO-8601-datetime",
+  "vulnerability_type": "SQL_INJECTION",
+  "severity": "HIGH",
+  "confidence": "MEDIUM",
+  "url": "https://moodle.example.com/user/profile.php",
+  "parameter": "id",
+  "attack_payload": "1' OR '1'='1",
+  "evidence": {
+    "request": "GET /user/profile.php?id=1%27+OR+%271%27%3D%271 HTTP/1.1",
+    "response_code": 200,
+    "response_time_ms": 1250,
+    "response_excerpt": "MySQL error: syntax error near ''1'='1'",
+    "attack_signature_matched": "SQL_ERROR_PATTERN"
+  },
+  "context": {
+    "endpoint_type": "user_panel",
+    "requires_authentication": true,
+    "required_role": "student",
+    "http_method": "GET",
+    "content_type": "text/html"
+  },
+  "references": [
+    "CWE-89",
+    "OWASP-A03:2021"
+  ],
+  "zap_metadata": {
+    "plugin_id": 40018,
+    "alert_ref": "40018-1",
+    "input_vector": "query_parameter"
+  }
+}
+3.3 Perancangan Layer 2: ML Optimization Engine
+3.3.1 Feature Engineering untuk Security Alerts
+ML Optimization Engine melakukan feature extraction dari raw alerts untuk menghasilkan feature vector yang informatif:
+Feature Categories:
+1. Request Features (14 features):
+- url_length: integer
+- parameter_count: integer
+- parameter_name_entropy: float [0-1]
+- http_method: categorical {GET, POST, PUT, DELETE}
+- has_file_upload: boolean
+- request_size_bytes: integer
+- special_char_count: integer
+- sql_keyword_count: integer
+- script_tag_count: integer
+- url_path_depth: integer
+- has_session_token: boolean
+- content_type: categorical
+- user_agent_legitimate: boolean
+- referer_header_present: boolean
+2. Response Features (12 features):
+- response_code: integer
+- response_time_ms: float
+- response_size_bytes: integer
+- has_error_message: boolean
+- error_message_type: categorical {SQL, PHP, Server, None}
+- response_contains_reflection: boolean
+- reflection_encoded: boolean
+- set_cookie_present: boolean
+- security_headers_count: integer
+- content_type_response: categorical
+- response_time_deviation: float (from baseline)
+- response_size_deviation: float (from baseline)
+3. Context Features (10 features):
+- endpoint_type: categorical {admin, user, api, public}
+- requires_authentication: boolean
+- required_role_level: ordinal {0=guest, 1=student, 2=teacher, 3=admin}
+- endpoint_sensitivity: ordinal {1=low, 2=medium, 3=high, 4=critical}
+- historical_attack_count: integer
+- endpoint_age_days: integer
+- traffic_volume_percentile: float [0-100]
+- previous_vuln_count: integer
+- is_custom_plugin: boolean
+- plugin_trust_score: float [0-1]
+4. Alert Metadata Features (8 features):
+- vulnerability_type_encoded: categorical_encoded
+- zap_confidence: ordinal {1=low, 2=medium, 3=high}
+- zap_severity: ordinal {1=info, 2=low, 3=medium, 4=high, 5=critical}
+- cwe_category: categorical_encoded
+- attack_complexity: ordinal {1=low, 2=medium, 3=high}
+- payload_sophistication: float [0-1]
+- similar_alerts_count: integer
+- alert_frequency_hour: integer
+Feature Normalization:
+# Pseudocode untuk Feature Preprocessing
+def preprocess_features(alert):
+    features = {}
+    
+    # Numerical features: Standard scaling
+    numerical_features = extract_numerical(alert)
+    features['numerical'] = StandardScaler().fit_transform(numerical_features)
+    
+    # Categorical features: One-hot encoding
+    categorical_features = extract_categorical(alert)
+    features['categorical'] = OneHotEncoder().fit_transform(categorical_features)
+    
+    # Ordinal features: Label encoding dengan preserved order
+    ordinal_features = extract_ordinal(alert)
+    features['ordinal'] = OrdinalEncoder().fit_transform(ordinal_features)
+    
+    # Combine all features
+    feature_vector = np.concatenate([
+        features['numerical'],
+        features['categorical'],
+        features['ordinal']
+    ])
+    
+    return feature_vector
+3.3.2 Machine Learning Model Architecture
+System menggunakan ensemble approach dengan multiple models untuk robust classification:
+Primary Model: Random Forest Classifier
+rf_model = RandomForestClassifier(
+    n_estimators=200,
+    max_depth=15,
+    min_samples_split=5,
+    min_samples_leaf=2,
+    max_features='sqrt',
+    bootstrap=True,
+    class_weight='balanced',  # Handle imbalanced data
+    random_state=42
+)
+Secondary Model: XGBoost Classifier
+xgb_model = XGBClassifier(
+    n_estimators=150,
+    max_depth=10,
+    learning_rate=0.05,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    scale_pos_weight=10,  # Adjust for imbalance
+    random_state=42
+)
+Ensemble Strategy:
+def ensemble_prediction(alert_features):
+    # Get probability predictions from both models
+    rf_prob = rf_model.predict_proba(alert_features)[:, 1]
+    xgb_prob = xgb_model.predict_proba(alert_features)[:, 1]
+    
+    # Weighted ensemble (weights determined by validation performance)
+    ensemble_prob = 0.6 * rf_prob + 0.4 * xgb_prob
+    
+    # Confidence score calculation
+    confidence = calculate_confidence(rf_prob, xgb_prob, ensemble_prob)
+    
+    # Final classification dengan dynamic threshold
+    threshold = adaptive_threshold(alert_features)
+    classification = 'TRUE_POSITIVE' if ensemble_prob > threshold else 'FALSE_POSITIVE'
+    
+    return {
+        'classification': classification,
+        'probability': ensemble_prob,
+        'confidence': confidence,
+        'rf_probability': rf_prob,
+        'xgb_probability': xgb_prob
+    }
+Confidence Score Calculation:
+Confidence score mengindikasikan seberapa yakin model terhadap prediksinya:
+def calculate_confidence(rf_prob, xgb_prob, ensemble_prob):
+    # Model agreement: jika kedua model setuju, confidence tinggi
+    agreement = 1 - abs(rf_prob - xgb_prob)
+    
+    # Prediction certainty: distance dari decision boundary (0.5)
+    certainty = 2 * abs(ensemble_prob - 0.5)
+    
+    # Combined confidence score
+    confidence = (0.6 * agreement + 0.4 * certainty)
+    
+    return confidence
+3.3.3 Model Training dan Validation Strategy
+Training Data Collection:
+Dataset dibentuk dari kombinasi:
+1.Synthetic vulnerability testing (1000+ samples)
+2.Historical Moodle CVE data (200+ samples)
+3.Manual penetration testing results (500+ samples)
+4.Expert-labeled ZAP scan results (2000+ samples)
+Train-Test-Validation Split:
+Training set: 70% (untuk model training)
+Validation set: 15% (untuk hyperparameter tuning)
+Test set: 15% (untuk final evaluation)
+Cross-Validation Strategy:
+# Stratified K-Fold untuk handle imbalanced data
+from sklearn.model_selection import StratifiedKFold
+
+skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+cv_scores = []
+for train_idx, val_idx in skf.split(X, y):
+    X_train_fold, X_val_fold = X[train_idx], X[val_idx]
+    y_train_fold, y_val_fold = y[train_idx], y[val_idx]
+    
+    model.fit(X_train_fold, y_train_fold)
+    score = model.score(X_val_fold, y_val_fold)
+    cv_scores.append(score)
+
+mean_cv_score = np.mean(cv_scores)
+std_cv_score = np.std(cv_scores)
+Handling Imbalanced Data:
+Security data typically highly imbalanced (banyak false positive, sedikit true positive):
+# SMOTE (Synthetic Minority Oversampling Technique)
+from imblearn.over_sampling import SMOTE
+
+smote = SMOTE(sampling_strategy=0.3, random_state=42)
+X_resampled, y_resampled = smote.fit_resample(X_train, y_train)
+
+# Combined dengan class weighting dalam model
+class_weights = compute_class_weight('balanced', 
+                                     classes=np.unique(y_train), 
+                                     y=y_train)
+3.4 Perancangan Layer 3: Adaptive CVSS Scoring
+3.4.1 Baseline CVSS Calculation
+Layer ini dimulai dengan standard CVSS v3.1 base score calculation, kemudian meng-adjust score berdasarkan Moodle-specific context:
+CVSS Base Metrics Mapping:
+def calculate_base_cvss(vulnerability_type, context):
+    # Attack Vector mapping
+    if context['endpoint_type'] == 'api':
+        AV = 'NETWORK'  # Score: 0.85
+    elif context['requires_authentication']:
+        AV = 'ADJACENT'  # Score: 0.62
+    else:
+        AV = 'NETWORK'  # Score: 0.85
+    
+    # Attack Complexity
+    if vulnerability_type in ['SQL_INJECTION', 'COMMAND_INJECTION']:
+        AC = 'LOW'  # Score: 0.77
+    elif vulnerability_type in ['XXE', 'DESERIALIZATION']:
+        AC = 'HIGH'  # Score: 0.44
+    else:
+        AC = 'LOW'  # Score: 0.77
+    
+    # Privileges Required
+    if not context['requires_authentication']:
+        PR = 'NONE'  # Score: 0.85
+    elif context['required_role_level'] <= 1:
+        PR = 'LOW'  # Score: 0.62
+    else:
+        PR = 'HIGH'  # Score: 0.27
+    
+    # User Interaction
+    if vulnerability_type in ['XSS', 'CSRF']:
+        UI = 'REQUIRED'  # Score: 0.62
+    else:
+        UI = 'NONE'  # Score: 0.85
+    
+    # Impact metrics (simplified)
+    C = I = A = 'HIGH'  # Score each: 0.56
+    
+    # Calculate exploitability and impact sub-scores
+    exploitability = 8.22 * AV * AC * PR * UI
+    impact = 1 - ((1 - C) * (1 - I) * (1 - A))
+    
+    # Base score calculation
+    if impact <= 0:
+        base_score = 0
+    else:
+        base_score = min(10, (impact + exploitability))
+    
+    return round_up(base_score)
+3.4.2 Adaptive Scoring Algorithm
+Adaptive CVSS scoring meng-adjust base score dengan contextual multipliers:
+Contextual Adjustment Factors:
+def calculate_adaptive_cvss(base_score, alert, ml_confidence):
+    adaptive_score = base_score
+    adjustment_factors = []
+    
+    # Factor 1: ML Confidence Adjustment
+    # High confidence dalam true positive → increase score
+    # Low confidence → decrease score (potential false positive)
+    confidence_multiplier = 0.7 + (0.6 * ml_confidence)
+    adaptive_score *= confidence_multiplier
+    adjustment_factors.append({
+        'factor': 'ML_Confidence',
+        'multiplier': confidence_multiplier,
+        'reasoning': f'ML model confidence: {ml_confidence:.2f}'
+    })
+    
+    # Factor 2: Endpoint Sensitivity
+    endpoint_sensitivity = get_endpoint_sensitivity(alert['context']['endpoint_type'])
+    sensitivity_multipliers = {
+        'critical': 1.3,  # Admin panel, grade management
+        'high': 1.15,     # User data, authentication
+        'medium': 1.0,    # Course content, forums
+        'low': 0.85       # Public pages, static content
+    }
+    sensitivity_mult = sensitivity_multipliers[endpoint_sensitivity]
+    adaptive_score *= sensitivity_mult
+    adjustment_factors.append({
+        'factor': 'Endpoint_Sensitivity',
+        'multiplier': sensitivity_mult,
+        'reasoning': f'Endpoint classified as {endpoint_sensitivity} sensitivity'
+    })
+    
+    # Factor 3: Role-based Impact Amplification
+    required_role = alert['context']['required_role_level']
+    role_multipliers = {
+        0: 0.9,   # Guest access (limited impact)
+        1: 1.0,   # Student (moderate impact)
+        2: 1.2,   # Teacher (elevated impact)
+        3: 1.4    # Admin (critical impact)
+    }
+    role_mult = role_multipliers.get(required_role, 1.0)
+    adaptive_score *= role_mult
+    adjustment_factors.append({
+        'factor': 'Required_Role',
+        'multiplier': role_mult,
+        'reasoning': f'Vulnerability requires role level {required_role}'
+    })
+    
+    # Factor 4: Historical Attack Pattern
+    historical_attacks = alert['context']['historical_attack_count']
+    if historical_attacks > 10:
+        history_mult = 1.25  # Frequently targeted endpoint
+    elif historical_attacks > 5:
+        history_mult = 1.1
+    else:
+        history_mult = 1.0
+    adaptive_score *= history_mult
+    adjustment_factors.append({
+        'factor': 'Attack_History',
+        'multiplier': history_mult,
+        'reasoning': f'{historical_attacks} previous attacks on this endpoint'
+    })
+    
+    # Factor 5: Exploitability in Production
+    # Consider additional factors yang mempengaruhi real-world exploitability
+    exploitability_factors = assess_production_exploitability(alert)
+    exploit_mult = exploitability_factors['multiplier']
+    adaptive_score *= exploit_mult
+    adjustment_factors.append({
+        'factor': 'Production_Exploitability',
+        'multiplier': exploit_mult,
+        'reasoning': exploitability_factors['reasoning']
+    })
+    
+    # Cap score at 10.0 (CVSS maximum)
+    adaptive_score = min(10.0, adaptive_score)
+    
+    # Determine severity category berdasarkan adaptive score
+    severity = categorize_severity(adaptive_score)
+    
+    return {
+        'base_score': base_score,
+        'adaptive_score': round(adaptive_score, 1),
+        'severity': severity,
+        'adjustment_factors': adjustment_factors,
+        'total_multiplier': adaptive_score / base_score if base_score > 0 else 1.0
+    }
+
+def assess_production_exploitability(alert):
+    """Assess additional exploitability factors specific to production environment"""
+    multiplier = 1.0
+    reasons = []
+    
+    # Check if WAF/security plugins active
+    if has_active_waf():
+        multiplier *= 0.8
+        reasons.append("Active WAF may block exploitation")
+    
+    # Check if endpoint has additional validation
+    if has_input_validation(alert['url']):
+        multiplier *= 0.85
+        reasons.append("Input validation present")
+    
+    # Check if vulnerability requires specific configuration
+    if requires_specific_config(alert):
+        multiplier *= 0.9
+        reasons.append("Requires specific configuration to exploit")
+    
+    # Check network accessibility
+    if alert['context']['endpoint_type'] == 'admin' and has_ip_restriction():
+        multiplier *= 0.7
+        reasons.append("Admin panel has IP restrictions")
+    
+    reasoning = "; ".join(reasons) if reasons else "No mitigating factors found"
+    
+    return {
+        'multiplier': multiplier,
+        'reasoning': reasoning
+    }
+
+def categorize_severity(score):
+    """Categorize severity based on CVSS score ranges"""
+    if score >= 9.0:
+        return 'CRITICAL'
+    elif score >= 7.0:
+        return 'HIGH'
+    elif score >= 4.0:
+        return 'MEDIUM'
+    elif score >= 0.1:
+        return 'LOW'
+    else:
+        return 'INFORMATIONAL'
+3.4.3 Risk Prioritization Matrix
+Hasil adaptive CVSS scoring dikombinasikan dengan likelihood assessment untuk menghasilkan risk priority:
+def calculate_risk_priority(adaptive_cvss, ml_confidence, context):
+    """
+    Risk Priority = Impact (CVSS) × Likelihood (ML + Context)
+    """
+    
+    # Impact score (normalized dari CVSS)
+    impact = adaptive_cvss / 10.0  # Range: 0-1
+    
+    # Likelihood calculation
+    likelihood_factors = {
+        'ml_confidence': ml_confidence * 0.4,          # 40% weight
+        'historical_attacks': min(context['historical_attack_count'] / 50, 1.0) * 0.2,  # 20%
+        'endpoint_exposure': get_exposure_score(context) * 0.2,  # 20%
+        'exploit_availability': check_public_exploits(context) * 0.2  # 20%
+    }
+    likelihood = sum(likelihood_factors.values())  # Range: 0-1
+    
+    # Risk score calculation
+    risk_score = impact * likelihood * 100  # Range: 0-100
+    
+    # Priority categorization
+    if risk_score >= 70:
+        priority = 'P1_CRITICAL'
+        sla = '24 hours'
+    elif risk_score >= 50:
+        priority = 'P2_HIGH'
+        sla = '72 hours'
+    elif risk_score >= 30:
+        priority = 'P3_MEDIUM'
+        sla = '1 week'
+    else:
+        priority = 'P4_LOW'
+        sla = '1 month'
+    
+    return {
+        'risk_score': round(risk_score, 1),
+        'priority': priority,
+        'recommended_sla': sla,
+        'impact': round(impact, 2),
+        'likelihood': round(likelihood, 2),
+        'likelihood_breakdown': likelihood_factors
+    }
+3.5 Perancangan Layer 4: Semi Self-Healing Engine
+3.5.1 Mekanisme Temporary Mitigation
+Semi self-healing engine mengimplementasikan temporary protective measures yang dapat di-apply secara otomatis untuk high-confidence threats:
+Mitigation Action Types:
+class MitigationAction:
+    def __init__(self, action_type, params, reversibility, impact_level):
+        self.action_type = action_type
+        self.params = params
+        self.reversibility = reversibility
+        self.impact_level = impact_level
+
+# Predefined mitigation actions
+MITIGATION_ACTIONS = {
+    'RATE_LIMIT': MitigationAction(
+        action_type='RATE_LIMIT',
+        params={'requests_per_minute': 10, 'duration_minutes': 60},
+        reversibility='AUTO',  # Automatically expires
+        impact_level='LOW'
+    ),
+    'TEMPORARY_BLOCK': MitigationAction(
+        action_type='TEMPORARY_BLOCK',
+        params={'duration_minutes': 30},
+        reversibility='AUTO',
+        impact_level='MEDIUM'
+    ),
+    'PARAMETER_VALIDATION': MitigationAction(
+        action_type='PARAMETER_VALIDATION',
+        params={'validation_rule': 'strict'},
+        reversibility='MANUAL',  # Requires manual removal
+        impact_level='LOW'
+    ),
+    'SESSION_INVALIDATION': MitigationAction(
+        action_type='SESSION_INVALIDATION',
+        params={'scope': 'user'},
+        reversibility='IMMEDIATE',
+        impact_level='MEDIUM'
+    ),
+    'ENDPOINT_DISABLE': MitigationAction(
+        action_type='ENDPOINT_DISABLE',
+        params={'duration_minutes': 120},
+        reversibility='AUTO',
+        impact_level='HIGH'
+    )
+}
+Mitigation Decision Logic:
+def determine_mitigation_action(alert, risk_priority, ml_confidence):
+    """
+    Determine appropriate mitigation action based on:
+    - Vulnerability severity
+    - ML confidence level
+    - Risk priority
+    - Impact to availability
+    """
+    
+    severity = alert['adaptive_cvss']['severity']
+    priority = risk_priority['priority']
+    
+    # Decision matrix
+    if ml_confidence >= 0.95 and priority == 'P1_CRITICAL':
+        # High confidence, critical priority → Aggressive mitigation
+        if alert['vulnerability_type'] in ['SQL_INJECTION', 'COMMAND_INJECTION']:
+            return {
+                'primary_action': MITIGATION_ACTIONS['TEMPORARY_BLOCK'],
+                'secondary_action': MITIGATION_ACTIONS['SESSION_INVALIDATION'],
+                'requires_approval': False,  # Auto-execute
+                'reasoning': 'High confidence critical vulnerability - immediate blocking required'
+            }
+        elif alert['vulnerability_type'] in ['XSS', 'CSRF']:
+            return {
+                'primary_action': MITIGATION_ACTIONS['PARAMETER_VALIDATION'],
+                'secondary_action': MITIGATION_ACTIONS['RATE_LIMIT'],
+                'requires_approval': False,
+                'reasoning': 'High confidence XSS/CSRF - apply input validation and rate limiting'
+            }
+    
+    elif ml_confidence >= 0.85 and priority in ['P1_CRITICAL', 'P2_HIGH']:
+        # Medium-high confidence → Moderate mitigation
+        return {
+            'primary_action': MITIGATION_ACTIONS['RATE_LIMIT'],
+            'secondary_action': None,
+            'requires_approval': False,
+            'reasoning': 'Medium-high confidence - apply rate limiting as precaution'
+        }
+    
+    elif ml_confidence >= 0.70:
+        # Moderate confidence → Conservative mitigation dengan approval
+        return {
+            'primary_action': MITIGATION_ACTIONS['RATE_LIMIT'],
+            'secondary_action': None,
+            'requires_approval': True,
+            'reasoning': 'Moderate confidence - recommend rate limiting with admin approval'
+        }
+    
+    else:
+        # Low confidence → Alerting only, no automated action
+        return {
+            'primary_action': None,
+            'secondary_action': None,
+            'requires_approval': True,
+            'reasoning': 'Low confidence - alert admin without automated mitigation'
+        }
+3.5.2 Human-in-the-Loop Confirmation Interface
+Untuk actions yang requires approval, sistem menyediakan comprehensive evidence package untuk admin:
+def generate_approval_request(alert, mitigation_plan, risk_assessment):
+    """Generate detailed approval request for admin review"""
+    
+    approval_request = {
+        'request_id': generate_uuid(),
+        'timestamp': datetime.now().isoformat(),
+        'severity': alert['adaptive_cvss']['severity'],
+        'priority': risk_assessment['priority'],
+        
+        'vulnerability_summary': {
+            'type': alert['vulnerability_type'],
+            'affected_url': alert['url'],
+            'affected_parameter': alert['parameter'],
+            'cvss_base': alert['adaptive_cvss']['base_score'],
+            'cvss_adaptive': alert['adaptive_cvss']['adaptive_score'],
+            'ml_confidence': alert['ml_classification']['confidence']
+        },
+        
+        'evidence_package': {
+            'attack_request': alert['evidence']['request'],
+            'attack_response': alert['evidence']['response_excerpt'],
+            'response_time_anomaly': alert['evidence']['response_time_ms'],
+            'signature_matched': alert['evidence']['attack_signature_matched'],
+            'similar_incidents': get_similar_historical_incidents(alert),
+            'proof_of_concept': generate_poc_description(alert)
+        },
+        
+        'proposed_mitigation': {
+            'primary_action': {
+                'type': mitigation_plan['primary_action'].action_type,
+                'parameters': mitigation_plan['primary_action'].params,
+                'estimated_impact': assess_mitigation_impact(mitigation_plan['primary_action']),
+                'reversibility': mitigation_plan['primary_action'].reversibility,
+                'auto_expire': calculate_expiry(mitigation_plan['primary_action'])
+            },
+            'alternative_actions': generate_alternative_mitigations(alert),
+            'estimated_affected_users': estimate_affected_users(alert),
+            'rollback_procedure': generate_rollback_steps(mitigation_plan)
+        },
+        
+        'risk_analysis': {
+            'risk_if_no_action': calculate_inaction_risk(alert),
+            'risk_of_false_positive': 1 - alert['ml_classification']['confidence'],
+            'recommended_action': mitigation_plan['reasoning']
+        },
+        
+        'approval_options': [
+            {'action': 'APPROVE', 'label': 'Execute Proposed Mitigation'},
+            {'action': 'APPROVE_MODIFIED', 'label': 'Modify and Execute'},
+            {'action': 'DEFER', 'label': 'Defer Decision (24h)'},
+            {'action': 'REJECT', 'label': 'Reject - Mark as False Positive'}
+        ],
+        
+        'timeout': {
+            'auto_approve_after': '4 hours' if risk_assessment['priority'] == 'P1_CRITICAL' else None,
+            'auto_action': 'APPROVE' if risk_assessment['priority'] == 'P1_CRITICAL' else 'DEFER'
+        }
+    }
+    
+    return approval_request
+3.5.3 Recommendation Engine untuk Semi Self-Healing
+Selain temporary mitigation, sistem memberikan long-term recommendations:
+Moodle Version Recommendation:
+def generate_version_recommendation(vulnerabilities):
+    """Recommend Moodle version based on detected vulnerabilities"""
+    
+    current_version = detect_moodle_version()
+    vulnerable_components = identify_vulnerable_components(vulnerabilities)
+    
+    # Check against CVE database
+    patched_versions = {}
+    for vuln in vulnerabilities:
+        if vuln['ml_classification']['classification'] == 'TRUE_POSITIVE':
+            # Query CVE database untuk patch version
+            patch_info = query_cve_patch_info(vuln['vulnerability_type'], vuln['references'])
+            if patch_info:
+                patched_versions[vuln['alert_id']] = patch_info
+    
+    # Recommend minimum safe version
+    if patched_versions:
+        recommended_version = determine_minimum_safe_version(patched_versions)
+        
+        return {
+            'current_version': current_version,
+            'recommended_version': recommended_version,
+            'vulnerabilities_addressed': len(patched_versions),
+            'upgrade_priority': calculate_upgrade_priority(vulnerabilities),
+            'upgrade_steps': generate_upgrade_guide(current_version, recommended_version),
+            'testing_recommendations': [
+                'Backup production database before upgrade',
+                'Test upgrade on staging environment',
+                'Verify plugin compatibility with new version',
+                'Plan maintenance window during low-traffic period'
+            ],
+            'estimated_downtime': estimate_upgrade_downtime(current_version, recommended_version)
+        }
+    else:
+        return {
+            'current_version': current_version,
+            'recommendation': 'Current version adequate for detected issues',
+            'alternative_mitigations': generate_config_recommendations(vulnerabilities)
+        }
+Configuration Hardening Recommendations:
+def generate_hardening_recommendations(scan_results):
+    """Generate configuration hardening recommendations"""
+    
+    recommendations = []
+    
+    # Analyze security headers
+    missing_headers = analyze_security_headers(scan_results)
+    if missing_headers:
+        recommendations.append({
+            'category': 'Security Headers',
+            'priority': 'HIGH',
+            'recommendations': [
+                {
+                    'item': 'Enable Content-Security-Policy',
+                    'config_location': 'config.php',
+                    'config_snippet': "$CFG->additionalhtmlhead = \"<meta http-equiv='Content-Security-Policy' content='...'>\";",
+                    'impact': 'Mitigates XSS attacks'
+                },
+                {
+                    'item': 'Enable X-Frame-Options',
+                    'config_location': '.htaccess or nginx.conf',
+                    'config_snippet': "Header always append X-Frame-Options SAMEORIGIN",
+                    'impact': 'Prevents clickjacking attacks'
+                }
+            ]
+        })
+    
+    # Analyze authentication configuration
+    weak_auth = analyze_authentication_config(scan_results)
+    if weak_auth:
+        recommendations.append({
+            'category': 'Authentication',
+            'priority': 'CRITICAL',
+            'recommendations': [
+                {
+                    'item': 'Enable password complexity requirements',
+                    'config_location': 'Site administration → Security → Site policies',
+                    'steps': [
+                        'Set minimum password length to 12 characters',
+                        'Require lowercase, uppercase, digits, and special characters',
+                        'Enable password expiration (90 days recommended)'
+                    ],
+                    'impact': 'Reduces brute force attack success rate'
+                },
+                {
+                    'item': 'Implement account lockout policy',
+                    'config_location': 'Site administration → Security → Site policies',
+                    'config_snippet': "$CFG->lockoutthreshold = 5;\n$CFG->lockoutwindow = 1800;",
+                    'impact': 'Prevents credential stuffing attacks'
+                }
+            ]
+        })
+    
+    # Analyze plugin security
+    vulnerable_plugins = identify_vulnerable_plugins(scan_results)
+    if vulnerable_plugins:
+        recommendations.append({
+            'category': 'Plugin Management',
+            'priority': 'HIGH',
+            'recommendations': [
+                {
+                    'item': f'Update or disable vulnerable plugins',
+                    'affected_plugins': [p['name'] for p in vulnerable_plugins],
+                    'actions': [
+                        {
+                            'plugin': p['name'],
+                            'current_version': p['version'],
+                            'safe_version': p['safe_version'],
+                            'action': 'UPDATE' if p['update_available'] else 'DISABLE'
+                        }
+                        for p in vulnerable_plugins
+                    ]
+                }
+            ]
+        })
+    
+    return {
+        'total_recommendations': len(recommendations),
+        'critical_count': sum(1 for r in recommendations if r['priority'] == 'CRITICAL'),
+        'high_count': sum(1 for r in recommendations if r['priority'] == 'HIGH'),
+        'recommendations': recommendations,
+        'implementation_priority': prioritize_recommendations(recommendations)
+    }
+3.6 Database Design
+3.6.1 Entity Relationship Diagram
+Sistem menggunakan relational database untuk menyimpan scan results, ML model data, dan audit logs:
+┌─────────────────────┐
+│   scan_sessions     │
+├─────────────────────┤
+│ id (PK)             │
+│ started_at          │
+│ completed_at        │
+│ status              │
+│ scan_scope          │
+│ total_alerts        │
+│ true_positives      │
+│ false_positives     │
+└──────────┬──────────┘
+           │
+           │ 1:N
+           │
+┌──────────▼──────────┐
+│    alerts           │
+├─────────────────────┤
+│ id (PK)             │
+│ session_id (FK)     │
+│ timestamp           │
+│ vulnerability_type  │
+│ url                 │
+│ parameter           │
+│ severity            │
+│ cvss_base           │
+│ cvss_adaptive       │
+│ ml_classification   │
+│ ml_confidence       │
+│ risk_priority       │
+│ evidence_json       │
+│ context_json        │
+└──────────┬──────────┘
+           │
+           │ 1:N
+           │
+┌──────────▼──────────┐
+│   mitigations       │
+├─────────────────────┤
+│ id (PK)             │
+│ alert_id (FK)       │
+│ action_type         │
+│ parameters_json     │
+│ status              │
+│ applied_at          │
+│ expires_at          │
+│ applied_by          │
+│ approval_required   │
+│ approved_at         │
+│ approved_by         │
+│ rollback_at         │
+└─────────────────────┘
+
+┌─────────────────────┐
+│   ml_training_data  │
+├─────────────────────┤
+│ id (PK)             │
+│ alert_id (FK)       │
+│ features_vector     │
+│ label               │
+│ labeled_by          │
+│ labeled_at          │
+│ validation_status   │
+└─────────────────────┘
+
+┌─────────────────────┐
+│   audit_logs        │
+├─────────────────────┤
+│ id (PK)             │
+│ timestamp           │
+│ event_type          │
+│ user_id             │
+│ action              │
+│ target_entity       │
+│ details_json        │
+│ ip_address          │
+└─────────────────────┘
+3.6.2 Key Database Tables
+alerts table schema:
+CREATE TABLE alerts (
+    id VARCHAR(36) PRIMARY KEY,
+    session_id VARCHAR(36) NOT NULL,
+    timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    vulnerability_type VARCHAR(50) NOT NULL,
+    url TEXT NOT NULL,
+    parameter VARCHAR(255),
+    http_method VARCHAR(10),
+    
+    -- CVSS Scoring
+    cvss_base DECIMAL(3,1),
+    cvss_adaptive DECIMAL(3,1),
+    severity ENUM('INFORMATIONAL', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'),
+    
+    -- ML Classification
+    ml_classification ENUM('TRUE_POSITIVE', 'FALSE_POSITIVE', 'UNCERTAIN'),
+    ml_probability DECIMAL(4,3),
+    ml_confidence DECIMAL(4,3),
+    
+    -- Risk Assessment
+    risk_score DECIMAL(5,2),
+    risk_priority ENUM('P1_CRITICAL', 'P2_HIGH', 'P3_MEDIUM', 'P4_LOW'),
+    
+    -- Evidence and Context (JSON columns)
+    evidence_json JSON NOT NULL,
+    context_json JSON NOT NULL,
+    adjustment_factors_json JSON,
+    
+    -- References
+    cwe_ids TEXT,
+    references TEXT,
+    
+    -- Status tracking
+    status ENUM('NEW', 'REVIEWED', 'MITIGATED', 'FALSE_POSITIVE', 'ACCEPTED_RISK') DEFAULT 'NEW',
+    reviewed_by VARCHAR(255),
+    reviewed_at TIMESTAMP,
+    
+    FOREIGN KEY (session_id) REFERENCES scan_sessions(id) ON DELETE CASCADE,
+    INDEX idx_session (session_id),
+    INDEX idx_severity (severity),
+    INDEX idx_priority (risk_priority),
+    INDEX idx_status (status),
+    INDEX idx_timestamp (timestamp)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+3.7 User Interface Design
+3.7.1 Dashboard Audit Overview
+Dashboard menyajikan high-level overview dari security posture:
+┌──────────────────────────────────────────────────────────┐
+│  Moodle Security Audit Dashboard                  [?] [⚙]│
+├──────────────────────────────────────────────────────────┤
+│                                                           │
+│  Last Scan: 2025-11-25 14:30 UTC     Status: ● Complete │
+│                                                           │
+│  ┌─────────────────┬─────────────────┬─────────────────┐│
+│  │  Total Findings │  True Positives │  Risk Score     ││
+│  │      47         │       12        │     67/100      ││
+│  │  ↑ +5 from prev │  ↓ -3 from prev │  ↑ +12 from prev││
+│  └─────────────────┴─────────────────┴─────────────────┘│
+│                                                           │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │ Severity Distribution                              │  │
+│  │                                                     │  │
+│  │  ████████  CRITICAL (2)                           │  │
+│  │  ██████████████  HIGH (4)                         │  │
+│  │  ████████████████████  MEDIUM (6)                 │  │
+│  │  ██  LOW (35)                                     │  │
+│  └───────────────────────────────────────────────────┘  │
+│                                                           │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │ Priority Action Items                              │  │
+│  ├────┬──────────────────────────────────────────────┤  │
+│  │ P1 │ SQL Injection in admin/user.php              │  │
+│  │    │ CVSS: 9.8 | Confidence: 98% | [Mitigate Now]│  │
+│  ├────┼──────────────────────────────────────────────┤  │
+│  │ P1 │ Authentication Bypass in login/token.php     │  │
+│  │    │ CVSS: 9.1 | Confidence: 95% | [Review]      │  │
+│  ├────┼──────────────────────────────────────────────┤  │
+│  │ P2 │ Stored XSS in mod/forum/post.php             │  │
+│  │    │ CVSS: 7.2 | Confidence: 92% | [Review]      │  │
+│  └────┴──────────────────────────────────────────────┘  │
+│                                                           │
+│  [Start New Scan] [View Full Report] [Export Results]   │
+└──────────────────────────────────────────────────────────┘
+3.7.2 Detailed Vulnerability View
+Setiap vulnerability memiliki detailed view dengan evidence dan recommendations:
+┌──────────────────────────────────────────────────────────┐
+│  SQL Injection Vulnerability                     [← Back]│
+├──────────────────────────────────────────────────────────┤
+│                                                           │
+│  ┌─ Alert Summary ─────────────────────────────────────┐│
+│  │ Severity: CRITICAL  Priority: P1  Confidence: 98%   ││
+│  │ CVSS Base: 8.6  →  Adaptive: 9.8                    ││
+│  │ Status: ● NEW  Detected: 2025-11-25 14:32:15 UTC    ││
+│  └──────────────────────────────────────────────────────┘│
+│                                                           │
+│  ┌─ Vulnerability Details ────────────────────────────┐ │
+│  │ Type: SQL Injection                                 │ │
+│  │ URL: https://moodle.example.com/admin/user.php      │ │
+│  │ Parameter: id                                       │ │
+│  │ Method: GET                                         │ │
+│  │ Endpoint Type: Admin Panel                          │ │
+│  │ Required Role: Administrator                        │ │
+│  │                                                     │ │
+│  │ CWE-89: Improper Neutralization of Special         │ │
+│  │ Elements used in an SQL Command ('SQL Injection')  │ │
+│  └──────────────────────────────────────────────────────┘│
+│                                                           │
+│  ┌─ Attack Evidence ──────────────────────────────────┐ │
+│  │ [Request] [Response] [Timeline] [Similar Attacks]  │ │
+│  │                                                     │ │
+│  │ GET /admin/user.php?id=1' OR '1'='1 HTTP/1.1      │ │
+│  │ Host: moodle.example.com                           │ │
+│  │ Cookie: MoodleSession=abc123...                    │ │
+│  │                                                     │ │
+│  │ Response (200 OK, 1,250ms - 3x baseline):          │ │
+│  │ ...                                                 │ │
+│  │ MySQL error: You have an error in your SQL syntax  │ │
+│  │ near ''1'='1' at line 1                            │ │
+│  │ ...                                                 │ │
+│  └──────────────────────────────────────────────────────┘│
+│                                                           │
+│  ┌─ ML Analysis ──────────────────────────────────────┐ │
+│  │ Classification: TRUE POSITIVE                       │ │
+│  │ Confidence: 98.3%                                   │ │
+│  │                                                     │ │
+│  │ Key Indicators:                                     │ │
+│  │  ✓ SQL error message in response                   │ │
+│  │  ✓ Response time anomaly (3x baseline)             │ │
+│  │  ✓ Classic SQL injection pattern matched           │ │
+│  │  ✓ No input validation detected                    │ │
+│  │  ✓ Similar attacks successful on this endpoint     │ │
+│  └──────────────────────────────────────────────────────┘│
+│                                                           │
+│  ┌─ Risk Assessment ──────────────────────────────────┐ │
+│  │ Impact: CRITICAL (Admin panel compromise)          │ │
+│  │ Likelihood: HIGH (87%)                              │ │
+│  │ Risk Score: 87/100                                  │ │
+│  │                                                     │ │
+│  │ CVSS Adjustments:                                   │ │
+│  │  • ML Confidence (+15%): High confidence TP        │ │
+│  │  • Endpoint Sensitivity (+30%): Admin panel        │ │
+│  │  • Role Impact (+40%): Admin access required       │ │
+│  │  • Attack History (+25%): 12 prev attacks         │ │
+│  │                                                     │ │
+│  │ Recommended SLA: 24 hours                           │ │
+│  └──────────────────────────────────────────────────────┘│
+│                                                           │
+│  ┌─ Proposed Mitigation ──────────────────────────────┐ │
+│  │ ⚠ Automatic Action Pending Approval                │ │
+│  │                                                     │ │
+│  │ Primary Action: TEMPORARY_BLOCK                     │ │
+│  │  • Block suspicious parameter patterns             │ │
+│  │  • Duration: 30 minutes (auto-expire)              │ │
+│  │  • Estimated affected users: 0-2 (admin only)      │ │
+│  │                                                     │ │
+│  │ Secondary Action: SESSION_INVALIDATION              │ │
+│  │  • Invalidate all admin sessions                   │ │
+│  │  • Require re-authentication                       │ │
+│  │                                                     │ │
+│  │ [✓ Approve Mitigation] [✗ Reject] [⚙ Modify]      │ │
+│  └──────────────────────────────────────────────────────┘│
+│                                                           │
+│  ┌─ Long-term Recommendations ────────────────────────┐ │
+│  │ 1. Update Moodle to version 4.3.2+                  │ │
+│  │    This vulnerability is patched in 4.3.2           │ │
+│  │    Estimated downtime: 2-4 hours                    │ │
+│  │                                                     │ │
+│  │ 2. Implement prepared statements                    │ │
+│  │    Code location: /admin/user.php line 45-52       │ │
+│  │    Replace string concatenation with placeholders  │ │
+│  │                                                     │ │
+│  │ 3. Add input validation layer                       │ │
+│  │    Validate 'id' parameter as integer              │ │
+│  │    Reject requests with SQL keywords               │ │
+│  │                                                     │ │
+│  │ 4. Enable Web Application Firewall                  │ │
+│  │    Consider ModSecurity with OWASP CRS             │ │
+│  │                                                     │ │
+│  │ [View Detailed Remediation Guide]                   │ │
+│  └──────────────────────────────────────────────────────┘│
+│                                                           │
+│  [Mark as False Positive] [Accept Risk] [Export Report] │
+└──────────────────────────────────────────────────────────┘
+3.8 Integration dengan Moodle Plugin System
+3.8.1 Plugin Architecture
+Sistem diimplementasikan sebagai Moodle admin tool plugin dengan struktur sebagai berikut:
+/admin/tool/adaptivesecurity/
+├── version.php                 # Plugin metadata
+├── settings.php                # Admin configuration
+├── db/
+│   ├── install.xml            # Database schema
+│   └── upgrade.php            # Upgrade scripts
+├── classes/
+│   ├── proxy/
+│   │   ├── security_proxy.php      # FastAPI proxy interface
+│   │   └── docker_manager.php      # Container orchestration
+│   ├── scanner/
+│   │   ├── zap_engine.php          # OWASP ZAP integration
+│   │   └── scan_orchestrator.php   # Scan workflow management
+│   ├── ml/
+│   │   ├── model_loader.php        # ML model interface
+│   │   ├── feature_extractor.php   # Feature engineering
+│   │   └── classifier.php          # Classification logic
+│   ├── cvss/
+│   │   ├── base_calculator.php     # Base CVSS calculation
+│   │   └── adaptive_scorer.php     # Adaptive scoring engine
+│   ├── healing/
+│   │   ├── mitigation_engine.php   # Mitigation action executor
+│   │   └── approval_manager.php    # Human-in-the-loop interface
+│   └── reporting/
+│       ├── dashboard.php           # Dashboard controller
+│       └── report_generator.php    # Report generation
+├── lang/
+│   └── en/
+│       └── tool_adaptivesecurity.php  # Language strings
+└── templates/
+    ├── dashboard.mustache          # Dashboard template
+    ├── vulnerability_detail.mustache
+    └── approval_request.mustache
+3.8.2 Plugin Installation dan Configuration
+Installation Process:
+// version.php
+<?php
+defined('MOODLE_INTERNAL') || die();
+
+$plugin->component = 'tool_adaptivesecurity';
+$plugin->version = 2025112500;
+$plugin->requires = 2023100900;  // Moodle 4.3+
+$plugin->maturity = MATURITY_STABLE;
+$plugin->release = '1.0.0';
+$plugin->dependencies = array(
+    'mod_forum' => ANY_VERSION,  // For testing scope
+);
+Configuration Settings:
+// settings.php
+<?php
+defined('MOODLE_INTERNAL') || die();
+
+if ($hassiteconfig) {
+    $settings = new admin_settingpage('tool_adaptivesecurity', 
+                                      get_string('pluginname', 'tool_adaptivesecurity'));
+    
+    // Docker Configuration
+    $settings->add(new admin_setting_configtext(
+        'tool_adaptivesecurity/docker_host',
+        get_string('docker_host', 'tool_adaptivesecurity'),
+        get_string('docker_host_desc', 'tool_adaptivesecurity'),
+        'unix:///var/run/docker.sock',
+        PARAM_TEXT
+    ));
+    
+    $settings->add(new admin_setting_configtext(
+        'tool_adaptivesecurity/container_image',
+        get_string('container_image', 'tool_adaptivesecurity'),
+        get_string('container_image_desc', 'tool_adaptivesecurity'),
+        'moodle-security-scanner:latest',
+        PARAM_TEXT
+    ));
+    
+    // Scanning Configuration
+    $settings->add(new admin_setting_configselect(
+        'tool_adaptivesecurity/scan_intensity',
+        get_string('scan_intensity', 'tool_adaptivesecurity'),
+        get_string('scan_intensity_desc', 'tool_adaptivesecurity'),
+        'medium',
+        array(
+            'low' => get_string('intensity_low', 'tool_adaptivesecurity'),
+            'medium' => get_string('intensity_medium', 'tool_adaptivesecurity'),
+            'high' => get_string('intensity_high', 'tool_adaptivesecurity')
+        )
+    ));
+    
+    // ML Model Configuration
+    $settings->add(new admin_setting_configcheckbox(
+        'tool_adaptivesecurity/enable_ml',
+        get_string('enable_ml', 'tool_adaptivesecurity'),
+        get_string('enable_ml_desc', 'tool_adaptivesecurity'),
+        1
+    ));
+    
+    $settings->add(new admin_setting_configtext(
+        'tool_adaptivesecurity/ml_confidence_threshold',
+        get_string('ml_confidence_threshold', 'tool_adaptivesecurity'),
+        get_string('ml_confidence_threshold_desc', 'tool_adaptivesecurity'),
+        0.85,
+        PARAM_FLOAT
+    ));
+    
+    // Self-Healing Configuration
+    $settings->add(new admin_setting_configcheckbox(
+        'tool_adaptivesecurity/enable_auto_mitigation',
+        get_string('enable_auto_mitigation', 'tool_adaptivesecurity'),
+        get_string('enable_auto_mitigation_desc', 'tool_adaptivesecurity'),
+        0  // Disabled by default for safety
+    ));
+    
+    $settings->add(new admin_setting_configtext(
+        'tool_adaptivesecurity/auto_mitigation_threshold',
+        get_string('auto_mitigation_threshold', 'tool_adaptivesecurity'),
+        get_string('auto_mitigation_threshold_desc', 'tool_adaptivesecurity'),
+        0.95,
+        PARAM_FLOAT
+    ));
+    
+    // Notification Configuration
+    $settings->add(new admin_setting_configtextarea(
+        'tool_adaptivesecurity/notification_emails',
+        get_string('notification_emails', 'tool_adaptivesecurity'),
+        get_string('notification_emails_desc', 'tool_adaptivesecurity'),
+        '',
+        PARAM_TEXT
+    ));
+    
+    $ADMIN->add('tools', $settings);
+}
+3.9 Workflow dan Use Cases
+3.9.1 Automated Scheduled Scan Workflow
+┌─────────────────────────────────────────────────────┐
+│ AUTOMATED SCAN WORKFLOW                              │
+└─────────────────────────────────────────────────────┘
+
+1. Schedule Trigger (Cron)
+   │
+   ├─→ Check if scan already running
+   │   └─→ If yes: Skip, log conflict
+   │
+   ├─→ Validate system resources
+   │   └─→ If insufficient: Defer, notify admin
+   │
+   └─→ Initialize scan session
+       │
+       ▼
+2. Environment Setup
+   │
+   ├─→ Create database snapshot
+   ├─→ Launch Docker container
+   ├─→ Clone Moodle instance
+   ├─→ Anonymize sensitive data
+   └─→ Configure isolated network
+       │
+       ▼
+3. DAST Scanning (Layer 1)
+   │
+   ├─→ Authenticate as different roles
+   │   ├─→ Guest user
+   │   ├─→ Student user
+   │   ├─→ Teacher user
+   │   └─→ Administrator user
+   │
+   ├─→ Spider application (discover endpoints)
+   ├─→ Active scan with attack payloads
+   ├─→ Passive analysis of responses
+   └─→ Generate raw alerts
+       │
+       ▼
+4. ML Classification (Layer 2)
+   │
+   ├─→ Extract features from each alert
+   ├─→ Load trained ML models
+   ├─→ Classify TRUE_POSITIVE vs FALSE_POSITIVE
+   ├─→ Calculate confidence scores
+   └─→ Filter low-confidence alerts (optional)
+       │
+       ▼
+5. Adaptive Risk Scoring (Layer 3)
+   │
+   ├─→ Calculate base CVSS scores
+   ├─→ Apply contextual adjustments
+   │   ├─→ ML confidence multiplier
+   │   ├─→ Endpoint sensitivity factor
+   │   ├─→ Role-based impact factor
+   │   └─→ Historical attack patterns
+   │
+   ├─→ Calculate risk priority scores
+   └─→ Rank vulnerabilities by priority
+       │
+       ▼
+6. Mitigation Planning (Layer 4)
+   │
+   ├─→ For each HIGH/CRITICAL vulnerability:
+   │   │
+   │   ├─→ Determine appropriate mitigation
+   │   │
+   │   ├─→ If confidence >= 0.95 AND priority = P1:
+   │   │   └─→ Auto-execute temporary mitigation
+   │   │       ├─→ Apply rate limiting
+   │   │       ├─→ Log action
+   │   │       └─→ Send notification
+   │   │
+   │   └─→ Else:
+   │       └─→ Generate approval request
+   │           ├─→ Prepare evidence package
+   │           ├─→ Queue for admin review
+   │           └─→ Send email notification
+   │
+   └─→ Generate long-term recommendations
+       │
+       ▼
+7. Report Generation
+   │
+   ├─→ Generate dashboard summary
+   ├─→ Create detailed vulnerability reports
+   ├─→ Export to PDF/JSON/CSV
+   ├─→ Store in database
+   └─→ Send notifications to security team
+       │
+       ▼
+8. Cleanup
+   │
+   ├─→ Destroy Docker container
+   ├─→ Delete temporary database
+   ├─→ Archive scan logs
+   └─→ Update scan statistics
+3.9.2 Manual On-Demand Scan Use Case
+Actor: Security Administrator
+
+Preconditions:
+- User has admin privileges
+- No other scan currently running
+- System resources available
+
+Main Flow:
+
+1. Admin navigates to Security Audit dashboard
+2. Admin clicks "Start New Scan"
+3. System displays scan configuration dialog:
+   ├─→ Scan scope selection:
+   │   □ Admin Panel
+   │   □ User Panel
+   │   □ API Endpoints
+   │   □ Custom URL list
+   │
+   ├─→ Scan intensity:
+   │   ○ Quick (30 min, basic checks)
+   │   ● Standard (2-3 hours, comprehensive)
+   │   ○ Deep (6-8 hours, exhaustive)
+   │
+   └─→ Advanced options:
+       □ Enable ML classification
+       □ Auto-apply temporary mitigations
+       □ Send email on completion
+
+4. Admin confirms configuration
+5. System validates configuration
+6. System executes scan workflow (as per 3.9.1)
+7. System displays real-time progress:
+   ├─→ Current phase
+   ├─→ Endpoints scanned
+   ├─→ Alerts detected
+   └─→ Estimated time remaining
+
+8. Upon completion:
+   └─→ System redirects to results dashboard
+
+9. Admin reviews findings:
+   ├─→ Views high-priority vulnerabilities
+   ├─→ Examines evidence for each alert
+   ├─→ Reviews ML confidence scores
+   └─→ Checks adaptive CVSS ratings
+
+10. Admin takes action:
+    ├─→ Approves/rejects mitigation proposals
+    ├─→ Marks false positives
+    ├─→ Exports report for compliance
+    └─→ Plans remediation activities
+
+Alternative Flows:
+
+A1. Scan fails during execution:
+    ├─→ System logs error details
+    ├─→ System performs cleanup
+    ├─→ System notifies admin with error report
+    └─→ Admin can retry with adjusted settings
+
+A2. Critical vulnerability detected during scan:
+    ├─→ System sends immediate alert
+    ├─→ System applies emergency mitigation (if enabled)
+    └─→ Admin receives push notification
+3.9.3 Mitigation Approval Workflow
+Actor: Security Administrator
+Trigger: High-confidence vulnerability requires mitigation
+
+Main Flow:
+
+1. System detects vulnerability requiring approval
+2. System generates approval request package
+3. System sends notification to admin:
+   ├─→ Email with summary
+   ├─→ Dashboard notification badge
+   └─→ Optional: SMS for P1 CRITICAL
+
+4. Admin opens approval request
+5. System displays comprehensive evidence:
+   ├─→ Vulnerability summary
+   ├─→ Attack evidence (request/response logs)
+   ├─→ ML confidence and reasoning
+   ├─→ Adaptive CVSS breakdown
+   ├─→ Proposed mitigation details
+   ├─→ Estimated impact analysis
+   └─→ Rollback procedure
+
+6. Admin reviews evidence:
+   ├─→ Examines attack logs
+   ├─→ Validates ML classification
+   ├─→ Assesses impact vs risk trade-off
+   └─→ Considers alternative actions
+
+7. Admin makes decision:
+   
+   Option A: APPROVE
+   ├─→ System executes proposed mitigation
+   ├─→ System logs action
+   ├─→ System sets auto-expiry timer
+   ├─→ System monitors effectiveness
+   └─→ System confirms execution to admin
+   
+   Option B: APPROVE WITH MODIFICATION
+   ├─→ Admin adjusts mitigation parameters
+   ├─→ System validates modified plan
+   ├─→ System executes modified mitigation
+   └─→ System logs custom action
+   
+   Option C: DEFER
+   ├─→ Admin sets review deadline
+   ├─→ System schedules reminder
+   └─→ System maintains monitoring
+   
+   Option D: REJECT (Mark as False Positive)
+   ├─→ Admin provides rejection reason
+   ├─→ System updates ML training data
+   ├─→ System adjusts model weights
+   └─→ System improves future classifications
+
+8. For approved mitigations:
+   ├─→ System monitors applied mitigation
+   ├─→ System tracks blocked requests
+   ├─→ System validates effectiveness
+   └─→ Upon expiry:
+       ├─→ System automatically rolls back
+       ├─→ System verifies rollback success
+       └─→ System notifies admin
+
+Alternative Flows:
+
+A1. Timeout without approval (P1 CRITICAL only):
+    ├─→ After 4 hours without response
+    ├─→ System auto-approves mitigation
+    ├─→ System logs auto-approval
+    └─→ System sends escalation notification
+
+A2. Mitigation causes availability issue:
+    ├─→ System detects increased error rate
+    ├─→ System automatically rolls back
+    ├─→ System alerts admin immediately
+    └─→ Admin reviews and adjusts strategy
+3.10 Performance dan Scalability Considerations
+3.10.1 Scan Performance Optimization
+Parallel Scanning Strategy:
+def optimize_scan_performance(endpoints, available_resources):
+    """
+    Distribute scanning workload across multiple processes
+    """
+    
+    # Calculate optimal parallelism
+    cpu_cores = available_resources['cpu_cores']
+    memory_gb = available_resources['memory_gb']
+    
+    # Conservative: 1 scanner per 2 cores, min 2GB per scanner
+    max_parallel_scanners = min(
+        cpu_cores // 2,
+        int(memory_gb // 2),
+        10  # Hard limit to prevent resource exhaustion
+    )
+    
+    # Partition endpoints by complexity
+    endpoint_groups = partition_by_complexity(endpoints)
+    
+    # Priority queue: scan high-value targets first
+    priority_queue = []
+    for endpoint in endpoints:
+        priority = calculate_scan_priority(endpoint)
+        priority_queue.append((priority, endpoint))
+    
+    priority_queue.sort(reverse=True)  # Highest priority first
+    
+    # Distribute work
+    scanner_queues = [[] for _ in range(max_parallel_scanners)]
+    for i, (priority, endpoint) in enumerate(priority_queue):
+        queue_index = i % max_parallel_scanners
+        scanner_queues[queue_index].append(endpoint)
+    
+    return {
+        'parallel_scanners': max_parallel_scanners,
+        'scanner_queues': scanner_queues,
+        'estimated_duration': estimate_duration(scanner_queues)
+    }
+Incremental Scanning:
+def incremental_scan_strategy(last_scan_timestamp):
+    """
+    Focus on changed/new endpoints since last scan
+    """
+    
+    # Identify changes since last scan
+    changes = detect_changes_since(last_scan_timestamp)
+    
+    scan_scope = {
+        'new_endpoints': changes['new_endpoints'],
+        'modified_endpoints': changes['modified_endpoints'],
+        'always_scan': [
+            '/admin/*',  # Admin panel always scanned
+            '/login/*',  # Authentication always scanned
+            '/webservice/*'  # API always scanned
+        ]
+    }
+    
+    # For unchanged endpoints: quick validation scan only
+    scan_scope['validation_only'] = [
+        ep for ep in changes['unchanged_endpoints']
+        if not matches_pattern(ep, scan_scope['always_scan'])
+    ]
+    
+    return scan_scope
+3.10.2 Database Optimization
+Indexing Strategy:
+-- Performance-critical indexes
+CREATE INDEX idx_alerts_session_severity ON alerts(session_id, severity);
+CREATE INDEX idx_alerts_priority_status ON alerts(risk_priority, status);
+CREATE INDEX idx_alerts_timestamp ON alerts(timestamp DESC);
+CREATE INDEX idx_alerts_classification ON alerts(ml_classification, ml_confidence);
+
+-- Composite index for dashboard queries
+CREATE INDEX idx_dashboard_query ON alerts(
+    session_id, 
+    severity, 
+    status, 
+    timestamp DESC
+);
+
+-- Full-text search for evidence
+CREATE FULLTEXT INDEX idx_evidence_search ON alerts(evidence_json);
+Query Optimization:
+// Efficient dashboard query with aggregation
+function get_dashboard_summary($session_id) {
+    global $DB;
+    
+    $sql = "
+        SELECT 
+            COUNT(*) as total_alerts,
+            SUM(CASE WHEN ml_classification = 'TRUE_POSITIVE' THEN 1 ELSE 0 END) as true_positives,
+            SUM(CASE WHEN ml_classification = 'FALSE_POSITIVE' THEN 1 ELSE 0 END) as false_positives,
+            AVG(cvss_adaptive) as avg_cvss,
+            MAX(cvss_adaptive) as max_cvss,
+            SUM(CASE WHEN severity = 'CRITICAL' THEN 1 ELSE 0 END) as critical_count,
+            SUM(CASE WHEN severity = 'HIGH' THEN 1 ELSE 0 END) as high_count,
+            SUM(CASE WHEN severity = 'MEDIUM' THEN 1 ELSE 0 END) as medium_count,
+            SUM(CASE WHEN severity = 'LOW' THEN 1 ELSE 0 END) as low_count,
+            AVG(risk_score) as avg_risk_score
+        FROM {tool_adaptivesecurity_alerts}
+        WHERE session_id = ?
+    ";
+    
+    return $DB->get_record_sql($sql, [$session_id]);
+}
+Data Retention Policy:
+function cleanup_old_scan_data() {
+    global $DB;
+    
+    // Retention periods
+    $retention_policies = [
+        'P1_CRITICAL' => 365,  // Keep 1 year
+        'P2_HIGH' => 180,      // Keep 6 months
+        'P3_MEDIUM' => 90,     // Keep 3 months
+        'P4_LOW' => 30,        // Keep 1 month
+        'FALSE_POSITIVE' => 7  // Keep 1 week
+    ];
+    
+    foreach ($retention_policies as $priority => $days) {
+        $cutoff = time() - ($days * 86400);
+        
+        $DB->delete_records_select(
+            'tool_adaptivesecurity_alerts',
+            'risk_priority = ? AND timestamp < ?',
+            [$priority, $cutoff]
+        );
+    }
+}
+3.11 Security Considerations dalam Desain Sistem
+3.11.1 Secure API Communication
+API Authentication:
+# FastAPI secure endpoint dengan API key authentication
+from fastapi import FastAPI, Security, HTTPException
+from fastapi.security import APIKeyHeader
+
+API_KEY_HEADER = APIKeyHeader(name="X-API-Key")
+
+async def verify_api_key(api_key: str = Security(API_KEY_HEADER)):
+    """Verify API key from Moodle plugin"""
+    stored_key = os.getenv("MOODLE_API_KEY")
+    
+    if not secrets.compare_digest(api_key, stored_key):
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid API key"
+        )
+    return api_key
+
+@app.post("/api/v1/scan/start")
+async def start_scan(
+    scan_config: ScanConfig,
+    api_key: str = Security(verify_api_key)
+):
+    # Scan execution logic
+    pass
+Rate Limiting:
+from fastapi_limiter import FastAPILimiter
+from fastapi_limiter.depends import RateLimiter
+
+@app.post("/api/v1/scan/start")
+@limiter.limit("5/hour")  # Max 5 scans per hour
+async def start_scan(request: Request, scan_config: ScanConfig):
+    # Prevent abuse of scanning API
+    pass
+3.11.2 Data Anonymization untuk Test Environment
+def anonymize_database_clone(db_connection):
+    """
+    Anonymize sensitive data in cloned database
+    """
+    
+    # Anonymize user data
+    db_connection.execute("""
+        UPDATE mdl_user SET
+            email = CONCAT('user', id, '@example.com'),
+            firstname = CONCAT('User', id),
+            lastname = 'Test',
+            phone1 = '0000000000',
+            phone2 = '',
+            address = 'Test Address',
+            city = 'Test City',
+            password = '' -- Disable authentication
+        WHERE id > 2  -- Preserve admin and guest
+    """)
+    
+    # Anonymize course descriptions
+    db_connection.execute("""
+        UPDATE mdl_course SET
+            summary = 'Anonymized course description'
+        WHERE id > 1
+    """)
+    
+    # Remove sensitive files references
+    db_connection.execute("""
+        DELETE FROM mdl_files 
+        WHERE component IN ('user', 'assignsubmission_file')
+    """)
+    
+    # Log anonymization
+    log_anonymization_actions(db_connection)
+3.11.3 Audit Logging
+function log_security_event($event_type, $details) {
+    global $DB, $USER;
+    
+    $log_entry = new stdClass();
+    $log_entry->timestamp = time();
+    $log_entry->event_type = $event_type;
+    $log_entry->user_id = $USER->id;
+    $log_entry->ip_address = getremoteaddr();
+    $log_entry->details = json_encode($details);
+    $log_entry->user_agent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    
+    $DB->insert_record('tool_adaptivesecurity_audit', $log_entry);
+    
+    // For critical events, also log to syslog
+    if (in_array($event_type, ['MITIGATION_APPLIED', 'SCAN_FAILED', 'UNAUTHORIZED_ACCESS'])) {
+        syslog(LOG_WARNING, "AdaptiveSecurity: $event_type - " . json_encode($details));
+    }
+}
+
+BAB III - PENUTUP
+Perancangan sistem Adaptive Security Proxy untuk Moodle telah disusun dengan arsitektur berlapis yang komprehensif, mengintegrasikan Dynamic Application Security Testing, machine learning optimization, adaptive CVSS risk scoring, dan mekanisme semi self-healing. Desain four-layer architecture memberikan balance optimal antara akurasi deteksi, efisiensi operasional, dan kontrol manusia dalam pengambilan keputusan kritis.
+Penggunaan Docker containerization untuk isolasi lingkungan pengujian memastikan bahwa aktivitas scanning tidak mengganggu operasional sistem produksi Moodle. Integrasi machine learning pada Layer 2 secara signifikan mengurangi false positive rate, sementara adaptive CVSS scoring pada Layer 3 memberikan penilaian risiko yang kontekstual dan akurat. Mekanisme semi self-healing pada Layer 4 memberikan kemampuan respons otomatis untuk threat dengan confidence tinggi, namun tetap mempertahankan human oversight untuk keputusan dengan impact signifikan.
+Implementasi sistem yang akan dilakukan pada BAB IV akan mengikuti desain arsitektur dan spesifikasi teknis yang telah diuraikan dalam bab ini. Pengujian dan evaluasi pada BAB V akan memvalidasi efektivitas setiap layer dalam mencapai tujuan penelitian yang telah ditetapkan.

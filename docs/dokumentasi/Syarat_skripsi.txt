@@ -1,0 +1,39 @@
+Outline Dokumen Proyek Akhir 
+Secara garis besar, berikut ini adalah poin-poin yang perlu ada dalam dokumen proyek 
+akhir. Halaman A4. Margin 3-3-3-3 cm, huruf Gotham Narrow Book 11, spasi 1,5. Dengan 
+perincian sebagai berikut. 
+1. Cover 
+2. Halaman pengesahan 
+3. Halaman persetujuan Dosen PPA 
+4. Abstrak 
+5. Daftar isi 
+6. Daftar Tabel 
+7. Daftar Gambar 
+8. Bab 1.   Pendahuluan (3-5 halaman)/F-100 
+a. Latar Belakang 
+b. Rumusan masalah/problem statement 
+c. Maksud dan Tujuan 
+9. Bab 2.  Metodologi/Spesifikasi/Tinjauan Pustaka (5-10 halaman)/F-200, berisi: 
+a. Metode Penelitian atau spesifikasi tata cara penyelesaian masalah atau 
+spesifikasi yang dibutuhkan untuk mengaplikasi solusi atau metode yang 
+diajukan.  
+b. Alternatif solusi yang dapat dipilih dan alasan pemilihan solusi tertentu. Solusi 
+yang dipilih harus merupakan produk/software dengan fungsi, kinerja, dan 
+karakteristik tertentu. 
+10. Bab 3.  Desain (minimal 10 halaman)/F-300 
+Menjelaskan seluruh desain yang diperlukan dan relevan. Dokumen ini 
+menggambarkan pengambilan semua keputusan penting, yang jika diberikan kepada 
+teknisi atau programer, dapat menghasilkan produk yang diinginkan. 
+11. Bab 4.  Hasil dan Pembahasan (minimal 5 halaman)/F-400 dan F-500 
+a. Implementasi/F-400. Setiap bagian dalam desain harus diimplementasikan 
+satu-per-satu. Bagian terkecil harus diyakinkan bekerja dengan baik sebelum 
+digabungkan dengan bagian lain.  
+b. Evaluasi Hasil/F-500. Hal yang harus diperhatikan pada proses ini adalah 
+verifikasi fungsional setiap bagian dan setiap tahap integrasinya. Proses integrasi 
+dan verifikasi perbagian ini harus didokumentasikan. 
+c. Diskusi/Pembahasan 
+12. Bab 5. Penutup (1-3 halaman) 
+a. Kesimpulan (menjawab masalah dan atau sesuai dengan tujuan) 
+b. Saran 
+13. Daftar Pustaka 
+14. Lampiran  

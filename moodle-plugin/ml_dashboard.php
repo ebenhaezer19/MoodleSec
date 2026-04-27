@@ -81,12 +81,12 @@ if ($ml_status) {
             'False Positive Reducer',
             '🎯',
             $fp_model,
-            'Filters false positives — 89.3% balanced accuracy (RF+GB Ensemble, Phase 3)',
+            'Filters false positives — 92.9% ±6.9% CV (RF+GB Ensemble, Phase 5 Clean-14, no shortcuts)',
             [
                 'Algorithm' => 'RF + GB Ensemble + CalibratedClassifierCV',
-                'Estimators' => $fp_model['n_estimators'] ?? 'N/A',
-                'Max Depth' => $fp_model['max_depth'] ?? 'N/A',
-                'Features' => $fp_model['n_features'] ?? 'N/A'
+                'Features' => '14 (occurrence_count & days_since_first_seen removed)',
+                'CV Accuracy' => '92.9% ± 6.9% (5-fold)',
+                'Test Accuracy' => '86.4% (22-sample holdout)'
             ]
         );
     }
@@ -174,7 +174,7 @@ if ($ml_status) {
     echo html_writer::tag('h3', '📈 Performance Metrics', ['class' => 'mt-5 mb-3']);
     echo html_writer::start_div('row');
     
-    echo render_metric_card('FP Reducer (Phase 3)', '89.3%', 'Balanced Accuracy', 'success');
+    echo render_metric_card('FP Reducer (Phase 5)', '92.9%', 'CV Acc ±6.9% (14 clean features)', 'success');
     echo render_metric_card('Severity Prediction', '100%', 'Test Accuracy (XGBoost)', 'success');
     echo render_metric_card('Anomaly Detection', '~90%', 'Detection Rate', 'info');
     echo render_metric_card('Rate Limiter', '0.74', 'Validation R² (XGBoost)', 'primary');
@@ -305,7 +305,7 @@ echo html_writer::end_tag('style');
 echo html_writer::start_tag('script');
 ?>
 // Store proxy URL from Moodle config
-const proxyUrl = '<?php echo get_config('local_security_dashboard', 'proxy_url'); ?>' || 'http://localhost:8999';
+const proxyUrl = '<?php echo get_config('local_security_dashboard', 'proxy_url'); ?>' || 'http://localhost:8998';
 
 function retrainModels() {
     if (confirm('Are you sure you want to retrain all ML models with recent scan data? This may take several minutes.')) {
