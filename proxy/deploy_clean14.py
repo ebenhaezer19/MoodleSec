@@ -216,14 +216,12 @@ calibrated = CalibratedClassifierCV(ens, cv=3, method='sigmoid')
 calibrated.fit(X_scaled, y_all)
 
 cv5 = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-cv5_score = cross_val_score(
-    VotingClassifier([('rf', RandomForestClassifier(n_estimators=100, max_depth=3,
-                        min_samples_leaf=5, max_features='sqrt', random_state=42,
-                        class_weight='balanced'),
-                       ('gb', GradientBoostingClassifier(n_estimators=50, max_depth=2,
-                        learning_rate=0.05, subsample=0.7, random_state=42))],
-                     voting='soft', weights=[2, 1]),
-    X_scaled, y_all, cv=cv5, scoring='balanced_accuracy')
+_rf_cv = RandomForestClassifier(n_estimators=100, max_depth=3, min_samples_leaf=5,
+                                 max_features='sqrt', random_state=42, class_weight='balanced')
+_gb_cv = GradientBoostingClassifier(n_estimators=50, max_depth=2,
+                                     learning_rate=0.05, subsample=0.7, random_state=42)
+_ens_cv = VotingClassifier([('rf', _rf_cv), ('gb', _gb_cv)], voting='soft', weights=[2, 1])
+cv5_score = cross_val_score(_ens_cv, X_scaled, y_all, cv=cv5, scoring='balanced_accuracy')
 print(f"\n5-Fold CV: {cv5_score.mean():.1%} ± {cv5_score.std():.1%}")
 
 # Single-feature max
