@@ -93,16 +93,52 @@ class AttackClassifier:
             "no",
         }
         self.last_debug_info: Dict[str, Any] = {}
+        # Educational / natural-language phrases that commonly contain SQL/XSS
+        # keywords but carry no exploit intent.  Used by the contextual
+        # postprocessor to suppress false positives on search/navigation text.
         self.educational_context_terms = [
             "how to",
+            "how to use",
             "course materials",
             "union of sets",
+            "union of",
+            "sets in math",
             "script in python",
+            "use script",
+            "in python",
+            "in math",
             "python",
             "math",
             "overview",
             "assignment",
+            "materials",
+            "drop by",
+            "drop in",
+            "drop off",
+            "later",
+            "lecture",
+            "course",
+            "tutorial",
+            "lesson",
+            "study",
         ]
+
+        # Structural markers that indicate exploit intent rather than natural language.
+        # If NONE of these appear near a keyword hit, the keyword is almost certainly
+        # being used in its everyday English meaning.
+        self._exploit_structure_markers = re.compile(
+            r"""(?x)
+            ['";=<>(){}\[\]]       # quote / bracket / operator characters
+            | --                     # SQL line-comment
+            | /\*                    # SQL block-comment open
+            | \*/                    # SQL block-comment close
+            | %[0-9a-fA-F]{2}       # URL-encoded character
+            | \\x[0-9a-fA-F]{2}    # hex escape
+            | <\s*\w                # HTML/XML tag opening
+            | \.\.[\\/]            # path traversal
+            | \b(0x[0-9a-fA-F]+)\b # hex literal
+            """
+        )
 
         self.load_model()
 
@@ -201,11 +237,49 @@ class AttackClassifier:
         return 1.0 if re.search(r"%25[0-9a-fA-F]{2}", text) else 0.0
 
     def _keyword_signal_count(self, text: str) -> int:
+        """Count raw keyword hits (used for feature extraction — must stay
+        stable to avoid invalidating the trained model)."""
         text_lower = text.lower()
         total = 0
         for keyword in self.suspicious_keywords:
             total += len(re.findall(re.escape(keyword), text_lower))
         return total
+
+    # ------------------------------------------------------------------
+    # Natural-language context detection
+    # ------------------------------------------------------------------
+
+    def _is_natural_language_context(self, text: str) -> bool:
+        """Return True when *text* looks like a natural English sentence/query
+        rather than an exploit payload.
+
+        Heuristic:
+        1. Decode the text fully.
+        2. Check for structural exploit markers (quotes, operators, HTML tags,
+           path traversal, URL-encoding, etc.).
+        3. If NONE are present the text is almost certainly benign prose.
+
+        This is intentionally conservative — the presence of *any* structural
+        marker returns False, letting the existing exploit-pattern detectors
+        handle it.
+        """
+        decoded = self._multi_url_decode(text).strip()
+        if not decoded:
+            return False
+
+        # If the decoded text contains ANY structural exploit marker it is
+        # NOT a simple natural-language sentence.
+        if self._exploit_structure_markers.search(decoded):
+            return False
+
+        # Extra guard: short strings that are just a keyword by themselves
+        # (e.g., path segment "/select") are ambiguous — treat as NL only if
+        # there are at least two space-separated words.
+        words = decoded.split()
+        if len(words) < 2:
+            return False
+
+        return True
 
     @staticmethod
     def _multi_url_decode(text: str, rounds: int = 3) -> str:
@@ -340,11 +414,33 @@ class AttackClassifier:
             notes.append("Command injection structure detected")
 
         if not signals["has_strong_evidence"]:
-            if signals["keyword_only"] and signals["educational_hits"]:
+            # --- Natural-language detection for the merged payload text ---
+            # If the full decoded payload reads like a normal English sentence
+            # (no SQL operators, no HTML tags, no path traversal markers) AND
+            # the only reason it was flagged is keyword overlap, we can
+            # confidently suppress the alert.
+            payload_is_nl = self._is_natural_language_context(
+                signals.get("decoded_payload", "")
+            )
+
+            if signals["keyword_only"] and (signals["educational_hits"] or payload_is_nl):
+                # WHY downgraded: the request contains everyday English words
+                # ("select", "union", "drop", "script") in a sentence-like
+                # context with zero exploit-structure markers.  Keeping it as
+                # an alert would be a false positive.
                 adjusted_attack_type = "normal"
-                adjusted_confidence = min(adjusted_confidence, 0.12)
-                notes.append("Keyword-only educational context detected; suppressing attack label")
+                adjusted_confidence = min(adjusted_confidence, 0.08)
+                reason_detail = (
+                    "educational context" if signals["educational_hits"]
+                    else "natural-language sentence"
+                )
+                notes.append(
+                    f"Keyword-only hit in {reason_detail}; "
+                    f"no exploit structure detected — suppressing attack label"
+                )
             elif signals["keyword_only"]:
+                # Keywords present but no NL match and no educational hit.
+                # Still suspicious but not enough for a strong prediction.
                 adjusted_confidence = min(adjusted_confidence * 0.45, 0.35)
                 if adjusted_confidence < 0.40:
                     adjusted_attack_type = "normal"
