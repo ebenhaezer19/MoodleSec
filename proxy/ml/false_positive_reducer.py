@@ -20,14 +20,21 @@ class FalsePositiveReducer:
     """
     Reduces false positives using Random Forest classifier.
     
-    Features used:
+    Features used (14 total — Phase 5 Clean-14):
     - Finding severity (encoded)
     - Finding category (encoded)
     - Evidence length
-    - URL pattern features
-    - Historical occurrence count
+    - Description length
+    - URL pattern features (complexity, has params)
+    - CVSS score (neutralized=0 in training)
+    - Risk score (neutralized=0 in training)
+    - FP keyword count
+    - TP keyword count
+    - Keyword ratio
+    - Is informational
     - Response status code
     - Response time
+    NOTE: occurrence_count and days_since_first_seen REMOVED (Phase 5 shortcut fix)
     """
     
     def __init__(self, model_path: str = "ml/models/fp_reducer.pkl"):
@@ -161,14 +168,11 @@ class FalsePositiveReducer:
             # Feature 14: Response time (ms)
             features.append(context.get('response_time', 0))
             
-            # Feature 15: Historical occurrence count
-            features.append(context.get('occurrence_count', 1))
-            
-            # Feature 16: Days since first seen
-            features.append(context.get('days_since_first_seen', 0))
+            # NOTE: occurrence_count and days_since_first_seen REMOVED
+            # (Phase 5 Clean-14 fix — these were shortcuts: 95.3% single-feature accuracy)
         else:
             # Default values if no context
-            features.extend([200, 0, 1, 0])
+            features.extend([200, 0])
         
         return np.array(features).reshape(1, -1)
     
