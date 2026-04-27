@@ -305,7 +305,7 @@ echo html_writer::end_tag('style');
 echo html_writer::start_tag('script');
 ?>
 // Store proxy URL from Moodle config
-const proxyUrl = '<?php echo get_config('local_security_dashboard', 'proxy_url'); ?>' || 'http://localhost:8998';
+const proxyUrl = '<?php echo get_config('local_security_dashboard', 'proxy_url'); ?>' || 'http://localhost:8999';
 
 function retrainModels() {
     if (confirm('Are you sure you want to retrain all ML models with recent scan data? This may take several minutes.')) {
