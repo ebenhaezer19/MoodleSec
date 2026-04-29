@@ -61,7 +61,7 @@ app = FastAPI(
 # Add CORS middleware to allow requests from Moodle UI
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8998", "http://127.0.0.1:8998"],  # Moodle URL
+    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],  # Moodle URL
     allow_credentials=True,
     allow_methods=["*"],  # Allow all methods (GET, POST, etc.)
     allow_headers=["*"],  # Allow all headers

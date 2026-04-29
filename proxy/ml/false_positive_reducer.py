@@ -8,6 +8,7 @@ and user feedback to classify findings as true/false positives.
 import numpy as np
 import pickle
 import os
+import re
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 from collections import Counter
@@ -252,6 +253,26 @@ class FalsePositiveReducer:
         # Pattern 3: Very short evidence (likely incomplete scan)
         if len(evidence) < 10:
             return True, 0.6
+
+        # Pattern 4: Natural-language educational context without exploit structure.
+        # Downgrade benign prose that contains keywords like "select" or "script" but
+        # lacks operators, HTML tags, or traversal markers.
+        edu_tokens = (
+            "course",
+            "materials",
+            "union of sets",
+            "script in python",
+            "how to",
+            "assignment",
+            "lesson",
+            "lecture",
+            "drop by",
+        )
+        combined_text = f"{evidence} {description}".lower()
+        if any(token in combined_text for token in edu_tokens):
+            exploit_marker = re.search(r"['\";=<>(){}\[\]]|--|/\*|\*/|<\s*\w|\.\.[\\/]", combined_text)
+            if not exploit_marker:
+                return True, 0.65
         
         # Default: assume true positive
         return False, 0.5

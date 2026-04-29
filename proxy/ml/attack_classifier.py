@@ -97,6 +97,10 @@ class AttackClassifier:
         # keywords but carry no exploit intent.  Used by the contextual
         # postprocessor to suppress false positives on search/navigation text.
         self.educational_context_terms = [
+            "select course materials",
+            "union of sets in math",
+            "how to use script in python",
+            "drop by later",
             "how to",
             "how to use",
             "course materials",
@@ -119,6 +123,15 @@ class AttackClassifier:
             "lecture",
             "course",
             "tutorial",
+            "meaning",
+            "example",
+            "examples",
+            "explain",
+            "learning",
+            "class",
+            "sql class",
+            "sql tutorial",
+            "select tutorial",
             "lesson",
             "study",
         ]
@@ -319,29 +332,61 @@ class AttackClassifier:
 
         merged_text = " ".join([path, query, body, request_raw]).strip()
         decoded_text = self._multi_url_decode(merged_text).lower()
+        path_lower = path.lower()
+        search_path = bool(re.search(r"/(search|course/search|mod/forum/search|tag)(?:/|$)", path_lower))
+        encoded_payload = bool(re.search(r"%[0-9a-fA-F]{2}", merged_text))
 
         sqli_signals: List[str] = []
+        sqli_strong_signals: List[str] = []
+        sqli_weak_signals: List[str] = []
         if re.search(r"\bunion\b\s+(all\s+)?\bselect\b", decoded_text):
-            sqli_signals.append("union+select")
+            sqli_weak_signals.append("union+select")
+            if re.search(r"\bfrom\b", decoded_text):
+                sqli_strong_signals.append("union-select-from")
+            if re.search(r"\bunion\b\s+(all\s+)?\bselect\b\s+\d+", decoded_text):
+                sqli_strong_signals.append("union-select-columns")
+            if re.search(r"\bunion\b\s+(all\s+)?\bselect\b\s+[^\s]+\s*,\s*[^\s]+", decoded_text):
+                sqli_strong_signals.append("union-select-list")
         if re.search(r"\b(or|and)\b\s+['\"]?\s*\d+\s*=\s*\d+", decoded_text):
-            sqli_signals.append("boolean-condition")
+            sqli_strong_signals.append("boolean-condition")
         if re.search(r"\bselect\b[\s\S]{1,120}\bfrom\b", decoded_text):
-            sqli_signals.append("select-from")
+            sqli_strong_signals.append("select-from")
+        if re.search(r"\b(waitfor|benchmark|sleep)\s*\(", decoded_text):
+            sqli_strong_signals.append("time-based-function")
+        if re.search(r"\b(load_file|xp_cmdshell|into\s+outfile|into\s+dumpfile)\b", decoded_text):
+            sqli_strong_signals.append("dangerous-function")
+        if re.search(r"\b(information_schema|@@version|@@datadir|database\s*\()\b", decoded_text):
+            sqli_strong_signals.append("metadata-enum")
         if re.search(r"(--|/\*|\*/|#)", decoded_text) and re.search(
             r"\b(select|union|or|and|drop|insert|delete|update)\b",
             decoded_text,
         ):
-            sqli_signals.append("sql-comment-marker")
+            sqli_strong_signals.append("sql-comment-marker")
         if re.search(r"['\"][^'\"]{0,50}\b(or|and|union|select|drop)\b", decoded_text):
-            sqli_signals.append("quoted-sql-pattern")
+            sqli_strong_signals.append("quoted-sql-pattern")
+        if re.search(r"\b(or|and)\b\s+['\"][^'\"]+['\"]\s*=\s*['\"][^'\"]+['\"]", decoded_text):
+            sqli_strong_signals.append("string-boolean-condition")
+        if re.search(r";\s*(select|insert|update|delete|drop|exec|union)\b", decoded_text):
+            sqli_strong_signals.append("stacked-query")
+        if encoded_payload and re.search(r"\b(select|union|or|and|drop|insert|delete|update|exec)\b", decoded_text):
+            sqli_strong_signals.append("encoded-sqli")
+
+        sqli_signals.extend(sqli_weak_signals)
+        sqli_signals.extend(sqli_strong_signals)
 
         xss_signals: List[str] = []
         if re.search(r"<\s*script\b", decoded_text):
             xss_signals.append("script-tag")
+        if re.search(r"<\s*(svg|img|iframe|math|body|details)\b", decoded_text):
+            xss_signals.append("html-embedded-tag")
         if re.search(r"\bonerror\s*=", decoded_text):
             xss_signals.append("onerror-handler")
         if re.search(r"\bonload\s*=", decoded_text):
             xss_signals.append("onload-handler")
+        if re.search(r"\bon(mouseover|focus|click)\s*=", decoded_text):
+            xss_signals.append("event-handler")
+        if re.search(r"\bsrcdoc\s*=", decoded_text):
+            xss_signals.append("srcdoc-attribute")
         if re.search(r"javascript\s*:", decoded_text):
             xss_signals.append("javascript-uri")
 
@@ -350,12 +395,24 @@ class AttackClassifier:
             path_signals.append("relative-traversal")
         if any(marker in decoded_text for marker in ["/etc/passwd", "windows/system32", "boot.ini", "proc/self"]):
             path_signals.append("sensitive-path-target")
+        if any(marker in decoded_text for marker in ["win.ini", "config.php", "id_rsa", "shadow"]):
+            path_signals.append("sensitive-file-reference")
 
         command_signals: List[str] = []
-        if re.search(r"(;|&&|\|\|)\s*(cat|ls|id|whoami|uname|cmd\.exe|powershell|bash|sh|wget|curl)\b", decoded_text):
+        if re.search(
+            r"(;|&&|\|\||\|)\s*(cat|ls|id|whoami|uname|cmd\.exe|powershell|bash|sh|wget|curl|nc|netcat|ping|ipconfig|ifconfig)\b",
+            decoded_text,
+        ):
             command_signals.append("command-chain")
         if re.search(r"\$\(|`[^`]+`", decoded_text):
             command_signals.append("shell-execution-syntax")
+        if re.search(r"(?:^|[?&])(cmd|command|exec|shell|run)\s*=[^&]*(;|&&|\|\||\|)", decoded_text):
+            command_signals.append("cmd-operator")
+        if re.search(
+            r"(?:^|[?&])(cmd|command|exec|shell|run)\s*=[^&]*\b(cat|ls|id|whoami|uname|wget|curl|nc|netcat|ping|ipconfig|ifconfig)\b",
+            decoded_text,
+        ):
+            command_signals.append("cmd-verb")
 
         keyword_hits = {
             "select": bool(re.search(r"\bselect\b", decoded_text)),
@@ -365,12 +422,14 @@ class AttackClassifier:
         }
         educational_hits = [term for term in self.educational_context_terms if term in decoded_text]
 
-        has_strong_evidence = bool(sqli_signals or xss_signals or path_signals or command_signals)
-        keyword_only = bool(any(keyword_hits.values()) and not has_strong_evidence)
+        has_strong_evidence = bool(sqli_strong_signals or xss_signals or path_signals or command_signals)
+        keyword_only = bool(any(keyword_hits.values()) and not has_strong_evidence and not sqli_weak_signals)
 
         return {
             "decoded_payload": decoded_text,
             "sqli_signals": sqli_signals,
+            "sqli_strong_signals": sqli_strong_signals,
+            "sqli_weak_signals": sqli_weak_signals,
             "xss_signals": xss_signals,
             "path_signals": path_signals,
             "command_signals": command_signals,
@@ -378,6 +437,8 @@ class AttackClassifier:
             "educational_hits": educational_hits,
             "keyword_only": keyword_only,
             "has_strong_evidence": has_strong_evidence,
+            "search_path": search_path,
+            "encoded_payload": encoded_payload,
         }
 
     def _contextual_postprocess_prediction(
@@ -394,7 +455,7 @@ class AttackClassifier:
         notes: List[str] = []
 
         # Strong exploit structures should preserve recall and raise confidence floor.
-        if signals["sqli_signals"] and not signals["xss_signals"]:
+        if signals["sqli_strong_signals"] and not signals["xss_signals"]:
             adjusted_attack_type = "SQLi"
             adjusted_confidence = max(adjusted_confidence, 0.72)
             notes.append("Strong SQLi structure detected")
@@ -410,7 +471,7 @@ class AttackClassifier:
 
         if signals["command_signals"]:
             adjusted_attack_type = "Command Injection"
-            adjusted_confidence = max(adjusted_confidence, 0.72)
+            adjusted_confidence = max(adjusted_confidence, 0.78)
             notes.append("Command injection structure detected")
 
         if not signals["has_strong_evidence"]:
@@ -423,7 +484,20 @@ class AttackClassifier:
                 signals.get("decoded_payload", "")
             )
 
-            if signals["keyword_only"] and (signals["educational_hits"] or payload_is_nl):
+            weak_sqli_only = bool(signals["sqli_weak_signals"])
+            if (
+                signals["search_path"]
+                and weak_sqli_only
+                and (signals["educational_hits"] or payload_is_nl)
+                and not signals["encoded_payload"]
+            ):
+                adjusted_attack_type = "normal"
+                adjusted_confidence = min(adjusted_confidence, 0.06)
+                notes.append(
+                    "Search endpoint with educational phrasing and weak SQL tokens; "
+                    "no exploit structure detected"
+                )
+            elif signals["keyword_only"] and (signals["educational_hits"] or payload_is_nl) and not signals["encoded_payload"]:
                 # WHY downgraded: the request contains everyday English words
                 # ("select", "union", "drop", "script") in a sentence-like
                 # context with zero exploit-structure markers.  Keeping it as
@@ -460,6 +534,8 @@ class AttackClassifier:
             "adjusted_confidence": float(np.clip(adjusted_confidence, 0.0, 1.0)),
             "signals": {
                 "sqli": list(signals["sqli_signals"]),
+                "sqli_strong": list(signals.get("sqli_strong_signals", [])),
+                "sqli_weak": list(signals.get("sqli_weak_signals", [])),
                 "xss": list(signals["xss_signals"]),
                 "path": list(signals["path_signals"]),
                 "command": list(signals["command_signals"]),
@@ -468,6 +544,8 @@ class AttackClassifier:
             "educational_hits": list(signals["educational_hits"]),
             "keyword_only": bool(signals["keyword_only"]),
             "has_strong_evidence": bool(signals["has_strong_evidence"]),
+            "search_path": bool(signals.get("search_path", False)),
+            "encoded_payload": bool(signals.get("encoded_payload", False)),
             "explanation": "; ".join(notes),
         }
 
