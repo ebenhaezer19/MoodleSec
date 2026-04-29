@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3          
 """Compare file-level vs request-level evaluation results."""
 import json, sys, io
 

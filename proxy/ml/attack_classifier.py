@@ -294,6 +294,105 @@ class AttackClassifier:
 
         return True
 
+    def _is_educational_union_select(self, decoded_text: str) -> bool:
+        """Return True when a 'UNION SELECT' match is educational, not exploit.
+
+        An educational usage looks like:
+            'union select meaning in SQL class'
+            'how union select works'
+        A real exploit looks like:
+            'UNION SELECT username,password FROM users'
+            '1 UNION SELECT NULL,NULL --'
+
+        Checks:
+        1. Must contain an educational context term.
+        2. Must NOT contain column-enumeration (digits/commas after SELECT).
+        3. Must NOT contain FROM + table name after SELECT.
+        4. Must NOT contain SQL comment markers or quote chars.
+        """
+        text = decoded_text.lower()
+
+        # Must have educational wording
+        edu_terms = [
+            "meaning", "tutorial", "example", "class", "explain",
+            "learning", "course", "lesson", "study", "how",
+            "lecture", "overview", "practice", "worksheet",
+        ]
+        if not any(term in text for term in edu_terms):
+            return False
+
+        # Must NOT have exploit structure after UNION SELECT
+        m = re.search(r"\bunion\b\s+(all\s+)?\bselect\b", text)
+        if not m:
+            return False
+        after_select = text[m.end():]
+
+        # Column enumeration: SELECT 1,2,3 or SELECT NULL,NULL
+        if re.match(r"\s+(\d+|null)(\s*,\s*(\d+|null))+", after_select):
+            return False
+        # Table extraction: SELECT ... FROM
+        if re.search(r"\bfrom\b\s+\w+", after_select):
+            return False
+        # SQL comments
+        if re.search(r"--|/\*|\*/|#", text):
+            return False
+        # Quote characters near SQL keywords
+        if re.search(r"['\";]", text):
+            return False
+
+        return True
+
+    def _detect_cmd_injection_per_param(self, request: Dict[str, Any]) -> List[str]:
+        """Inspect each query/body parameter value individually for command
+        injection operators paired with system commands.
+
+        This catches payloads like ``|whoami``, ``&& id``, ``$(cat /etc/passwd)``
+        that the merged-text regex misses because parameter boundaries are lost.
+        """
+        signals: List[str] = []
+
+        # Collect individual parameter values
+        param_values: List[str] = []
+
+        query = self._safe_text(request.get("query_params", ""))
+        if query:
+            parsed_q = self._parse_query_params(query)
+            param_values.extend(parsed_q.values())
+
+        body = self._safe_text(request.get("body", ""))
+        if body:
+            parsed_b = self._parse_query_params(body)
+            if parsed_b:
+                param_values.extend(parsed_b.values())
+            else:
+                param_values.append(body)
+
+        shell_cmds = (
+            r"\b(cat|ls|id|whoami|uname|cmd\.exe|powershell|bash|sh|wget|curl"
+            r"|nc|netcat|ping|ipconfig|ifconfig|dir|type|more|head|tail|grep)\b"
+        )
+
+        for raw_val in param_values:
+            val = self._multi_url_decode(raw_val).strip()
+            if not val:
+                continue
+
+            # Pattern 1: operator followed by command
+            #   | whoami, |whoami, && id, ; cat, || uname
+            if re.search(r"(^|\s*)(;|&&|\|\||\|)\s*" + shell_cmds, val):
+                signals.append("param-cmd-chain")
+
+            # Pattern 2: $(command) or `command`
+            if re.search(r"\$\(" + shell_cmds, val) or re.search(r"`[^`]*" + shell_cmds, val):
+                signals.append("param-cmd-subshell")
+
+            # Pattern 3: value starts with operator (e.g. param=|whoami)
+            if re.match(r"\s*[|;]\s*" + shell_cmds, val):
+                if "param-cmd-chain" not in signals:
+                    signals.append("param-cmd-operator-prefix")
+
+        return signals
+
     @staticmethod
     def _multi_url_decode(text: str, rounds: int = 3) -> str:
         decoded = str(text or "")
@@ -340,13 +439,17 @@ class AttackClassifier:
         sqli_strong_signals: List[str] = []
         sqli_weak_signals: List[str] = []
         if re.search(r"\bunion\b\s+(all\s+)?\bselect\b", decoded_text):
-            sqli_weak_signals.append("union+select")
-            if re.search(r"\bfrom\b", decoded_text):
-                sqli_strong_signals.append("union-select-from")
-            if re.search(r"\bunion\b\s+(all\s+)?\bselect\b\s+\d+", decoded_text):
-                sqli_strong_signals.append("union-select-columns")
-            if re.search(r"\bunion\b\s+(all\s+)?\bselect\b\s+[^\s]+\s*,\s*[^\s]+", decoded_text):
-                sqli_strong_signals.append("union-select-list")
+            # Guard: skip adding as an exploit signal when the phrase is
+            # clearly educational (e.g. "union select meaning in SQL class").
+            is_edu_union = self._is_educational_union_select(decoded_text)
+            if not is_edu_union:
+                sqli_weak_signals.append("union+select")
+                if re.search(r"\bfrom\b", decoded_text):
+                    sqli_strong_signals.append("union-select-from")
+                if re.search(r"\bunion\b\s+(all\s+)?\bselect\b\s+\d+", decoded_text):
+                    sqli_strong_signals.append("union-select-columns")
+                if re.search(r"\bunion\b\s+(all\s+)?\bselect\b\s+[^\s]+\s*,\s*[^\s]+", decoded_text):
+                    sqli_strong_signals.append("union-select-list")
         if re.search(r"\b(or|and)\b\s+['\"]?\s*\d+\s*=\s*\d+", decoded_text):
             sqli_strong_signals.append("boolean-condition")
         if re.search(r"\bselect\b[\s\S]{1,120}\bfrom\b", decoded_text):
@@ -414,6 +517,14 @@ class AttackClassifier:
         ):
             command_signals.append("cmd-verb")
 
+        # Per-parameter command injection detection: catches payloads like
+        # |whoami, &&id, $(cat /etc/passwd) that the merged-text regex may
+        # miss when parameter boundaries are lost in concatenation.
+        per_param_cmd_signals = self._detect_cmd_injection_per_param(request)
+        for sig in per_param_cmd_signals:
+            if sig not in command_signals:
+                command_signals.append(sig)
+
         keyword_hits = {
             "select": bool(re.search(r"\bselect\b", decoded_text)),
             "union": bool(re.search(r"\bunion\b", decoded_text)),
@@ -454,11 +565,31 @@ class AttackClassifier:
         signals = self._extract_contextual_signals(request)
         notes: List[str] = []
 
+        # Safety net: detect educational context BEFORE strong-signal boost.
+        # This prevents phrases like "union select meaning in SQL class" on
+        # search endpoints from being escalated to BLOCK even if some strong
+        # signal regex matched on the merged text.
+        payload_is_edu = (
+            signals["search_path"]
+            and signals["educational_hits"]
+            and self._is_natural_language_context(signals.get("decoded_payload", ""))
+            and not signals["encoded_payload"]
+        )
+
         # Strong exploit structures should preserve recall and raise confidence floor.
         if signals["sqli_strong_signals"] and not signals["xss_signals"]:
-            adjusted_attack_type = "SQLi"
-            adjusted_confidence = max(adjusted_confidence, 0.72)
-            notes.append("Strong SQLi structure detected")
+            if payload_is_edu:
+                # Educational phrase on search path — suppress, do NOT boost.
+                adjusted_attack_type = "normal"
+                adjusted_confidence = min(adjusted_confidence, 0.06)
+                notes.append(
+                    "SQLi signal suppressed: educational phrasing on search "
+                    "endpoint with no real exploit structure"
+                )
+            else:
+                adjusted_attack_type = "SQLi"
+                adjusted_confidence = max(adjusted_confidence, 0.72)
+                notes.append("Strong SQLi structure detected")
         elif signals["xss_signals"] and not signals["sqli_signals"]:
             adjusted_attack_type = "XSS"
             adjusted_confidence = max(adjusted_confidence, 0.72)
