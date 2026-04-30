@@ -175,7 +175,7 @@ class DecisionEngine:
             # High anomaly alone can still happen on odd but benign traffic.
             # We only downgrade when the classifier explicitly says "normal"
             # with low confidence and no strong exploit evidence.
-            if is_normal_prediction and confidence_value <= 0.35 and anomaly_score_value < 0.85:
+            if is_normal_prediction and confidence_value <= 0.35 and anomaly_score_value < 0.90:
                 decision = "IGNORE"
             elif confidence_value >= self.HIGH_CONFIDENCE_THRESHOLD and not is_normal_prediction:
                 decision = "BLOCK"
@@ -204,7 +204,7 @@ class DecisionEngine:
             decision == "IGNORE"
             and confidence_value < self.LOW_CONFIDENCE_THRESHOLD
             and anomaly_score_value >= self.LOW_ANOMALY_THRESHOLD
-            and not (is_normal_prediction and anomaly_score_value < 0.85)
+            and not (is_normal_prediction and anomaly_score_value < 0.90)
         ):
             decision = "ALERT"
 
