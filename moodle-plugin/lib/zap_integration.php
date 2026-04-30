@@ -218,10 +218,11 @@ function local_security_dashboard_configure_zap_moodle_auth($username, $password
         // STEP 1: Include Moodle URLs in context via regex
         error_log("\nSTEP 1 - Including Moodle URLs in context...");
         try {
-            $include_url = "$base_url/context/action/includeInContext/?contextName=" . urlencode("MoodleAuth_" . $actual_context_id) . 
-                          "&incRegex=" . urlencode("http://localhost:8998.*");
+            // ZAP API requires: contextId (not contextName) + regex (not incRegex)
+            $include_url = "$base_url/context/action/includeInContext/?contextId=" . urlencode($actual_context_id) . 
+                          "&regex=" . urlencode("http://localhost:8998.*");
             
-            error_log("Including URLs: context=$actual_context_id, regex=http://localhost:8998.*");
+            error_log("Including URLs: contextId=$actual_context_id, regex=http://localhost:8998.*");
             
             $cmd = sprintf('curl -s %s', escapeshellarg($include_url));
             $response = shell_exec($cmd);
@@ -271,10 +272,11 @@ function local_security_dashboard_configure_zap_moodle_auth($username, $password
         error_log("\nSTEP 4 - Creating user in context...");
         $user_id = 0;  // Default
         try {
-            $new_user_url = "$base_url/users/action/newUser/?contextName=" . urlencode("MoodleAuth_" . $actual_context_id) . 
+            // ZAP API requires: contextId (not contextName) + name
+            $new_user_url = "$base_url/users/action/newUser/?contextId=" . urlencode($actual_context_id) . 
                            "&name=" . urlencode($username);
             
-            error_log("Creating user: context=$actual_context_id, user=$username");
+            error_log("Creating user: contextId=$actual_context_id, user=$username");
             
             $cmd = sprintf('curl -s %s', escapeshellarg($new_user_url));
             $response = shell_exec($cmd);
@@ -579,20 +581,37 @@ function local_security_dashboard_trigger_zap_scan($scan_type = 'unauthenticated
             $wait_time += $poll_interval;
         }
         
-        // Get alerts (may return empty if no vulnerabilities found)
+        // Get ALL alerts — ZAP defaults to 100/page, must paginate
         try {
-            $alerts_result = local_security_dashboard_zap_api_call('core/view/alerts', [
-                'baseurl' => $target_url
-            ], 'GET', $host, $port, $cookie_file);
-            
-            // Ensure alerts_result is an array
-            if (!is_array($alerts_result)) {
-                throw new Exception('Invalid response from ZAP alerts endpoint');
-            }
-            
-            $alerts = $alerts_result['alerts'] ?? [];
+            $alerts    = [];
+            $page_size = 200;   // max per request
+            $start     = 0;
+            $page      = 0;
+
+            do {
+                $alerts_result = local_security_dashboard_zap_api_call('core/view/alerts', [
+                    'baseurl' => $target_url,
+                    'start'   => $start,
+                    'count'   => $page_size,
+                ], 'GET', $host, $port, $cookie_file);
+
+                if (!is_array($alerts_result)) {
+                    throw new Exception('Invalid response from ZAP alerts endpoint (page ' . $page . ')');
+                }
+
+                $page_alerts = $alerts_result['alerts'] ?? [];
+                $alerts      = array_merge($alerts, $page_alerts);
+                $start      += $page_size;
+                $page++;
+
+                error_log('[ZAP Alerts] Page ' . $page . ': fetched ' . count($page_alerts)
+                          . ' alerts (total so far: ' . count($alerts) . ')');
+
+            } while (count($page_alerts) === $page_size && $page < 50); // safety: max 50 pages (10 000 alerts)
+
+            error_log('[ZAP Alerts] Total alerts fetched: ' . count($alerts));
         } catch (Exception $e) {
-            // If alerts endpoint fails, continue with empty alerts
+            error_log('[ZAP Alerts] Exception: ' . $e->getMessage());
             $alerts = [];
         }
         

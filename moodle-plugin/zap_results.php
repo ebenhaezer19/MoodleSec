@@ -39,6 +39,7 @@ $PAGE->set_heading(get_string('scan_results', 'local_security_dashboard'));
 $PAGE->set_pagelayout('admin');
 
 require_once($CFG->dirroot . '/local/security_dashboard/lib.php');
+require_once($CFG->dirroot . '/local/security_dashboard/lib/zap_integration.php');
 
 $scan = local_security_dashboard_get_scan($scan_id);
 if (!$scan) {
