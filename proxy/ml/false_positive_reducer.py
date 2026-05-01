@@ -155,24 +155,30 @@ class FalsePositiveReducer:
         # Feature 8: Risk score (if available)
         features.append(self._safe_float(finding.get('risk_score', 0), 0.0))
 
-        # Feature 9: Entropy of evidence (higher values often indicate obfuscation)
-        features.append(self._normalized_entropy(evidence))
+        # Feature 9-12: Domain-specific keyword features
+        # Source: OWASP Top 10, CVE Common Patterns, SANS Security Guidelines
+        # Expert knowledge-based patterns — NOT derived from training labels
+        desc_lower = description.lower()
 
-        # Feature 10: URL encoding ratio (%xx density)
-        encoded_count = url.count('%')
-        features.append(float(np.clip(encoded_count / max(1, len(url)), 0.0, 1.0)))
+        # Feature 9: FP keyword count (informational/best-practice indicators)
+        fp_count = sum(1 for kw in self.fp_keywords if kw in desc_lower)
+        features.append(fp_count)
 
-        # Feature 11: Query parameter density
-        query_str = ''
-        if '?' in url:
-            query_str = url.split('?', 1)[1]
-        param_count = len([p for p in query_str.split('&') if p]) if query_str else 0
-        features.append(float(np.clip(param_count / 20.0, 0.0, 1.0)))
+        # Feature 10: TP keyword count (exploit/vulnerability indicators)
+        tp_count = sum(1 for kw in self.tp_keywords if kw in desc_lower)
+        features.append(tp_count)
 
-        # Feature 12: Structural irregularity score (non-alnum density)
-        structural_text = f"{url} {evidence}"
-        non_alnum_count = sum(1 for ch in structural_text if not ch.isalnum() and not ch.isspace())
-        features.append(float(np.clip(non_alnum_count / max(1, len(structural_text)), 0.0, 1.0)))
+        # Feature 11: Keyword ratio (balance between FP/TP indicators)
+        if tp_count + fp_count > 0:
+            keyword_ratio = fp_count / (tp_count + fp_count)
+        else:
+            keyword_ratio = 0.5  # Neutral if no keywords found
+        features.append(keyword_ratio)
+
+        # Feature 12: Is informational (low severity + no exploit keywords)
+        is_info = 1 if (severity in ['info', 'low'] and tp_count == 0) else 0
+        features.append(is_info)
+
         
         # Context features (if provided)
         if context:
