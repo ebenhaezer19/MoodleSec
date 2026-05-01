@@ -176,18 +176,17 @@ class FalsePositiveReducer:
         
         # Context features (if provided)
         if context:
-            # Feature 13: Response status code
-            features.append(self._safe_int(context.get('status_code', 200), 200))
+            # Feature 13: Response status code (raw)
+            features.append(context.get('status_code', 200))
             
-            # Feature 14: Response time (ms)
-            response_time = max(0.0, self._safe_float(context.get('response_time', 0.0), 0.0))
-            features.append(float(np.log1p(response_time)))
+            # Feature 14: Response time ms (raw — matches training distribution)
+            features.append(context.get('response_time', 0))
             
             # NOTE: occurrence_count (feature 15) and days_since_first_seen (feature 16)
             # REMOVED in Phase 5 Clean-14 fix — these caused data leakage / shortcut learning.
         else:
             # Default values if no context (status_code, response_time only)
-            features.extend([200, 0.0])
+            features.extend([200, 0])
         
         return np.array(features).reshape(1, -1)
     
