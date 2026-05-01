@@ -183,16 +183,11 @@ class FalsePositiveReducer:
             response_time = max(0.0, self._safe_float(context.get('response_time', 0.0), 0.0))
             features.append(float(np.log1p(response_time)))
             
-            # Feature 15: Historical occurrence count
-            occurrence_count = max(0, self._safe_int(context.get('occurrence_count', 1), 1))
-            features.append(float(np.log1p(occurrence_count)))
-            
-            # Feature 16: Days since first seen
-            days_since_first_seen = max(0, self._safe_int(context.get('days_since_first_seen', 0), 0))
-            features.append(float(np.log1p(days_since_first_seen)))
+            # NOTE: occurrence_count (feature 15) and days_since_first_seen (feature 16)
+            # REMOVED in Phase 5 Clean-14 fix — these caused data leakage / shortcut learning.
         else:
-            # Default values if no context
-            features.extend([200, 0.0, 0.0, 0.0])
+            # Default values if no context (status_code, response_time only)
+            features.extend([200, 0.0])
         
         return np.array(features).reshape(1, -1)
     
@@ -432,7 +427,8 @@ class FalsePositiveReducer:
             'severity', 'category', 'evidence_length', 'description_length',
             'url_complexity', 'has_params', 'cvss_score', 'risk_score',
             'evidence_entropy', 'url_encoded_ratio', 'query_param_density', 'structural_irregularity',
-            'status_code', 'response_time_log', 'occurrence_count_log', 'days_since_first_seen_log'
+            'status_code', 'response_time_log'
+            # occurrence_count_log + days_since_first_seen_log REMOVED (Phase 5 Clean-14 fix)
         ]
         
         # ✅ FIX: Proper feature importance extraction from ensemble
