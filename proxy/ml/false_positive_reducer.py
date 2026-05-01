@@ -19,16 +19,24 @@ from sklearn.model_selection import train_test_split
 
 class FalsePositiveReducer:
     """
-    Reduces false positives using Random Forest classifier.
+    Reduces false positives using RF + GB Ensemble classifier (Phase 5 Clean-14).
     
-    Features used:
+    Features used (14 total):
     - Finding severity (encoded)
     - Finding category (encoded)
     - Evidence length
-    - URL pattern features
-    - Historical occurrence count
+    - Description length
+    - URL pattern features (complexity, has_params)
+    - CVSS score (neutralized=0 in training)
+    - Risk score (neutralized=0 in training)
+    - FP keyword count
+    - TP keyword count
+    - Keyword ratio
+    - Is informational
     - Response status code
     - Response time
+    NOTE: occurrence_count and days_since_first_seen REMOVED (Phase 5 shortcut fix)
+    Model persistence: joblib (not pickle)
     """
     
     def __init__(self, model_path: str = "ml/models/fp_reducer.pkl"):
@@ -535,21 +543,28 @@ class FalsePositiveReducer:
             'timestamp': datetime.utcnow().isoformat() + 'Z'
         }
         
-        with open(self.model_path, 'wb') as f:
-            pickle.dump(model_data, f)
+        import joblib
+        joblib.dump(model_data, self.model_path)
     
     def _load_model(self):
         """Load trained model from disk if available."""
         if os.path.exists(self.model_path):
             try:
-                with open(self.model_path, 'rb') as f:
-                    model_data = pickle.load(f)
+                import joblib
+                model_data = joblib.load(self.model_path)
                 
                 self.model = model_data['model']
                 self.scaler = model_data['scaler']
                 self.is_trained = model_data['is_trained']
                 
-                print(f"[FP Reducer] Loaded trained model from {self.model_path}")
+                # Log version info
+                timestamp  = model_data.get('timestamp', 'UNKNOWN')
+                version    = model_data.get('version', 'v2.0')
+                n_features = len(self.scaler.mean_) if hasattr(self.scaler, 'mean_') else 'unknown'
+                print(f"[FP Reducer] ✓ Loaded model from {self.model_path}")
+                print(f"[FP Reducer]   Version   : {version}")
+                print(f"[FP Reducer]   Timestamp : {timestamp}")
+                print(f"[FP Reducer]   Features  : {n_features}")
             except Exception as e:
                 print(f"[FP Reducer] Failed to load model: {e}")
                 self.is_trained = False
