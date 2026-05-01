@@ -62,6 +62,19 @@ class FalsePositiveReducer:
         
         # Enhanced category encoding with more categories
         self.category_encoding = {}
+        
+        # Keywords for FP/TP detection (features 9-10-11-12)
+        # FP indicators: informational, best-practice, header issues
+        self.fp_keywords = [
+            'missing', 'not implemented', 'not set', 'header', 'best practice',
+            'recommendation', 'information', 'disclosure', 'version', 'banner'
+        ]
+        # TP indicators: exploitable vulnerabilities
+        self.tp_keywords = [
+            'injection', 'xss', 'csrf', 'bypass', 'exploit', 'vulnerability',
+            'attack', 'malicious', 'unauthorized', 'exposed', 'sensitive'
+        ]
+        
         self._build_category_encoding()
     
     def _build_category_encoding(self):
