@@ -1,14 +1,19 @@
 """
 Configuration constants for the Moodle proxy service.
+
+Environment variables (set in ~/.bashrc or .env):
+  MOODLE_BASE_URL  — Moodle instance URL (default: http://localhost:8998)
+                     krisopras: http://localhost:8998
+                     natha    : http://localhost
 """
+import os
 
 # Target Moodle instance base URL
-MOODLE_URL: str = "http://localhost/"
-# MOODLE_URL: str = "http://localhost:9000"
-# MOODLE_URL: str = "https://sdecdtsepas2024.gnomio.com"
+# Each developer sets MOODLE_BASE_URL in their shell/env — no hardcoded conflict.
+MOODLE_URL: str = os.environ.get("MOODLE_BASE_URL", "http://localhost:8998").rstrip("/")
 
 # Port for the proxy service to listen on
-LISTEN_PORT: int = 8999
+LISTEN_PORT: int = int(os.environ.get("PROXY_LISTEN_PORT", "8999"))
 
 # Directory for storing log files
 LOG_DIR: str = "logs"
