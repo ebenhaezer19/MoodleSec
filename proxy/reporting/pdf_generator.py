@@ -232,7 +232,8 @@ class PDFReportGenerator:
         doc.build(elements)
         
         return buffer.getvalue()
-        def generate_compliance_report(self, scan_data: Dict[str, Any],
+
+    def generate_compliance_report(self, scan_data: Dict[str, Any],
                                    framework: str = "OWASP") -> bytes:
         """
         Generate compliance report mapped to security framework.
