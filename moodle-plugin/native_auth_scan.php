@@ -264,6 +264,17 @@ if ($scan_triggered && $scan_result) {
                     <li>See endpoint improvement with: Pages Visited / Endpoints Discovered metrics</li>
                     <li>Export detailed report for stakeholders</li>
                 </ul>
+                <!-- L2-L7: Direct links to detailed findings -->
+                <div class="mt-3 d-flex gap-2" style="gap:10px;">
+                    <a href="scan_findings.php?scan_id=<?php echo urlencode($scan_id); ?>"
+                       class="btn btn-info">
+                        📋 View Detailed Findings (PoC + Recommendations)
+                    </a>
+                    <a href="download_report.php?scan_id=<?php echo urlencode($scan_id); ?>&type=compliance&framework=PCI-DSS"
+                       class="btn btn-primary" target="_blank">
+                        📄 Download PDF Report
+                    </a>
+                </div>
             </div>
         </div>
         <?php

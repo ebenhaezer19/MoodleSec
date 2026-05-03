@@ -12,6 +12,7 @@ from .xss_detector import XSSDetector
 from .csrf_validator import CSRFValidator
 from .path_traversal import PathTraversalDetector
 from .payload_injector import PayloadInjector
+from .recommendation_engine import RecommendationEngine
 
 
 class ScannerEngine:
@@ -28,6 +29,9 @@ class ScannerEngine:
         self.payload_injector = PayloadInjector(payload_repo, debug_logger)
         self.payload_repo = payload_repo
         self.debug_logger = debug_logger
+
+        # Initialize recommendation engine (L2-L7)
+        self.rec_engine = RecommendationEngine()
         
         # Scanner metadata
         self.scanners = {
@@ -231,16 +235,27 @@ class ScannerEngine:
         
         # Sort findings by severity
         sorted_findings = self._sort_by_severity(unique_findings)
-        
+
+        # ── Enrich findings: CVSS, PoC, Recommendation, Config Fix, Verify-Fix ──
+        try:
+            enriched_findings = self.rec_engine.bulk_enrich(sorted_findings)
+            print(f"[Scanner Engine] Enriched {len(enriched_findings)} findings with CVSS + recommendations")
+        except Exception as e:
+            print(f"[Scanner Engine] Warning: enrichment failed: {e} — using raw findings")
+            enriched_findings = sorted_findings
+
+        # Recalculate summary after enrichment (severity may change)
+        final_summary = self._calculate_summary(enriched_findings)
+
         return {
             'scan_id': scan_id,
             'target_url': url,
             'timestamp': timestamp,
             'method': method,
-            'findings': sorted_findings,
-            'summary': summary,
+            'findings': enriched_findings,
+            'summary': final_summary,
             'scanner_results': scanner_results,
-            'total_findings': len(sorted_findings)
+            'total_findings': len(enriched_findings)
         }
     
     def _calculate_summary(self, findings: List[Dict[str, Any]]) -> Dict[str, int]:
