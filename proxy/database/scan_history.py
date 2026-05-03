@@ -186,13 +186,14 @@ class ScanHistoryDB:
             # Update last_seen, metadata, and risk scores for same finding in same scan
             print(f"[DB]     → COLLISION: Hash already exists in this scan (ID={existing[0]}), updating...")
             
-            # Prepare metadata - include PoC if present
-            metadata = finding.get('metadata', {})
-            if 'poc' in finding:
-                metadata['poc'] = finding['poc']
-                print(f"[DB] Added PoC to existing finding metadata")
-            if 'recommendation' in finding:
-                metadata['recommendation'] = finding['recommendation']
+            # Prepare metadata - save ALL enriched fields
+            metadata = finding.get('metadata', {}) or {}
+            for key in ('poc', 'recommendation', 'parameter', 'payload',
+                        'remediation_steps', 'code_fix', 'config_fix',
+                        'references', 'cvss_vector', 'recommendation_source',
+                        'verify_fix', 'injection_point'):
+                if key in finding and finding[key]:
+                    metadata[key] = finding[key]
             
             # Update with risk scores
             cursor.execute("""
@@ -214,12 +215,15 @@ class ScanHistoryDB:
             # Insert new finding
             print(f"[DB]     → NEW: Inserting new finding (hash not seen before)")
             
-            # Prepare metadata - include PoC if present
-            metadata = finding.get('metadata', {})
-            if 'poc' in finding:
-                metadata['poc'] = finding['poc']
-            if 'recommendation' in finding:
-                metadata['recommendation'] = finding['recommendation']
+            # Prepare metadata - save ALL enriched fields
+            metadata = finding.get('metadata', {}) or {}
+            for key in ('poc', 'recommendation', 'parameter', 'payload',
+                        'remediation_steps', 'code_fix', 'config_fix',
+                        'references', 'cvss_vector', 'recommendation_source',
+                        'verify_fix', 'injection_point'):
+                if key in finding and finding[key]:
+                    metadata[key] = finding[key]
+
             
             cursor.execute("""
                 INSERT INTO findings (
@@ -466,15 +470,18 @@ class ScanHistoryDB:
         
         findings = [dict(row) for row in cursor.fetchall()]
         
-        # Parse metadata for each finding to extract PoC and recommendation
+        # Parse metadata for each finding to extract all enriched fields
         for finding in findings:
             if finding.get('metadata'):
                 try:
                     metadata = json.loads(finding['metadata'])
-                    if 'poc' in metadata:
-                        finding['poc'] = metadata['poc']
-                    if 'recommendation' in metadata:
-                        finding['recommendation'] = metadata['recommendation']
+                    # Extract all enriched fields saved by recommendation_engine
+                    for key in ('poc', 'recommendation', 'parameter', 'payload',
+                                'remediation_steps', 'code_fix', 'config_fix',
+                                'references', 'cvss_vector', 'recommendation_source',
+                                'verify_fix', 'injection_point'):
+                        if key in metadata:
+                            finding[key] = metadata[key]
                 except json.JSONDecodeError:
                     pass  # Keep original metadata if not valid JSON
         
