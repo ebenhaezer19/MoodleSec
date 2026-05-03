@@ -13,7 +13,7 @@ import sys, os, csv, random
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from ml.false_positive_reducer import FalsePositiveReducer
+from ml.anomaly_false_positive_reducer import FalsePositiveReducer
 
 random.seed(42)
 np.random.seed(42)

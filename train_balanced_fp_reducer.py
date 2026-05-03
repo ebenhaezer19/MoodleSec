@@ -18,7 +18,7 @@ from datetime import datetime
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from proxy.ml.false_positive_reducer import FalsePositiveReducer
+from proxy.ml.anomaly_false_positive_reducer import FalsePositiveReducer
 
 
 def load_balanced_data(json_path: str):

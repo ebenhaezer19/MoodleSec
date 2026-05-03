@@ -5,7 +5,7 @@ Deep diagnosis of training process.
 
 import json
 import numpy as np
-from ml.false_positive_reducer import FalsePositiveReducer
+from ml.anomaly_false_positive_reducer import FalsePositiveReducer
 
 # Load data
 with open('ml/training_data/merged/hybrid_training_data_20260127_143448.json', 'r') as f:

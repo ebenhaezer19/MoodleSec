@@ -8,7 +8,8 @@ Provides machine learning capabilities for:
 - Intelligent rate limiting
 """
 
-from .false_positive_reducer import FalsePositiveReducer
+from .anomaly_false_positive_reducer import FalsePositiveReducer
+from .scanner_false_positive_reducer import ScannerFalsePositiveReducer
 from .anomaly_detector import AnomalyDetector
 from .severity_predictor import SeverityPredictor
 from .rate_limiter import MLRateLimiter
@@ -22,6 +23,7 @@ from .two_stage_pipeline import (
 
 __all__ = [
     'FalsePositiveReducer',
+    'ScannerFalsePositiveReducer',
     'AnomalyDetector',
     'SeverityPredictor',
     'MLRateLimiter',

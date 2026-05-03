@@ -5,14 +5,10 @@ from datetime import datetime
 from typing import Any, Dict, List
 from urllib.parse import urlsplit
 
-try:
-    from .anomaly_detector import AnomalyDetector
-    from .attack_classifier import AttackClassifier
-    from .decision_engine import DecisionEngine
-except ImportError:
-    from anomaly_detector import AnomalyDetector
-    from attack_classifier import AttackClassifier
-    from decision_engine import DecisionEngine
+from .anomaly_detector import AnomalyDetector
+from .attack_classifier import AttackClassifier
+from .decision_engine import DecisionEngine
+from .anomaly_false_positive_reducer import FalsePositiveReducer
 
 
 class PipelineOrchestrator:
@@ -22,32 +18,94 @@ class PipelineOrchestrator:
 
         self._module_dir = os.path.dirname(os.path.abspath(__file__))
         self._project_root = os.path.abspath(os.path.join(self._module_dir, "..", ".."))
+        self._model_dir = self._resolve_model_dir()
 
         anomaly_model_path = self._resolve_model_path(
             filename="anomaly_detector.pkl",
-            default_path="ml/models/anomaly_detector.pkl",
+            default_path=os.path.join(self._module_dir, "models", "anomaly_detector.pkl"),
         )
         attack_model_path = self._resolve_model_path(
             filename="attack_classifier.pkl",
-            default_path="ml/models/attack_classifier.pkl",
+            default_path=os.path.join(self._module_dir, "models", "attack_classifier.pkl"),
+        )
+        fp_reducer_model_path = self._resolve_model_path(
+            filename="fp_reducer.pkl",
+            default_path=os.path.join(self._module_dir, "models", "fp_reducer.pkl"),
         )
 
         self.anomaly_detector = AnomalyDetector(model_path=anomaly_model_path)
         self.attack_classifier = AttackClassifier(model_path=attack_model_path)
+        self.fp_reducer = FalsePositiveReducer(model_path=fp_reducer_model_path)
         self.decision_engine = DecisionEngine()
 
-    def _resolve_model_path(self, filename: str, default_path: str) -> str:
-        candidates = [
-            os.path.join(self._module_dir, "models", filename),
-            os.path.join(self._project_root, "ml", "models", filename),
-            os.path.join(self._project_root, "proxy", "ml", "models", filename),
-            default_path,
-        ]
+    def _gather_model_dirs(self) -> List[str]:
+        env_dir = os.getenv("MOODLESEC_MODEL_DIR", "").strip()
+        candidates = []
+        if env_dir:
+            candidates.append(env_dir)
+        candidates.extend(
+            [
+                os.path.join(self._module_dir, "models"),
+            ]
+        )
 
+        normalized: List[str] = []
         for path in candidates:
-            if os.path.exists(path):
-                return path
-        return default_path
+            if not path:
+                continue
+            norm = os.path.normpath(path)
+            if norm not in normalized:
+                normalized.append(norm)
+        return normalized
+
+    def _resolve_model_dir(self) -> str:
+        env_dir = os.getenv("MOODLESEC_MODEL_DIR", "").strip()
+        if env_dir and not os.path.isdir(env_dir) and self.enable_logging:
+            print(f"[Pipeline] WARNING: MOODLESEC_MODEL_DIR not found: {env_dir}")
+
+        candidates = self._gather_model_dirs()
+        existing = [path for path in candidates if os.path.isdir(path)]
+        chosen = existing[0] if existing else (candidates[0] if candidates else "")
+
+        legacy_dirs = [
+            os.path.join(self._project_root, "ml", "models"),
+        ]
+        existing_legacy = [path for path in legacy_dirs if os.path.isdir(path)]
+        if existing_legacy and self.enable_logging:
+            print(
+                "[Pipeline] WARNING: legacy model directory detected (non-canonical): "
+                f"{existing_legacy}. Canonical runtime directory is: {chosen}"
+            )
+
+        if len(existing) > 1 and self.enable_logging:
+            print(
+                "[Pipeline] WARNING: multiple model directories found: "
+                f"{existing}. Using: {chosen}"
+            )
+
+        return chosen
+
+    def _resolve_model_path(self, filename: str, default_path: str) -> str:
+        candidates: List[str] = []
+        if self._model_dir:
+            candidates.append(os.path.join(self._model_dir, filename))
+        if default_path not in candidates:
+            candidates.append(default_path)
+
+        existing = [path for path in candidates if os.path.exists(path)]
+        if len(existing) > 1 and self.enable_logging:
+            print(
+                f"[Pipeline] WARNING: multiple model files found for {filename}: "
+                f"{existing}. Using: {existing[0]}"
+            )
+
+        resolved = existing[0] if existing else candidates[0]
+        if not os.path.exists(resolved) and self.enable_logging:
+            print(
+                f"[Pipeline] WARNING: model file not found for {filename} at canonical path: "
+                f"{resolved}"
+            )
+        return resolved
 
     @staticmethod
     def _safe_text(value: Any) -> str:
@@ -60,6 +118,61 @@ class PipelineOrchestrator:
         if denominator == 0:
             return 0.0
         return float(numerator / denominator)
+
+    @staticmethod
+    def _safe_int(value: Any, default: int = 0) -> int:
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return int(default)
+
+    @staticmethod
+    def _safe_float(value: Any, default: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float(default)
+
+    @staticmethod
+    def _is_attack_prediction(attack_type: Any) -> bool:
+        normalized = str(attack_type).strip().lower()
+        if not normalized:
+            return False
+        return normalized not in {"normal", "benign", "legitimate", "none", "unknown"}
+
+    @staticmethod
+    def _derive_fp_severity(anomaly_score: float) -> str:
+        score = float(anomaly_score or 0.0)
+        if score < 0.0:
+            score = 0.0
+        if score > 1.0:
+            score = 1.0
+        if score >= 0.90:
+            return "critical"
+        if score >= 0.75:
+            return "high"
+        if score >= 0.55:
+            return "medium"
+        if score >= 0.35:
+            return "low"
+        return "info"
+
+    @staticmethod
+    def _fp_category_from_attack_type(attack_type: Any) -> str:
+        key = str(attack_type).strip().lower()
+        mapping = {
+            "sqli": "SQL Injection",
+            "sql injection": "SQL Injection",
+            "xss": "XSS",
+            "cross-site scripting": "XSS",
+            "path traversal": "Directory Listing",
+            "directory traversal": "Directory Listing",
+            "lfi": "Directory Listing",
+            "rfi": "Directory Listing",
+        }
+        if key in mapping:
+            return mapping[key]
+        return str(attack_type).strip() or "Security Misconfiguration"
 
     @staticmethod
     def _normalize_true_label(raw_label: Any) -> str:
@@ -196,6 +309,36 @@ class PipelineOrchestrator:
             query = query[1:]
         return f"{path}?{query}" if query else path
 
+    def _build_fp_reducer_entry(
+        self,
+        request: Dict[str, Any],
+        anomaly_score: float,
+        anomaly_reason: str,
+        attack_type: str,
+    ) -> Dict[str, Any]:
+        url = self._build_request_url(request)
+        body = self._safe_text(request.get("body", ""))
+        payload = f"{url} {body}".strip()
+
+        finding = {
+            "severity": self._derive_fp_severity(anomaly_score),
+            "category": self._fp_category_from_attack_type(attack_type),
+            "evidence": payload[:600],
+            "description": "Stage-1 classifier prediction on anomalous request.",
+            "url": url,
+            "cvss_score": round(float(max(0.0, min(10.0, anomaly_score * 10.0))), 2),
+            "risk_score": round(float(max(0.0, min(10.0, anomaly_score * 10.0))), 2),
+        }
+
+        context = {
+            "status_code": self._safe_int(request.get("response_status_code", 200), 200),
+            "response_time": self._safe_float(request.get("response_time", 0.0), 0.0),
+            "occurrence_count": self._safe_int(request.get("request_count_last_minute", 1), 1),
+            "days_since_first_seen": self._safe_int(request.get("days_since_first_seen", 0), 0),
+        }
+
+        return {"finding": finding, "context": context, "reason": anomaly_reason}
+
     def _to_anomaly_input(self, request: Dict[str, Any]) -> Dict[str, Any]:
         headers = self._parse_headers(request.get("headers", ""))
         url = self._build_request_url(request)
@@ -220,6 +363,7 @@ class PipelineOrchestrator:
         }
 
     def _log_decision(self, request_path: str, result: Dict[str, Any]) -> None:
+        fp_reducer_confidence = result.get("fp_reducer_confidence")
         entry = {
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "path": request_path,
@@ -229,15 +373,26 @@ class PipelineOrchestrator:
             "confidence": float(result.get("confidence", 0.0) or 0.0),
             "anomaly_score": float(result.get("anomaly_score", 0.0) or 0.0),
             "reason": self._safe_text(result.get("reason", "")),
+            "fp_reducer_applied": bool(result.get("fp_reducer_applied", False)),
+            "fp_reducer_is_false_positive": result.get("fp_reducer_is_false_positive"),
+            "fp_reducer_confidence": (
+                float(fp_reducer_confidence) if fp_reducer_confidence is not None else None
+            ),
+            "fp_reducer_reason": self._safe_text(result.get("fp_reducer_reason", "")),
         }
         self.logs.append(entry)
 
         if self.enable_logging:
+            fp_suffix = ""
+            if entry["fp_reducer_applied"]:
+                fp_conf = entry["fp_reducer_confidence"]
+                conf_text = f"{fp_conf:.3f}" if isinstance(fp_conf, float) else "n/a"
+                fp_suffix = f" fp_reducer={entry['fp_reducer_is_false_positive']} fp_conf={conf_text}"
             print(
                 f"[Pipeline] path={entry['path']} decision={entry['decision']} "
                 f"attack_type={entry['attack_type']} severity={entry['severity']} "
                 f"conf={entry['confidence']:.3f} anomaly={entry['anomaly_score']:.3f} "
-                f"reason={entry['reason']}"
+                f"reason={entry['reason']}" + fp_suffix
             )
 
     def process_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -298,11 +453,52 @@ class PipelineOrchestrator:
         if classifier_context_reason:
             anomaly_reason = f"{anomaly_reason}; classifier_context={classifier_context_reason}"
 
+        fp_reducer_applied = False
+        fp_reducer_is_fp = None
+        fp_reducer_confidence = None
+        fp_reducer_reason = ""
+        raw_confidence = float(confidence)
+        adjusted_confidence = float(confidence)
+
+        if self.fp_reducer and self._is_attack_prediction(attack_type):
+            fp_entry = self._build_fp_reducer_entry(
+                request=normalized_request,
+                anomaly_score=float(anomaly_score),
+                anomaly_reason=anomaly_reason,
+                attack_type=str(attack_type),
+            )
+            try:
+                is_fp, fp_confidence = self.fp_reducer.predict(
+                    fp_entry["finding"],
+                    fp_entry["context"],
+                )
+                fp_reducer_applied = True
+                fp_reducer_is_fp = bool(is_fp)
+                fp_reducer_confidence = float(fp_confidence)
+                if fp_reducer_is_fp and fp_reducer_confidence >= 0.60:
+                    suppression_multiplier = max(0.35, 1.0 - (0.5 * fp_reducer_confidence))
+                    adjusted_confidence = max(0.0, raw_confidence * suppression_multiplier)
+                    fp_reducer_reason = (
+                        f"fp_reducer_suppressed confidence_multiplier={suppression_multiplier:.2f}"
+                    )
+            except Exception as error:
+                fp_reducer_applied = True
+                fp_reducer_reason = f"fp_reducer_error: {error}"
+
+        confidence = adjusted_confidence
+
         decision_result = self.decision_engine.decide(
             anomaly_score=float(anomaly_score),
             attack_type=attack_type,
             confidence=float(confidence),
         )
+
+        decision_result["fp_reducer_applied"] = fp_reducer_applied
+        decision_result["fp_reducer_is_false_positive"] = fp_reducer_is_fp
+        decision_result["fp_reducer_confidence"] = fp_reducer_confidence
+        decision_result["fp_reducer_reason"] = fp_reducer_reason
+        if fp_reducer_applied:
+            decision_result["confidence_before_fp_reducer"] = raw_confidence
 
         if anomaly_reason and anomaly_reason != "Normal behavior":
             decision_result["reason"] = f"{decision_result['reason']} ({anomaly_reason})"

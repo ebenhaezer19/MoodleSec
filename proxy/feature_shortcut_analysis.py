@@ -10,7 +10,7 @@ import sys, os, csv, random
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from ml.false_positive_reducer import FalsePositiveReducer
+from ml.anomaly_false_positive_reducer import FalsePositiveReducer
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.inspection import permutation_importance

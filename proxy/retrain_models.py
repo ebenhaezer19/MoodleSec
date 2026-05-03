@@ -14,7 +14,7 @@ import json
 import sys
 import argparse
 from pathlib import Path
-from ml.false_positive_reducer import FalsePositiveReducer
+from ml.anomaly_false_positive_reducer import FalsePositiveReducer
 from ml.severity_predictor import SeverityPredictor
 
 def load_training_data(filepath):

@@ -16,7 +16,7 @@ from sklearn.model_selection import learning_curve, cross_val_score, KFold
 from sklearn.metrics import accuracy_score, confusion_matrix
 import matplotlib.pyplot as plt
 from pathlib import Path
-from ml.false_positive_reducer import FalsePositiveReducer
+from ml.anomaly_false_positive_reducer import FalsePositiveReducer
 
 def load_training_data(filepath):
     """Load training data."""

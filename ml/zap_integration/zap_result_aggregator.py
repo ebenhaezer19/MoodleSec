@@ -74,10 +74,18 @@ class ZAPResultAggregator:
         
         if ml_model_path:
             try:
-                # Attempt to load ML model (optional)
-                from ml.false_positive_reducer import FalsePositiveReducer
-                self.ml_model = FalsePositiveReducer.load_model(ml_model_path)
-                self.logger.info(f"ML model loaded from {ml_model_path}")
+                # Attempt to load scanner-side FP reducer model (optional).
+                # This must remain decoupled from anomaly-side reducer modules.
+                from proxy.ml.scanner_false_positive_reducer import ScannerFalsePositiveReducer
+
+                self.ml_model = ScannerFalsePositiveReducer.load_model(ml_model_path)
+                if self.ml_model is None:
+                    self.logger.info(
+                        f"Scanner FP reducer model not available at {ml_model_path}. "
+                        "Tier 3 filtering disabled"
+                    )
+                else:
+                    self.logger.info(f"Scanner FP reducer model loaded from {ml_model_path}")
             except Exception as exc:
                 self.logger.warning(f"Failed to load ML model: {exc}. Tier 3 filtering disabled")
     

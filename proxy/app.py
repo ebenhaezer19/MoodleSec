@@ -3,15 +3,22 @@ FastAPI reverse proxy for Moodle with logging and DAST scanning capabilities.
 """
 
 import os
+import sys
 from collections import deque
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from fastapi import FastAPI, Request, Response, HTTPException, Body
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
+# Ensure canonical package imports resolve independent of current working directory.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import (
     MOODLE_URL,
@@ -38,7 +45,7 @@ from database.payload_repository import PayloadRepositoryManager
 from reporting.pdf_generator import PDFReportGenerator
 from integrations.integration_manager import IntegrationManager
 from integrations.ml_pipeline_integration import process_http_request, pipeline as ml_pipeline_instance
-from ml.ml_manager import MLManager
+from proxy.ml.ml_manager import MLManager
 from routers.payload_router import (
     router as payload_router,
     set_payload_repo,
@@ -125,6 +132,10 @@ RECENT_ANOMALIES_MAXLEN = 200
 recent_traffic_events = deque(maxlen=RECENT_TRAFFIC_MAXLEN)
 recent_anomalies = deque(maxlen=RECENT_ANOMALIES_MAXLEN)
 
+TRUSTED_SCANNER_HEADER_NAME = "x-moodlesec-scanner"
+TRUSTED_SCANNER_HEADER_VALUE = "internal"
+TRUSTED_SCANNER_ALLOWED_SOURCES = {"127.0.0.1", "::1", "localhost"}
+
 
 class ScanRequest(BaseModel):
     """Request model for DAST scan trigger."""
@@ -182,6 +193,19 @@ def _sanitize_headers(headers: Dict[str, Any]) -> Dict[str, str]:
         for key, value in headers.items()
         if str(key).lower() not in sensitive_headers
     }
+
+
+def _is_trusted_scanner_request(request: Request) -> Tuple[bool, str]:
+    """Validate trusted scanner marker using strict local-source header check."""
+    marker = request.headers.get(TRUSTED_SCANNER_HEADER_NAME, "").strip().lower()
+    if marker != TRUSTED_SCANNER_HEADER_VALUE:
+        return False, "missing_or_invalid_scanner_header"
+
+    source_ip = request.client.host if request.client and request.client.host else "unknown"
+    if source_ip not in TRUSTED_SCANNER_ALLOWED_SOURCES:
+        return False, f"scanner_header_from_untrusted_source:{source_ip}"
+
+    return True, f"{TRUSTED_SCANNER_HEADER_NAME}={TRUSTED_SCANNER_HEADER_VALUE};source={source_ip}"
 
 
 def _prune_recent_traffic(now_ts: float) -> None:
@@ -2158,6 +2182,9 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
     headers = dict(request.headers)
     headers.pop("host", None)
     client_ip = _get_client_ip(request)
+    trusted_scanner_request, trusted_scanner_detail = _is_trusted_scanner_request(request)
+    enforcement_bypassed = False
+    bypass_reasons: List[str] = []
     
     # Read request body
     body = await request.body()
@@ -2172,6 +2199,9 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
         "query_params": dict(request.query_params),
         "headers": {k: v for k, v in headers.items() if k.lower() not in ["authorization", "cookie"]},
         "body_size": len(body),
+        "trusted_scanner_request": trusted_scanner_request,
+        "enforcement_bypassed": False,
+        "bypass_reason": "",
         "timestamp": datetime.utcnow().isoformat() + "Z"
     }
 
@@ -2199,24 +2229,44 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
         print("[PROXY ML RESULT]", ml_result)
 
     if str(ml_result.get("decision", "")).upper() == "BLOCK":
-        ml_blocked_event = {
-            "type": "proxy_ml_blocked_request",
-            "client_ip": client_ip,
-            "method": request.method,
-            "path": path,
-            "target_url": target_url,
-            "ml_result": ml_result,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-        }
-        append_log(LOG_DIR, ml_blocked_event)
-        return JSONResponse(
-            status_code=403,
-            content={
-                "status": 403,
-                "message": "Blocked by ML security system",
-                "reason": ml_result.get("reason", "Pipeline decision BLOCK"),
-            },
-        )
+        if trusted_scanner_request:
+            enforcement_bypassed = True
+            bypass_reasons.append("ml_pipeline_block_bypassed_for_trusted_scanner")
+            append_log(LOG_DIR, {
+                "type": "proxy_ml_block_bypassed",
+                "client_ip": client_ip,
+                "method": request.method,
+                "path": path,
+                "target_url": target_url,
+                "ml_result": ml_result,
+                "trusted_scanner_request": True,
+                "enforcement_bypassed": True,
+                "bypass_reason": bypass_reasons[-1],
+                "trusted_scanner_detail": trusted_scanner_detail,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            })
+        else:
+            ml_blocked_event = {
+                "type": "proxy_ml_blocked_request",
+                "client_ip": client_ip,
+                "method": request.method,
+                "path": path,
+                "target_url": target_url,
+                "ml_result": ml_result,
+                "trusted_scanner_request": False,
+                "enforcement_bypassed": False,
+                "bypass_reason": "",
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            }
+            append_log(LOG_DIR, ml_blocked_event)
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "status": 403,
+                    "message": "Blocked by ML security system",
+                    "reason": ml_result.get("reason", "Pipeline decision BLOCK"),
+                },
+            )
     
     try:
         request_start = datetime.utcnow()
@@ -2304,24 +2354,46 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
             and anomaly_detected
             and anomaly_score >= ANOMALY_BLOCK_THRESHOLD
         ):
-            blocked_event = {
-                "type": "proxy_blocked_response",
-                "client_ip": client_ip,
-                "method": request.method,
-                "path": path,
-                "target_url": target_url,
-                "status_code": response.status_code,
-                "anomaly_score": round(float(anomaly_score), 4),
-                "anomaly_reason": anomaly_reason,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-            }
-            append_log(LOG_DIR, blocked_event)
-            return Response(
-                content='{"detail":"Response blocked by anomaly detector"}',
-                status_code=403,
-                media_type="application/json",
-                headers={"X-MoodleSec-Blocked": "anomaly"},
-            )
+            if trusted_scanner_request:
+                enforcement_bypassed = True
+                bypass_reasons.append("anomaly_block_bypassed_for_trusted_scanner")
+                append_log(LOG_DIR, {
+                    "type": "proxy_anomaly_block_bypassed",
+                    "client_ip": client_ip,
+                    "method": request.method,
+                    "path": path,
+                    "target_url": target_url,
+                    "status_code": response.status_code,
+                    "anomaly_score": round(float(anomaly_score), 4),
+                    "anomaly_reason": anomaly_reason,
+                    "trusted_scanner_request": True,
+                    "enforcement_bypassed": True,
+                    "bypass_reason": bypass_reasons[-1],
+                    "trusted_scanner_detail": trusted_scanner_detail,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                })
+            else:
+                blocked_event = {
+                    "type": "proxy_blocked_response",
+                    "client_ip": client_ip,
+                    "method": request.method,
+                    "path": path,
+                    "target_url": target_url,
+                    "status_code": response.status_code,
+                    "anomaly_score": round(float(anomaly_score), 4),
+                    "anomaly_reason": anomaly_reason,
+                    "trusted_scanner_request": False,
+                    "enforcement_bypassed": False,
+                    "bypass_reason": "",
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                }
+                append_log(LOG_DIR, blocked_event)
+                return Response(
+                    content='{"detail":"Response blocked by anomaly detector"}',
+                    status_code=403,
+                    media_type="application/json",
+                    headers={"X-MoodleSec-Blocked": "anomaly"},
+                )
         
         # Log the response
         response_log = {
@@ -2336,6 +2408,13 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
             "anomaly_detected": anomaly_detected,
             "anomaly_score": round(float(anomaly_score), 4),
             "anomaly_reason": anomaly_reason if anomaly_detected else "Normal behavior",
+            "ml_decision": str(ml_result.get("decision", "")).upper(),
+            "ml_attack_type": ml_result.get("attack_type", "unknown"),
+            "ml_confidence": float(ml_result.get("confidence", 0.0)),
+            "trusted_scanner_request": trusted_scanner_request,
+            "enforcement_bypassed": enforcement_bypassed,
+            "bypass_reason": "; ".join(bypass_reasons),
+            "trusted_scanner_detail": trusted_scanner_detail if trusted_scanner_request else "",
             "window_request_count": request_count_last_minute,
             "window_unique_ips": unique_ips_last_minute,
             "window_error_rate": round(error_rate_last_minute, 4),
@@ -2351,6 +2430,9 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
         if anomaly_detected:
             response_headers["X-MoodleSec-Anomaly"] = "1"
             response_headers["X-MoodleSec-Anomaly-Score"] = f"{float(anomaly_score):.3f}"
+        if enforcement_bypassed:
+            response_headers["X-MoodleSec-Enforcement-Bypass"] = "trusted-scanner"
+            response_headers["X-MoodleSec-Scanner"] = "internal"
         
         return Response(
             content=response.content,
@@ -2364,7 +2446,11 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
             **request_log,
             "type": "proxy_error",
             "error": str(e),
-            "error_type": type(e).__name__
+            "error_type": type(e).__name__,
+            "trusted_scanner_request": trusted_scanner_request,
+            "enforcement_bypassed": enforcement_bypassed,
+            "bypass_reason": "; ".join(bypass_reasons),
+            "trusted_scanner_detail": trusted_scanner_detail if trusted_scanner_request else "",
         }
         append_log(LOG_DIR, error_log)
         

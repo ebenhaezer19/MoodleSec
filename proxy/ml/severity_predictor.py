@@ -15,6 +15,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 import xgboost as xgb
+from .path_utils import normalize_model_path
 
 
 class SeverityPredictor:
@@ -39,7 +40,7 @@ class SeverityPredictor:
         Args:
             model_path: Path to save/load the trained model
         """
-        self.model_path = model_path
+        self.model_path = normalize_model_path(model_path, "severity_predictor.pkl")
         self.model = None
         self.scaler = StandardScaler()
         self.label_encoder = LabelEncoder()

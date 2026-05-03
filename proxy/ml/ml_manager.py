@@ -11,7 +11,7 @@ from datetime import datetime
 import json
 import numpy as np
 
-from .false_positive_reducer import FalsePositiveReducer
+from .anomaly_false_positive_reducer import FalsePositiveReducer
 from .anomaly_detector import AnomalyDetector
 from .phishing_detector import PhishingDetector
 

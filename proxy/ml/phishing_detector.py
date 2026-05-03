@@ -14,13 +14,14 @@ from typing import Dict, List, Tuple, Any
 from urllib.parse import urlparse
 import pickle
 from pathlib import Path
+from .path_utils import normalize_model_path
 
 
 class PhishingDetector:
     """Detect phishing and HTML injection in Moodle comments."""
     
     def __init__(self, model_path: str = "ml/models/phishing_detector.pkl"):
-        self.model_path = model_path
+        self.model_path = normalize_model_path(model_path, "phishing_detector.pkl")
         self.is_trained = False
         
         # HTML injection patterns

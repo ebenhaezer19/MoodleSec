@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from proxy.ml.false_positive_reducer import FalsePositiveReducer
+from proxy.ml.anomaly_false_positive_reducer import FalsePositiveReducer
 
 # Create a fresh reducer without loading any saved model
 reducer = FalsePositiveReducer("ml/models/fp_reducer_debug.pkl")

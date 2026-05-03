@@ -18,6 +18,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
+from .path_utils import normalize_model_path
 
 
 class AttackClassifier:
@@ -26,7 +27,7 @@ class AttackClassifier:
     """
 
     def __init__(self, model_path: str = "ml/models/attack_classifier.pkl"):
-        self.model_path = model_path
+        self.model_path = normalize_model_path(model_path, "attack_classifier.pkl")
         self.model: Optional[Any] = None
         self.scaler: Optional[StandardScaler] = None
         self.label_encoder: Optional[LabelEncoder] = None

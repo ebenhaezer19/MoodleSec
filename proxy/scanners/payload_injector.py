@@ -16,6 +16,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+TRUSTED_SCANNER_HEADER_NAME = "X-MoodleSec-Scanner"
+TRUSTED_SCANNER_HEADER_VALUE = "internal"
+
 
 class PayloadInjector:
     """Handles payload injection and vulnerability detection through payload responses."""
@@ -742,6 +745,11 @@ class PayloadInjector:
         if method is None:
             method = 'POST' if data else 'GET'
         method = method.upper()
+
+        effective_headers: Dict[str, str] = dict(headers or {})
+        # Mark scanner-generated traffic so proxy enforcement can selectively
+        # bypass blocking while still running classification and logging.
+        effective_headers.setdefault(TRUSTED_SCANNER_HEADER_NAME, TRUSTED_SCANNER_HEADER_VALUE)
         
         try:
             if not client:
@@ -754,7 +762,7 @@ class PayloadInjector:
                         method=method,
                         url=url,
                         params=params,
-                        headers=headers,
+                        headers=effective_headers,
                         data=data
                     )
                     return response
@@ -765,7 +773,7 @@ class PayloadInjector:
                         method=method,
                         url=url,
                         params=params,
-                        headers=headers,
+                        headers=effective_headers,
                         data=data,
                         timeout=timeout
                     )

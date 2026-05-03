@@ -17,7 +17,7 @@ Reduces false positives by learning from historical scan data and user feedback.
 
 **Usage:**
 ```python
-from ml.false_positive_reducer import FalsePositiveReducer
+from ml.anomaly_false_positive_reducer import FalsePositiveReducer
 
 reducer = FalsePositiveReducer()
 is_fp, confidence = reducer.predict(finding, context)

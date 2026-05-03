@@ -20,6 +20,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
 from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix
 from collections import defaultdict
+from .path_utils import normalize_model_path
 
 
 class AnomalyDetector:
@@ -40,7 +41,7 @@ class AnomalyDetector:
         Args:
             model_path: Path to save/load the trained model
         """
-        self.model_path = model_path
+        self.model_path = normalize_model_path(model_path, "anomaly_detector.pkl")
         self.model = None
         
         # Multi-tier scaling for better feature normalization

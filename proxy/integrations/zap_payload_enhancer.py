@@ -17,15 +17,7 @@ import re
 import httpx
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-import sys
-from pathlib import Path
-
-# Add database module to path
-db_path = Path(__file__).parent.parent / "database"
-if str(db_path) not in sys.path:
-    sys.path.insert(0, str(db_path))
-
-from payload_repository import PayloadRepositoryManager
+from proxy.database.payload_repository import PayloadRepositoryManager
 
 
 class ZAPPayloadEnhancer:

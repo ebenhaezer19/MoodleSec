@@ -21,7 +21,7 @@ warnings.filterwarnings('ignore')
 
 # Import generators and models
 from ml.generate_pseudo_tp_data import PseudoTPDataGenerator
-from ml.false_positive_reducer import FalsePositiveReducer
+from ml.anomaly_false_positive_reducer import FalsePositiveReducer
 from ml.severity_predictor import SeverityPredictor
 from ml.anomaly_detector import AnomalyDetector
 from ml.rate_limiter import MLRateLimiter

@@ -7,10 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Tuple
 from urllib.parse import urlsplit, urlunsplit
 
-try:
-    from proxy.ml.pipeline_orchestrator import PipelineOrchestrator
-except Exception:
-    from ml.pipeline_orchestrator import PipelineOrchestrator
+from proxy.ml.pipeline_orchestrator import PipelineOrchestrator
 
 
 PROXY_ROOT = Path(__file__).resolve().parents[1]

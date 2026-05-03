@@ -117,7 +117,7 @@ for i, row in enumerate(rows[:5], 1):
 
 # ── Show what the model actually receives ─────────────────────────
 print("  [TRANSFORMED — what extract_features() receives for Row 1]\n")
-from ml.false_positive_reducer import FalsePositiveReducer
+from ml.anomaly_false_positive_reducer import FalsePositiveReducer
 
 reducer = FalsePositiveReducer()
 

@@ -105,7 +105,7 @@ ATTACK_URLS = ['http://localhost:8998/login/index.php',
                'http://localhost:8998/course/view.php?id=1']
 NORMAL_URLS = ['http://localhost:8998/', 'http://localhost:8998/my/']
 
-from ml.false_positive_reducer import FalsePositiveReducer
+from ml.anomaly_false_positive_reducer import FalsePositiveReducer
 
 def make_sample(row, is_attack):
     status = int(float(row['response_status']))

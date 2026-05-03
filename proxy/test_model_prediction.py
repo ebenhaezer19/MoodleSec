@@ -3,7 +3,7 @@
 
 import json
 from pathlib import Path
-from ml.false_positive_reducer import FalsePositiveReducer
+from ml.anomaly_false_positive_reducer import FalsePositiveReducer
 
 # Load training data
 training_file = sorted(Path("ml/training_data").glob("merged_training_data_*.json"), reverse=True)[0]

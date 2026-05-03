@@ -4,7 +4,7 @@ Test if model is just predicting majority class.
 """
 
 import json
-from ml.false_positive_reducer import FalsePositiveReducer
+from ml.anomaly_false_positive_reducer import FalsePositiveReducer
 
 # Load data
 with open('ml/training_data/merged/normalized_training_data_20260127_141514.json', 'r') as f:

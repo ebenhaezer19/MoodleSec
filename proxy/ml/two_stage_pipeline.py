@@ -19,11 +19,11 @@ from sklearn.model_selection import train_test_split
 
 try:
     from .anomaly_detector import AnomalyDetector
-    from .false_positive_reducer import FalsePositiveReducer
+    from .anomaly_false_positive_reducer import FalsePositiveReducer
 except ImportError:
     # Support direct module usage when importing from "ml" directory itself.
     from anomaly_detector import AnomalyDetector
-    from false_positive_reducer import FalsePositiveReducer
+    from anomaly_false_positive_reducer import FalsePositiveReducer
 
 
 def create_strict_split(

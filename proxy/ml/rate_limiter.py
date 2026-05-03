@@ -15,6 +15,7 @@ from collections import defaultdict, deque
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 import xgboost as xgb
+from .path_utils import normalize_model_path
 
 
 class MLRateLimiter:
@@ -36,7 +37,7 @@ class MLRateLimiter:
         Args:
             model_path: Path to save/load the trained model
         """
-        self.model_path = model_path
+        self.model_path = normalize_model_path(model_path, "rate_limiter.pkl")
         self.model = None
         self.scaler = StandardScaler()
         self.is_trained = False

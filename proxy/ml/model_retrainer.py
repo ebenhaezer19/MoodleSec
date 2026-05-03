@@ -15,7 +15,7 @@ import threading
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ml.false_positive_reducer import FalsePositiveReducer
+from ml.anomaly_false_positive_reducer import FalsePositiveReducer
 from ml.severity_predictor import SeverityPredictor
 from ml.anomaly_detector import AnomalyDetector
 from ml.rate_limiter import MLRateLimiter

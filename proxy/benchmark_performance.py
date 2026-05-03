@@ -21,7 +21,7 @@ def benchmark_model_loading():
     # Add parent directory to path
     sys.path.insert(0, str(Path(__file__).parent))
     
-    from ml.false_positive_reducer import FalsePositiveReducer
+    from ml.anomaly_false_positive_reducer import FalsePositiveReducer
     from ml.severity_predictor import SeverityPredictor
     
     # Measure FP Reducer
@@ -119,7 +119,7 @@ def benchmark_batch_processing():
     sample_size = min(50, len(findings))
     sample_findings = findings[:sample_size]
     
-    from ml.false_positive_reducer import FalsePositiveReducer
+    from ml.anomaly_false_positive_reducer import FalsePositiveReducer
     fp_reducer = FalsePositiveReducer()
     
     start_time = time.time()

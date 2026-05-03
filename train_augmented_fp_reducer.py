@@ -17,7 +17,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from proxy.ml.false_positive_reducer import FalsePositiveReducer
+from proxy.ml.anomaly_false_positive_reducer import FalsePositiveReducer
 
 
 def load_augmented_data(json_path: str):
