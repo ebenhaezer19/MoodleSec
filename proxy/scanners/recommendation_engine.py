@@ -450,7 +450,15 @@ class RecommendationEngine:
         """
         enriched = dict(finding)
         category = finding.get('category', 'default')
-        url = finding.get('url', '')
+        # Support both 'url' and legacy 'target' key from payload_injector
+        url = finding.get('url') or finding.get('target', '')
+        enriched['url'] = url
+
+        # Use payload/parameter from finding dict if already set by scanner
+        if not payload_used:
+            payload_used = finding.get('payload') or None
+        if not parameter:
+            parameter = finding.get('parameter') or finding.get('param_name') or None
 
         # ── 1. CVSS Scoring ──────────────────────────────────────────────────
         cvss_data = self._get_cvss(category)
