@@ -189,6 +189,8 @@ class XSSDetector:
                             'description': f'Potential reflected XSS in parameter "{param_name}"',
                             'evidence': f'Parameter value "{param_value[:100]}" appears unescaped in response',
                             'recommendation': 'Encode all user input before displaying. Use Content-Security-Policy headers.',
+                            'url': url,
+                            'parameter': param_name,
                             'cwe': 'CWE-79',
                             'owasp': 'A03:2021 - Injection'
                         })

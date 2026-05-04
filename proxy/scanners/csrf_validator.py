@@ -147,6 +147,8 @@ class CSRFValidator:
                 'description': f'Missing CSRF protection on {method} request',
                 'evidence': f'{method} request to {url} does not include CSRF token',
                 'recommendation': 'Implement CSRF tokens for all state-changing operations. Use synchronizer token pattern or double-submit cookie.',
+                'url': url,
+                'parameter': f'[{method} form params]',
                 'cwe': 'CWE-352',
                 'owasp': 'A01:2021 - Broken Access Control'
             })
@@ -190,6 +192,7 @@ class CSRFValidator:
                         'description': f'Form without CSRF protection detected',
                         'evidence': f'Form #{i+1} in {url} uses {method_match.group(1).upper()} but has no CSRF token',
                         'recommendation': 'Add CSRF token to all forms. Use framework-provided CSRF protection.',
+                        'url': url,
                         'cwe': 'CWE-352',
                         'owasp': 'A01:2021 - Broken Access Control'
                     })
