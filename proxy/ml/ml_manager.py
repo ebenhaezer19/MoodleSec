@@ -70,12 +70,18 @@ class MLManager:
         print(f"[ML Manager] False Positive Reducer: {'trained' if self.fp_reducer.is_trained else 'not trained'}")
         print(f"[ML Manager] Anomaly Detector: {'trained' if self.anomaly_detector.is_trained else 'not trained'}")
         if self.severity_predictor:
-            print(f"[ML Manager] Severity Predictor: {'trained' if self.severity_predictor.is_trained else 'not trained'}")
+            if self.severity_predictor.is_trained:
+                print("[ML Manager] Severity Predictor: trained (XGBoost)")
+            else:
+                print("[ML Manager] Severity Predictor: heuristic mode (ready) — retrain via dashboard to activate XGBoost")
         else:
             print("[ML Manager] Severity Predictor: unavailable")
 
         if self.rate_limiter:
-            print(f"[ML Manager] Rate Limiter: {'trained' if self.rate_limiter.is_trained else 'not trained'}")
+            if self.rate_limiter.is_trained:
+                print("[ML Manager] Rate Limiter: trained")
+            else:
+                print("[ML Manager] Rate Limiter: heuristic mode (ready)")
         else:
             print("[ML Manager] Rate Limiter: unavailable")
     
