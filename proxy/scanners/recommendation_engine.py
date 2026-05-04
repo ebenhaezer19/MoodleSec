@@ -423,6 +423,28 @@ class RecommendationEngine:
 
     def __init__(self):
         self.gpt_client = GPTRecommendationClient()
+
+        # Import RiskScorer (CVSS v3.1 context-aware)
+        try:
+            import sys, os
+            sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+            from risk.risk_scorer import RiskScorer
+            self.risk_scorer = RiskScorer()
+            print("[Recommendation Engine] RiskScorer loaded (CVSS v3.1 context-aware)")
+        except Exception as e:
+            print(f"[Recommendation Engine] RiskScorer unavailable ({e}) - static CVSS fallback")
+            self.risk_scorer = None
+
+        # Import SeverityPredictor (ML severity refinement)
+        try:
+            from ml.severity_predictor import SeverityPredictor
+            self.severity_predictor = SeverityPredictor()
+            mode = 'ML model' if self.severity_predictor.is_trained else 'heuristic'
+            print(f"[Recommendation Engine] SeverityPredictor loaded ({mode} mode)")
+        except Exception as e:
+            print(f"[Recommendation Engine] SeverityPredictor unavailable ({e})")
+            self.severity_predictor = None
+
         print("[Recommendation Engine] Initialized (L2-L7 pipeline active)")
 
     def enrich_finding(
@@ -460,15 +482,52 @@ class RecommendationEngine:
         if not parameter:
             parameter = finding.get('parameter') or finding.get('param_name') or None
 
-        # ── 1. CVSS Scoring ──────────────────────────────────────────────────
-        cvss_data = self._get_cvss(category)
-        enriched['cvss_score'] = cvss_data['score']
-        enriched['cvss_vector'] = cvss_data['vector']
-        enriched['risk_score'] = round(cvss_data['score'] * 10, 1)
+        # -- 1. CVSS + Risk Score (via RiskScorer - context-aware CVSS v3.1) --
+        if self.risk_scorer:
+            try:
+                risk_info = self.risk_scorer.calculate_risk_score(enriched)
+                enriched['cvss_score']    = risk_info['cvss_score']
+                enriched['cvss_vector']   = risk_info['cvss_vector']
+                enriched['risk_score']    = risk_info['risk_score']
+                enriched['priority']      = risk_info['priority']
+                enriched['cvss_severity'] = risk_info['cvss_severity']
+            except Exception as e:
+                print(f"[Recommendation Engine] RiskScorer error: {e}")
+                cvss_data = self._get_cvss(category)
+                enriched['cvss_score']  = cvss_data['score']
+                enriched['cvss_vector'] = cvss_data['vector']
+                enriched['risk_score']  = round(cvss_data['score'] * 10, 1)
+        else:
+            cvss_data = self._get_cvss(category)
+            enriched['cvss_score']  = cvss_data['score']
+            enriched['cvss_vector'] = cvss_data['vector']
+            enriched['risk_score']  = round(cvss_data['score'] * 10, 1)
 
-        # Override severity if CVSS says otherwise
+        # Override severity from scanner if CVSS says it should be higher
         if not enriched.get('severity') or enriched['severity'] in ('Info', 'Low'):
-            enriched['severity'] = cvss_data['severity']
+            cvss_sev = enriched.get('cvss_severity') or self._get_cvss(category).get('severity', 'Medium')
+            enriched['severity'] = cvss_sev
+
+        # -- 1b. Severity Refinement via SeverityPredictor (ML/heuristic) --
+        if self.severity_predictor:
+            try:
+                predicted_sev, confidence, _ = self.severity_predictor.predict(enriched)
+                sev_order   = ['info', 'low', 'medium', 'high', 'critical']
+                scanner_sev = (enriched.get('severity') or 'info').lower()
+                pred_idx    = sev_order.index(predicted_sev) if predicted_sev in sev_order else 2
+                scan_idx    = sev_order.index(scanner_sev)   if scanner_sev  in sev_order else 2
+                if confidence > 0.55 and pred_idx > scan_idx:
+                    enriched['severity']            = predicted_sev.capitalize()
+                    enriched['severity_predicted']  = True
+                    enriched['severity_confidence'] = round(confidence, 3)
+                else:
+                    enriched['severity_predicted']  = False
+                    enriched['severity_confidence'] = round(confidence, 3)
+            except Exception as e:
+                print(f"[Recommendation Engine] SeverityPredictor error: {e}")
+                enriched['severity_predicted'] = False
+        else:
+            enriched['severity_predicted'] = False
 
         # ── 2. Parameter info ─────────────────────────────────────────────────
         if parameter:
