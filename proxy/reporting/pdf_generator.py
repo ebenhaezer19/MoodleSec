@@ -363,10 +363,15 @@ class PDFReportGenerator:
                 poc = finding.get('poc', {})
                 poc_req = poc.get('request', {})
 
+                # Decode URL-encoded payload for readability
+                from urllib.parse import unquote
+                raw_payload = str(finding.get('payload') or poc_req.get('payload') or 'N/A')
+                display_payload = unquote(raw_payload)[:200]  # decode + limit
+
                 core_rows = [
                     ['URL', str(finding.get('url') or poc_req.get('url') or 'N/A')],
                     ['Parameter', str(finding.get('parameter') or poc_req.get('parameter') or 'N/A')],
-                    ['Payload Used', str(finding.get('payload') or poc_req.get('payload') or 'N/A')],
+                    ['Payload', display_payload],
                     ['Method', str(poc_req.get('method') or finding.get('method', 'GET'))],
                     ['CWE', str(finding.get('cwe', 'N/A'))],
                     ['OWASP', str(finding.get('owasp', 'N/A'))],
@@ -379,7 +384,7 @@ class PDFReportGenerator:
                     ('FONTSIZE', (0, 0), (-1, -1), 8),
                     ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
                     ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                    ('FONTNAME', (1, 0), (1, 3), 'Courier'),  # URL/param/payload in mono
+                    ('FONTNAME', (1, 0), (1, 2), 'Courier'),  # URL/param/payload mono
                     ('TEXTCOLOR', (1, 2), (1, 2), colors.HexColor('#c0392b')),  # Payload red
                 ]))
                 elements.append(core_table)
@@ -414,13 +419,16 @@ class PDFReportGenerator:
                         elements.append(Paragraph(f"  • {step}", styles['Normal']))
                     elements.append(Spacer(1, 0.05*inch))
 
-                # Code Fix
+                # Code Fix — preserve newlines
                 code_fix = finding.get('code_fix') or poc.get('fix_code', '')
                 if code_fix:
                     elements.append(Paragraph('<b>Code Fix:</b>', styles['Normal']))
-                    elements.append(Paragraph(
-                        f"<font name='Courier' size='7'>{code_fix[:600]}</font>",
-                        styles['Normal']))
+                    # Split by newline and render each line
+                    for line in str(code_fix)[:800].split('\n'):
+                        safe_line = line.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+                        elements.append(Paragraph(
+                            f"<font name='Courier' size='7'>{safe_line}</font>",
+                            styles['Normal']))
                     elements.append(Spacer(1, 0.05*inch))
 
                 # Config Fix (L6)

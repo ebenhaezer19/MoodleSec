@@ -191,7 +191,8 @@ class ScanHistoryDB:
             for key in ('poc', 'recommendation', 'parameter', 'payload',
                         'remediation_steps', 'code_fix', 'config_fix',
                         'references', 'cvss_vector', 'recommendation_source',
-                        'verify_fix', 'injection_point'):
+                        'verify_fix', 'injection_point', 'cwe', 'owasp',
+                        'type', 'severity_predicted', 'severity_confidence'):
                 if key in finding and finding[key]:
                     metadata[key] = finding[key]
             
@@ -220,7 +221,8 @@ class ScanHistoryDB:
             for key in ('poc', 'recommendation', 'parameter', 'payload',
                         'remediation_steps', 'code_fix', 'config_fix',
                         'references', 'cvss_vector', 'recommendation_source',
-                        'verify_fix', 'injection_point'):
+                        'verify_fix', 'injection_point', 'cwe', 'owasp',
+                        'type', 'severity_predicted', 'severity_confidence'):
                 if key in finding and finding[key]:
                     metadata[key] = finding[key]
 
@@ -479,7 +481,8 @@ class ScanHistoryDB:
                     for key in ('poc', 'recommendation', 'parameter', 'payload',
                                 'remediation_steps', 'code_fix', 'config_fix',
                                 'references', 'cvss_vector', 'recommendation_source',
-                                'verify_fix', 'injection_point'):
+                                'verify_fix', 'injection_point', 'cwe', 'owasp',
+                                'type', 'severity_predicted', 'severity_confidence'):
                         if key in metadata:
                             finding[key] = metadata[key]
                 except json.JSONDecodeError:
