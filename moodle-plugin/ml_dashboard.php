@@ -160,20 +160,19 @@ if ($ml_status) {
         'If quota is exceeded or key is invalid, the system automatically falls back to static templates.');
 
     // Status row
-    echo '<div class="alert alert-info" id="gpt-current-status">Loading GPT status...</div>';
+    echo '<div class="alert alert-info" id="gpt-current-status">Loading LLM status...</div>';
 
     // API key input form
     echo '<div class="form-group">';
-    echo '<label for="gpt-api-key-input"><strong>OpenAI API Key</strong> <small class="text-muted">(starts with sk-)</small></label>';
+    echo '<label for="gpt-api-key-input"><strong>LLM API Key</strong> <small class="text-muted">(OpenAI: <code>sk-...</code> &nbsp;|&nbsp; Groq: <code>gsk_...</code>)</small></label>';
     echo '<div class="input-group">';
     echo '<input type="password" class="form-control" id="gpt-api-key-input"
-           placeholder="sk-proj-..." autocomplete="off"
+           placeholder="sk-proj-... or gsk_..." autocomplete="off"
            style="font-family: monospace; font-size: 13px;">';
     echo '<div class="input-group-append">';
     echo '<button class="btn btn-outline-secondary" type="button" onclick="toggleGptKeyVisibility()">👁</button>';
     echo '</div>';
-    echo '</div>';
-    echo '<small class="form-text text-muted">Key is stored encrypted server-side and never sent to browser after save.</small>';
+    echo '<small class="form-text text-muted">Free: <a href="https://console.groq.com/keys" target="_blank">Groq key (gsk_...)</a> &nbsp;|&nbsp; <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI key (sk-...)</a></small>';
     echo '</div>';
 
     echo '<button class="btn btn-success" id="gpt-save-btn" onclick="saveGptApiKey()">💾 Save & Activate GPT</button>';
@@ -452,34 +451,31 @@ function toggleGptKeyVisibility() {
 }
 
 async function checkGptStatus() {
-    const statusDiv   = document.getElementById('gpt-current-status');
-    const badgeSpan   = document.getElementById('gpt-status-badge');
-    statusDiv.textContent = 'Checking GPT status...';
+    const statusDiv = document.getElementById('gpt-current-status');
+    const badgeSpan = document.getElementById('gpt-status-badge');
+    statusDiv.textContent = 'Checking LLM status...';
     try {
         const resp = await fetch(`${proxyApiUrl}?action=gpt-status&sesskey=${sesskey}`);
         const data = await resp.json();
+        const providerLabel = data.provider_label || 'None';
+        const keyPreview    = data.gpt_key_preview || '(set)';
 
         if (data.gpt_active) {
-            badgeSpan.className = 'badge badge-success';
-            badgeSpan.textContent = '🤖 GPT Active';
+            const pColor = data.provider === 'groq' ? 'badge-info' : 'badge-success';
+            badgeSpan.className = `badge ${pColor}`;
+            badgeSpan.textContent = `🤖 ${providerLabel} Active`;
             statusDiv.className = 'alert alert-success';
-            statusDiv.innerHTML = `<strong>✅ GPT Mode Active</strong><br>
-                Key: <code>${data.gpt_key_preview || '(set)'}</code><br>
-                Scan findings will use GPT-powered recommendations.`;
+            statusDiv.innerHTML = `<strong>✅ LLM Mode Active — ${providerLabel}</strong><br>Key: <code>${keyPreview}</code><br>Scan findings will use AI-powered recommendations.`;
         } else if (data.gpt_key_set) {
             badgeSpan.className = 'badge badge-warning';
-            badgeSpan.textContent = '⚠️ Key Set (GPT Off)';
+            badgeSpan.textContent = `⚠️ ${providerLabel} (Off)`;
             statusDiv.className = 'alert alert-warning';
-            statusDiv.innerHTML = `<strong>⚠️ API Key is set but GPT engine reports inactive.</strong><br>
-                Key: <code>${data.gpt_key_preview}</code><br>
-                May be quota issue — static templates are being used as fallback.`;
+            statusDiv.innerHTML = `<strong>⚠️ Key set (${providerLabel}) but LLM inactive.</strong><br>Key: <code>${keyPreview}</code><br>Quota/auth issue — using static templates.`;
         } else {
             badgeSpan.className = 'badge badge-secondary';
             badgeSpan.textContent = '📋 Static Templates';
             statusDiv.className = 'alert alert-info';
-            statusDiv.innerHTML = `<strong>📋 Static Template Mode</strong><br>
-                No OpenAI API key set. Enter your key below to activate GPT recommendations.<br>
-                <small class="text-muted">Get a key at <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com/api-keys</a></small>`;
+            statusDiv.innerHTML = `<strong>📋 Static Template Mode</strong><br>No LLM key set. Supports OpenAI (<code>sk-</code>) or Groq (<code>gsk_</code>).<br><small class="text-muted">Free Groq: <a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a></small>`;
         }
     } catch(e) {
         statusDiv.className = 'alert alert-danger';
@@ -488,14 +484,17 @@ async function checkGptStatus() {
 }
 
 async function saveGptApiKey() {
-    const key     = document.getElementById('gpt-api-key-input').value.trim();
-    const btn     = document.getElementById('gpt-save-btn');
-    const result  = document.getElementById('gpt-save-result');
+    const key    = document.getElementById('gpt-api-key-input').value.trim();
+    const btn    = document.getElementById('gpt-save-btn');
+    const result = document.getElementById('gpt-save-result');
 
-    if (!key || !key.startsWith('sk-')) {
+    const isOpenAI = key.startsWith('sk-')  && key.length > 20;
+    const isGroq   = key.startsWith('gsk_') && key.length > 20;
+
+    if (!isOpenAI && !isGroq) {
         result.style.display = 'block';
         result.className = 'alert alert-danger';
-        result.textContent = 'Invalid key format. Must start with sk-';
+        result.textContent = 'Invalid key. OpenAI keys start with sk-, Groq keys start with gsk_';
         return;
     }
 
@@ -506,22 +505,17 @@ async function saveGptApiKey() {
     try {
         const resp = await fetch(
             `${proxyApiUrl}?action=save-openai-key&sesskey=${sesskey}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `api_key=${encodeURIComponent(key)}`
-            }
+            { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'},
+              body: `api_key=${encodeURIComponent(key)}` }
         );
         const data = await resp.json();
-
         result.style.display = 'block';
         if (data.success) {
             result.className = 'alert alert-success';
-            result.innerHTML = `<strong>✅ ${data.message}</strong><br>
-                <small>Proxy ACK: ${data.proxy_ack || 'ok'}</small>`;
+            result.innerHTML = `<strong>✅ ${data.message}</strong><br><small>Provider: <strong>${data.provider || '?'}</strong> | Proxy: ${data.proxy_ack || 'ok'}</small>`;
             document.getElementById('gpt-api-key-input').value = '';
             document.getElementById('gpt-api-key-input').placeholder = '(key saved — enter new key to update)';
-            checkGptStatus(); // refresh status
+            checkGptStatus();
         } else {
             result.className = 'alert alert-danger';
             result.textContent = 'Error: ' + (data.error || 'Unknown error');
@@ -531,12 +525,11 @@ async function saveGptApiKey() {
         result.className = 'alert alert-danger';
         result.textContent = 'Connection error: ' + e.message;
     }
-
     btn.disabled = false;
-    btn.textContent = '💾 Save & Activate GPT';
+    btn.textContent = '💾 Save & Activate';
 }
 
-// Load GPT status on page load
+// Load LLM status on page load
 document.addEventListener('DOMContentLoaded', checkGptStatus);
 
 <?php

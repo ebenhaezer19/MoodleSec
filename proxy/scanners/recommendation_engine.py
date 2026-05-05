@@ -306,35 +306,67 @@ STATIC_TEMPLATES = {
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GPT CLIENT (with fallback)
+# GPT / LLM CLIENT (supports OpenAI + Groq, with fallback)
 # ─────────────────────────────────────────────────────────────────────────────
 class GPTRecommendationClient:
     """
-    OpenAI GPT client for dynamic security recommendations.
+    LLM client for dynamic security recommendations.
+    Supports OpenAI (sk-*) and Groq (gsk_*) keys — auto-detected from prefix.
     Falls back to static templates if API unavailable or quota exceeded.
     """
 
+    # Provider configs
+    _PROVIDERS = {
+        'groq': {
+            'base_url': 'https://api.groq.com/openai/v1/chat/completions',
+            'model':    'compound-beta-mini',
+            'label':    'Groq (compound-beta-mini)',
+        },
+        'openai': {
+            'base_url': 'https://api.openai.com/v1/chat/completions',
+            'model':    'gpt-4o-mini',
+            'label':    'OpenAI (gpt-4o-mini)',
+        },
+    }
+
     def __init__(self):
-        self.api_key = os.environ.get('OPENAI_API_KEY', '')
-        self.enabled = bool(self.api_key)
-        self.model = 'gpt-4o-mini'  # cost-efficient model
+        self._cache: Dict[str, str] = {}
+
+        # Priority: Groq key > OpenAI key
+        groq_key   = os.environ.get('GROQ_API_KEY', '').strip()
+        openai_key = os.environ.get('OPENAI_API_KEY', '').strip()
+
+        if groq_key and groq_key.startswith('gsk_'):
+            self.api_key  = groq_key
+            self.provider = 'groq'
+        elif openai_key and openai_key.startswith('sk-'):
+            self.api_key  = openai_key
+            self.provider = 'openai'
+        else:
+            self.api_key  = ''
+            self.provider = 'none'
+
+        self.enabled  = bool(self.api_key)
+        cfg = self._PROVIDERS.get(self.provider, {})
+        self.base_url = cfg.get('base_url', '')
+        self.model    = cfg.get('model', '')
+        self.label    = cfg.get('label', 'none')
         self.max_tokens = 600
-        self._cache: Dict[str, str] = {}  # Cache by finding hash
 
         if self.enabled:
-            print("[Recommendation Engine] GPT mode AKTIF (OpenAI API key ditemukan)")
+            print(f"[Recommendation Engine] GPT mode AKTIF — provider: {self.label}")
         else:
             print("[Recommendation Engine] GPT mode NONAKTIF — menggunakan static templates")
 
     def get_recommendation(self, finding: Dict[str, Any]) -> Optional[str]:
         """
         Get AI-powered recommendation for a finding.
-        Returns None if GPT unavailable (will fall back to static template).
+        Returns None if LLM unavailable (will fall back to static template).
         """
         if not self.enabled:
             return None
 
-        # Cache key based on category + severity
+        # Cache by category + severity
         cache_key = hashlib.md5(
             f"{finding.get('category')}:{finding.get('severity')}:{finding.get('url', '')[:50]}".encode()
         ).hexdigest()
@@ -344,14 +376,11 @@ class GPTRecommendationClient:
 
         try:
             import httpx
-            import asyncio
-
             prompt = self._build_prompt(finding)
 
-            # Synchronous call using httpx (avoids async complexity)
-            with httpx.Client(timeout=10.0) as client:
+            with httpx.Client(timeout=15.0) as client:
                 response = client.post(
-                    'https://api.openai.com/v1/chat/completions',
+                    self.base_url,
                     headers={
                         'Authorization': f'Bearer {self.api_key}',
                         'Content-Type': 'application/json'
@@ -378,14 +407,14 @@ class GPTRecommendationClient:
                 data = response.json()
                 recommendation = data['choices'][0]['message']['content'].strip()
                 self._cache[cache_key] = recommendation
-                print(f"[Recommendation Engine] GPT recommendation generated for {finding.get('category')}")
+                print(f"[Recommendation Engine] LLM recommendation generated ({self.provider}): {finding.get('category')}")
                 return recommendation
             else:
-                print(f"[Recommendation Engine] GPT API error {response.status_code} — fallback ke static template")
+                print(f"[Recommendation Engine] LLM API error {response.status_code} ({self.provider}) — fallback ke static")
                 return None
 
         except Exception as e:
-            print(f"[Recommendation Engine] GPT error: {e} — fallback ke static template")
+            print(f"[Recommendation Engine] LLM error ({self.provider}): {e} — fallback ke static template")
             return None
 
     def _build_prompt(self, finding: Dict[str, Any]) -> str:

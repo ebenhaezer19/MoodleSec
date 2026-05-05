@@ -80,18 +80,24 @@ switch ($action) {
     case 'save-openai-key':
         require_sesskey();
         $api_key = required_param('api_key', PARAM_RAW);
+        $api_key = trim($api_key);
 
-        if (strlen($api_key) < 20 || !str_starts_with(trim($api_key), 'sk-')) {
-            echo json_encode(['success' => false, 'error' => 'Invalid API key format (must start with sk-)']);
+        $is_openai = str_starts_with($api_key, 'sk-')  && strlen($api_key) >= 20;
+        $is_groq   = str_starts_with($api_key, 'gsk_') && strlen($api_key) >= 20;
+
+        if (!$is_openai && !$is_groq) {
+            echo json_encode(['success' => false,
+                'error' => 'Invalid key format. OpenAI keys start with sk-, Groq keys start with gsk_']);
             break;
         }
 
-        $api_key = trim($api_key);
+        $provider = $is_groq ? 'groq' : 'openai';
 
         // Save to Moodle config
-        set_config('openai_api_key', $api_key, 'local_security_dashboard');
+        set_config('llm_api_key', $api_key, 'local_security_dashboard');
+        set_config('llm_provider', $provider, 'local_security_dashboard');
 
-        // Push to proxy via API so it takes effect immediately (no restart)
+        // Push to proxy
         $push_resp = $curl->post(
             $proxy_base . '/api/settings/openai-key',
             json_encode(['api_key' => $api_key]),
@@ -100,9 +106,10 @@ switch ($action) {
         $push_data = json_decode($push_resp, true);
 
         echo json_encode([
-            'success'     => true,
-            'proxy_ack'   => $push_data['status'] ?? 'unknown',
-            'message'     => 'API key saved. GPT mode will activate for new scans.',
+            'success'   => true,
+            'provider'  => $provider,
+            'proxy_ack' => $push_data['status'] ?? 'unknown',
+            'message'   => "LLM key saved ($provider). AI recommendations will activate for new scans.",
         ]);
         break;
 

@@ -2371,45 +2371,66 @@ def _load_persisted_gpt_key() -> str:
     return os.environ.get('OPENAI_API_KEY', '')
 
 def _apply_gpt_key(api_key: str):
-    """Apply new GPT key to recommendation engine and persist it."""
-    os.environ['OPENAI_API_KEY'] = api_key
+    """Apply new LLM key (OpenAI sk- or Groq gsk_) and persist it."""
+    # Determine provider from key prefix
+    if api_key.startswith('gsk_'):
+        os.environ['GROQ_API_KEY'] = api_key
+        os.environ.pop('OPENAI_API_KEY', None)  # Clear OpenAI to avoid confusion
+        provider = 'groq'
+    else:
+        os.environ['OPENAI_API_KEY'] = api_key
+        os.environ.pop('GROQ_API_KEY', None)
+        provider = 'openai'
+
     # Update the live GPT client inside recommendation_engine
     try:
         rec = scanner_engine.rec_engine
         if hasattr(rec, 'gpt_client') and rec.gpt_client:
-            rec.gpt_client.api_key = api_key
-            rec.gpt_client.enabled = True
-            rec.gpt_enabled = True
-            print(f"[Settings] GPT API key updated live in RecommendationEngine")
+            rec.gpt_client.api_key  = api_key
+            rec.gpt_client.provider = provider
+            rec.gpt_client.enabled  = True
+            cfg = rec.gpt_client._PROVIDERS.get(provider, {})
+            rec.gpt_client.base_url = cfg.get('base_url', '')
+            rec.gpt_client.model    = cfg.get('model', '')
+            rec.gpt_client.label    = cfg.get('label', provider)
+            rec.gpt_client._cache   = {}  # clear cache on key change
+            rec.gpt_enabled         = True
+            print(f"[Settings] LLM key updated live — provider: {provider}")
     except Exception as e:
-        print(f"[Settings] Could not update live GPT key: {e}")
+        print(f"[Settings] Could not update live LLM key: {e}")
     # Persist to file
     try:
         with open(_GPT_KEY_FILE, 'w') as _f:
             _f.write(api_key)
         os.chmod(_GPT_KEY_FILE, 0o600)
     except Exception as e:
-        print(f"[Settings] Could not persist GPT key: {e}")
+        print(f"[Settings] Could not persist key: {e}")
 
 
 @app.post("/api/settings/openai-key")
 async def save_openai_key(request: Request):
     """
-    Update the OpenAI API key at runtime (no restart needed).
-    Called by Moodle plugin proxy_api.php when user saves settings.
+    Update LLM API key at runtime — accepts OpenAI (sk-) or Groq (gsk_) keys.
+    No restart needed.
     """
     try:
         body = await request.json()
         api_key = str(body.get('api_key', '')).strip()
 
-        if not api_key or not api_key.startswith('sk-') or len(api_key) < 20:
-            raise HTTPException(status_code=400, detail="Invalid API key format (must start with sk-)")
+        is_openai = api_key.startswith('sk-') and len(api_key) > 20
+        is_groq   = api_key.startswith('gsk_') and len(api_key) > 20
+
+        if not (is_openai or is_groq):
+            raise HTTPException(status_code=400,
+                detail="Invalid key format. Must start with sk- (OpenAI) or gsk_ (Groq)")
 
         _apply_gpt_key(api_key)
+        provider = 'groq' if is_groq else 'openai'
 
         return {
-            'status': 'ok',
-            'message': 'GPT API key updated. GPT mode active for new scans.',
+            'status':    'ok',
+            'provider':  provider,
+            'message':   f'LLM key saved ({provider}). AI recommendations active for new scans.',
             'gpt_active': True
         }
     except HTTPException:
@@ -2420,23 +2441,36 @@ async def save_openai_key(request: Request):
 
 @app.get("/api/settings/status")
 async def get_settings_status():
-    """Return current GPT / ML model status."""
-    gpt_key = os.environ.get('OPENAI_API_KEY', '')
-    gpt_active = bool(gpt_key and gpt_key.startswith('sk-') and len(gpt_key) > 20)
+    """Return current LLM / ML model status."""
+    groq_key   = os.environ.get('GROQ_API_KEY', '')
+    openai_key = os.environ.get('OPENAI_API_KEY', '')
+
+    if groq_key and groq_key.startswith('gsk_') and len(groq_key) > 20:
+        active_key = groq_key
+        provider   = 'groq'
+    elif openai_key and openai_key.startswith('sk-') and len(openai_key) > 20:
+        active_key = openai_key
+        provider   = 'openai'
+    else:
+        active_key = ''
+        provider   = 'none'
+
+    key_set = bool(active_key)
 
     try:
         rec = scanner_engine.rec_engine
-        gpt_mode = getattr(rec, 'gpt_enabled', False)
+        gpt_mode = getattr(rec.gpt_client, 'enabled', False)
     except Exception:
         gpt_mode = False
 
     return {
-        'gpt_active':            gpt_active and gpt_mode,
-        'gpt_key_set':           gpt_active,
-        'gpt_key_preview':       (gpt_key[:8] + '...' + gpt_key[-4:]) if gpt_active else None,
-        'severity_predictor':    'heuristic',
-        'fp_reducer':            'trained (v3.0-clean14)',
-        'anomaly_detector':      'trained',
+        'gpt_active':      key_set and gpt_mode,
+        'gpt_key_set':     key_set,
+        'provider':        provider,
+        'provider_label':  'Groq' if provider == 'groq' else ('OpenAI' if provider == 'openai' else 'None'),
+        'gpt_key_preview': (active_key[:8] + '...' + active_key[-4:]) if key_set else None,
+        'fp_reducer':      'trained (v3.0-clean14)',
+        'anomaly_detector':'trained',
     }
 
 
