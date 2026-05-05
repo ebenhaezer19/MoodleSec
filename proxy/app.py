@@ -107,6 +107,28 @@ scanner_engine.payload_repo = payload_repo
 scanner_engine.initialize_scanners()  # re-creates detectors + PayloadInjector with the repo
 print(f"[Scanner Engine] Payload repository connected: {type(payload_repo).__name__}")
 
+# Auto-load persisted GPT key on startup (if .openai_key file exists)
+_gpt_key_file_startup = Path(__file__).parent / ".openai_key"
+if _gpt_key_file_startup.exists():
+    try:
+        _persisted_key = _gpt_key_file_startup.read_text().strip()
+        if _persisted_key.startswith('sk-') and len(_persisted_key) > 20:
+            os.environ['OPENAI_API_KEY'] = _persisted_key
+            rec = scanner_engine.rec_engine
+            if hasattr(rec, 'gpt_client') and rec.gpt_client:
+                rec.gpt_client.api_key = _persisted_key
+                rec.gpt_client.enabled = True
+                rec.gpt_enabled = True
+            print(f"[Settings] GPT API key loaded from .openai_key (key: {_persisted_key[:8]}...{_persisted_key[-4:]})")
+        else:
+            print("[Settings] .openai_key found but invalid, using static templates")
+    except Exception as _e:
+        print(f"[Settings] Could not load persisted GPT key: {_e}")
+else:
+    _env_key = os.environ.get('OPENAI_API_KEY', '')
+    if _env_key.startswith('sk-'):
+        print(f"[Settings] GPT API key from env (key: {_env_key[:8]}...{_env_key[-4:]})")
+
 
 
 # Initialize Phishing Detector

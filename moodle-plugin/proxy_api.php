@@ -21,7 +21,16 @@ require_capability('local/security_dashboard:scan', context_system::instance());
 
 header('Content-Type: application/json');
 
-$action     = required_param('action', PARAM_ALPHANUMEXT);
+$action     = required_param('action', PARAM_RAW);
+
+// Whitelist allowed actions
+$allowed_actions = ['verify-fix', 'scan-data', 'save-openai-key', 'gpt-status'];
+if (!in_array($action, $allowed_actions, true)) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Invalid action']);
+    exit;
+}
+
 $proxy_base = rtrim(get_config('local_security_dashboard', 'proxy_url') ?: 'http://localhost:8998', '/');
 
 $curl = new curl();
