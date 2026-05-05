@@ -108,10 +108,11 @@ scanner_engine.initialize_scanners()  # re-creates detectors + PayloadInjector w
 print(f"[Scanner Engine] Payload repository connected: {type(payload_repo).__name__}")
 
 # Auto-load persisted GPT key on startup (if .openai_key file exists)
-_gpt_key_file_startup = Path(__file__).parent / ".openai_key"
-if _gpt_key_file_startup.exists():
+_gpt_key_file_startup = os.path.join(os.path.dirname(__file__), ".openai_key")
+if os.path.exists(_gpt_key_file_startup):
     try:
-        _persisted_key = _gpt_key_file_startup.read_text().strip()
+        with open(_gpt_key_file_startup, 'r') as _f:
+            _persisted_key = _f.read().strip()
         if _persisted_key.startswith('sk-') and len(_persisted_key) > 20:
             os.environ['OPENAI_API_KEY'] = _persisted_key
             rec = scanner_engine.rec_engine
