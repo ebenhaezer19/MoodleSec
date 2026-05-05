@@ -2350,13 +2350,14 @@ async def get_ml_dashboard_recent_scans(limit: int = 10):
 # SETTINGS ENDPOINTS — GPT API key management
 # ─────────────────────────────────────────────────────────────────────────────
 
-_GPT_KEY_FILE = Path(__file__).parent / ".openai_key"
+_GPT_KEY_FILE = os.path.join(os.path.dirname(__file__), ".openai_key")
 
 def _load_persisted_gpt_key() -> str:
     """Load GPT key from persisted file on startup."""
     try:
-        if _GPT_KEY_FILE.exists():
-            key = _GPT_KEY_FILE.read_text().strip()
+        if os.path.exists(_GPT_KEY_FILE):
+            with open(_GPT_KEY_FILE, 'r') as _f:
+                key = _f.read().strip()
             if key.startswith('sk-'):
                 return key
     except Exception:
@@ -2365,8 +2366,7 @@ def _load_persisted_gpt_key() -> str:
 
 def _apply_gpt_key(api_key: str):
     """Apply new GPT key to recommendation engine and persist it."""
-    import os as _os
-    _os.environ['OPENAI_API_KEY'] = api_key
+    os.environ['OPENAI_API_KEY'] = api_key
     # Update the live GPT client inside recommendation_engine
     try:
         rec = scanner_engine.rec_engine
@@ -2379,8 +2379,9 @@ def _apply_gpt_key(api_key: str):
         print(f"[Settings] Could not update live GPT key: {e}")
     # Persist to file
     try:
-        _GPT_KEY_FILE.write_text(api_key)
-        _GPT_KEY_FILE.chmod(0o600)
+        with open(_GPT_KEY_FILE, 'w') as _f:
+            _f.write(api_key)
+        os.chmod(_GPT_KEY_FILE, 0o600)
     except Exception as e:
         print(f"[Settings] Could not persist GPT key: {e}")
 
