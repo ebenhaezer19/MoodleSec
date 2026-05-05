@@ -266,8 +266,14 @@ foreach ($config_fix as $platform => $cfg) {
 <?php endif; ?>
 
 <script>
-// PHP-side proxy URL (avoids CORS from browser directly to port 8998)
 const proxyApiUrl = '<?php echo rtrim((new moodle_url("/local/security_dashboard/proxy_api.php"))->out(false), "/"); ?>';
+
+// Escape HTML entities to prevent invisible rendering of raw HTML evidence
+function escapeHtml(text) {
+    const d = document.createElement('div');
+    d.appendChild(document.createTextNode(text || ''));
+    return d.innerHTML;
+}
 
 async function verifyFix(findingId, scanId, btn) {
     btn.disabled = true;
@@ -286,24 +292,26 @@ async function verifyFix(findingId, scanId, btn) {
         resultDiv.style.display = 'block';
         if (data.status === 'verified_fixed') {
             resultDiv.className = 'verify-result alert alert-success';
-            resultDiv.innerHTML = `<strong>✅ Fix Verified!</strong><br>${data.message}<br>
+            resultDiv.innerHTML = `<strong>✅ Fix Verified!</strong><br>${escapeHtml(data.message)}<br>
                 <small class="text-muted">Verified at: ${data.verified_at}</small>`;
             btn.textContent = '✅ Fixed';
             btn.className = 'btn btn-sm btn-success';
         } else if (data.status === 'still_vulnerable') {
+            const snippet = data.response_snippet ? escapeHtml(data.response_snippet) : '<em class="text-muted">N/A</em>';
             resultDiv.className = 'verify-result alert alert-danger';
-            resultDiv.innerHTML = `<strong>⚠️ Still Vulnerable</strong><br>${data.message}<br>
-                <small class="text-muted">Evidence: ${data.response_snippet || 'N/A'}</small>`;
+            resultDiv.innerHTML = `<strong>⚠️ Still Vulnerable</strong><br>${escapeHtml(data.message)}<br>
+                <div class="mt-1"><small class="text-muted">Evidence snippet:</small>
+                <pre style="font-size:11px;background:#fff0f0;padding:6px;border-radius:4px;white-space:pre-wrap;word-break:break-all;">${snippet}</pre></div>`;
             btn.textContent = '🔍 Verify Fix';
             btn.disabled = false;
         } else if (data.status === 'error') {
             resultDiv.className = 'verify-result alert alert-warning';
-            resultDiv.innerHTML = `<strong>⚠️ Error</strong><br>${data.message}`;
+            resultDiv.innerHTML = `<strong>⚠️ Error</strong><br>${escapeHtml(data.message)}`;
             btn.textContent = '🔍 Verify Fix';
             btn.disabled = false;
         } else {
             resultDiv.className = 'verify-result alert alert-warning';
-            resultDiv.innerHTML = data.message || 'Verification inconclusive.';
+            resultDiv.innerHTML = escapeHtml(data.message) || 'Verification inconclusive.';
             btn.textContent = '🔍 Verify Fix';
             btn.disabled = false;
         }

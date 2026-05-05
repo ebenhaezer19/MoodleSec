@@ -782,6 +782,12 @@ async def verify_fix(finding_id: str, scan_id: Optional[str] = None):
 
                 response_snippet = resp.text[:500]
 
+                # Strip HTML tags to get readable evidence text
+                import re as _re
+                _clean_snippet = _re.sub(r'<[^>]+>', ' ', response_snippet)
+                _clean_snippet = _re.sub(r'\s+', ' ', _clean_snippet).strip()
+                response_snippet = _clean_snippet[:300] if _clean_snippet else resp.text[:200]
+
                 # Check if evidence pattern still present
                 evidence = str(finding.get('evidence', ''))
                 if category == 'SQL Injection':

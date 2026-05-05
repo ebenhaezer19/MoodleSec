@@ -98,7 +98,12 @@ class ScanHistoryDB:
         cursor = self.conn.cursor()
         
         summary = scan_data.get('summary', {})
-        
+
+        # Build scan-level metadata including ml_stats (for dashboard FP display)
+        _scan_metadata = dict(scan_data.get('metadata', {}) or {})
+        if 'ml_stats' in scan_data:
+            _scan_metadata['ml_stats'] = scan_data['ml_stats']
+
         cursor.execute("""
             INSERT INTO scans (
                 scan_id, scan_type, target_url, timestamp,
@@ -119,7 +124,7 @@ class ScanHistoryDB:
             summary.get('medium', 0),
             summary.get('low', 0),
             summary.get('info', 0),
-            json.dumps(scan_data.get('metadata', {}))
+            json.dumps(_scan_metadata)
         ))
         
         scan_db_id = cursor.lastrowid
