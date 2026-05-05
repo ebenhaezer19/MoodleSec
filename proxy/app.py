@@ -77,6 +77,17 @@ app.add_middleware(
 # Initialize log directory on startup
 ensure_log_directory(LOG_DIR)
 
+# Runtime integrity checks (non-fatal; warn about legacy models/paths)
+try:
+    from proxy.ml.runtime_integrity import validate_runtime_integrity
+
+    integrity_status = validate_runtime_integrity()
+    print(f"[Runtime Integrity] {integrity_status.get('summary')}")
+    if integrity_status.get('missing_critical'):
+        print(f"[Runtime Integrity] CRITICAL missing models: {integrity_status.get('missing_critical')}")
+except Exception as _ri_err:
+    print(f"[Runtime Integrity] check failed: {_ri_err}")
+
 # Initialize scanner engine
 scanner_engine = ScannerEngine()
 

@@ -1863,9 +1863,23 @@ class AnomalyDetector:
         """Load trained model from disk if available."""
         if os.path.exists(self.model_path):
             try:
+                import warnings
+                from sklearn import __version__ as _sklearn_runtime_version
+                from sklearn.exceptions import InconsistentVersionWarning
+
                 with open(self.model_path, 'rb') as f:
-                    model_data = pickle.load(f)
-                
+                    with warnings.catch_warnings(record=True) as w:
+                        warnings.simplefilter('always', InconsistentVersionWarning)
+                        model_data = pickle.load(f)
+
+                    for warn in w:
+                        try:
+                            if issubclass(warn.category, InconsistentVersionWarning):
+                                print(f"[Anomaly Detector] InconsistentVersionWarning loading {self.model_path}: {warn.message}")
+                                print(f"[Anomaly Detector] sklearn runtime version: {_sklearn_runtime_version}")
+                        except Exception:
+                            pass
+
                 self.model = model_data['model']
                 self.scaler = model_data['scaler']
                 self.is_trained = model_data['is_trained']
@@ -1897,7 +1911,14 @@ class AnomalyDetector:
                         f"!= scaler/model expected ({int(model_expected)}). Realigning schema."
                     )
                     self.feature_names = self._build_feature_names_for_count(int(model_expected))
-                
+
+                # If model file includes training sklearn version metadata, show it
+                training_ver = None
+                if isinstance(model_data, dict):
+                    training_ver = model_data.get('sklearn_version') or (model_data.get('metadata') or {}).get('sklearn_version')
+                if training_ver:
+                    print(f"[Anomaly Detector] model trained with sklearn version: {training_ver}")
+
                 print(f"[Anomaly Detector] Loaded trained model from {self.model_path}")
             except Exception as e:
                 print(f"[Anomaly Detector] Failed to load model: {e}")

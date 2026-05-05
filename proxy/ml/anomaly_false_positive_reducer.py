@@ -543,13 +543,36 @@ class FalsePositiveReducer:
         """Load trained model from disk if available."""
         if os.path.exists(self.model_path):
             try:
+                import warnings
+                from sklearn import __version__ as _sklearn_runtime_version
+                from sklearn.exceptions import InconsistentVersionWarning
+
                 with open(self.model_path, 'rb') as f:
-                    model_data = pickle.load(f)
-                
+                    with warnings.catch_warnings(record=True) as w:
+                        warnings.simplefilter('always', InconsistentVersionWarning)
+                        model_data = pickle.load(f)
+
+                    # Surface any InconsistentVersionWarning messages
+                    for warn in w:
+                        try:
+                            if issubclass(warn.category, InconsistentVersionWarning):
+                                print(f"[FP Reducer] InconsistentVersionWarning loading {self.model_path}: {warn.message}")
+                                print(f"[FP Reducer] sklearn runtime version: {_sklearn_runtime_version}")
+                        except Exception:
+                            # Non-fatal: continue
+                            pass
+
                 self.model = model_data['model']
                 self.scaler = model_data['scaler']
                 self.is_trained = model_data['is_trained']
-                
+
+                # If model file includes training sklearn version metadata, show it
+                training_ver = None
+                if isinstance(model_data, dict):
+                    training_ver = model_data.get('sklearn_version') or (model_data.get('metadata') or {}).get('sklearn_version')
+                if training_ver:
+                    print(f"[FP Reducer] model trained with sklearn version: {training_ver}")
+
                 print(f"[FP Reducer] Loaded trained model from {self.model_path}")
             except Exception as e:
                 print(f"[FP Reducer] Failed to load model: {e}")
