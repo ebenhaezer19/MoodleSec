@@ -131,65 +131,29 @@ class ScanHistoryDB:
         
         # Save findings
         findings = scan_data.get('findings', [])
-        print(f"\n[DB] ==> SAVING {len(findings)} FINDINGS FOR SCAN: {scan_data['scan_id']}")
-        
-        for i, finding in enumerate(findings, 1):
-            print(f"\n[DB] Finding {i}/{len(findings)}:")
+        for finding in findings:
             self._save_finding(scan_data['scan_id'], finding)
         
         self.conn.commit()
-        
-        # Summary
-        cursor.execute("SELECT COUNT(*) FROM findings WHERE scan_id = ?", (scan_data['scan_id'],))
-        actual_count = cursor.fetchone()[0]
-        reported_count = scan_data.get('total_findings', 0)
-        
-        print(f"\n[DB] ==> SAVE SUMMARY")
-        print(f"[DB]     Reported findings: {reported_count}")
-        print(f"[DB]     Actual findings in DB: {actual_count}")
-        
-        if reported_count == actual_count:
-            print(f"[DB]     ✓ MATCH! All findings stored correctly")
-        else:
-            print(f"[DB]     ⚠️ MISMATCH: {reported_count - actual_count} findings missing!")
-        
-        print(f"[DB] \n")
-        
         return scan_db_id
     
     def _save_finding(self, scan_id: str, finding: Dict[str, Any]):
         """Save individual finding to database."""
         cursor = self.conn.cursor()
-        
-        # DEBUG: Show what we're saving
-        print(f"\n[DB] ==> SAVING FINDING")
-        print(f"[DB]     Category: {finding.get('category')}")
-        print(f"[DB]     Description: {finding.get('description', '')[:60]}...")
-        print(f"[DB]     URL: {finding.get('url', '')}")
-        print(f"[DB]     Severity: {finding.get('severity', 'Unknown')}")
-        
-        # DEBUG: Check evidence field
+
         evidence = finding.get('evidence', '')
-        if evidence:
-            print(f"[DB]     Evidence: {evidence[:80]}...")
-        else:
-            print(f"[DB]     Evidence: ⚠️ MISSING/EMPTY")
-        
+
         # Generate finding hash for deduplication
         finding_hash = self._generate_finding_hash(finding)
-        print(f"[DB]     Hash: {finding_hash}")
-        
+
         # Check if THIS EXACT finding already exists in THIS SCAN
-        # Include scan_id in the check to allow same finding across multiple scans
         cursor.execute(
             "SELECT id, first_seen FROM findings WHERE finding_hash = ? AND scan_id = ?",
             (finding_hash, scan_id)
         )
         existing = cursor.fetchone()
-        
+
         if existing:
-            # Update last_seen, metadata, and risk scores for same finding in same scan
-            print(f"[DB]     → COLLISION: Hash already exists in this scan (ID={existing[0]}), updating...")
             
             # Prepare metadata - save ALL enriched fields
             metadata = finding.get('metadata', {}) or {}
@@ -216,10 +180,7 @@ class ScanHistoryDB:
                 finding_hash,
                 scan_id
             ))
-            print(f"[DB] Updated risk_score={finding.get('risk_score', 0)}, cvss_score={finding.get('cvss_score', 0)}, priority={finding.get('priority', 5)}")
         else:
-            # Insert new finding
-            print(f"[DB]     → NEW: Inserting new finding (hash not seen before)")
             
             # Prepare metadata - save ALL enriched fields
             metadata = finding.get('metadata', {}) or {}
@@ -253,8 +214,7 @@ class ScanHistoryDB:
                 datetime.utcnow().isoformat(),
                 json.dumps(metadata)
             ))
-            print(f"[DB]     ✓ Inserted successfully")
-    
+
     def _generate_finding_hash(self, finding: Dict[str, Any]) -> str:
         """Generate unique hash for finding deduplication."""
         import hashlib
@@ -276,9 +236,6 @@ class ScanHistoryDB:
         # Include severity so identical vuln types at different risk levels are separate
         key = f"{cat}:{severity}:{desc[:120]}:{url}:{evidence[:120]}"
         hash_val = hashlib.md5(key.encode()).hexdigest()
-        
-        # DEBUG: Show hash input composition
-        print(f"[DB]     Hash input: {cat[:30]}... | {severity} | {url[:40] or 'NO_URL'} | {evidence[:40] if evidence else 'EMPTY'}...")
         
         return hash_val
     
