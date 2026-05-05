@@ -175,8 +175,8 @@ if ($ml_status) {
     echo '<small class="form-text text-muted">Free: <a href="https://console.groq.com/keys" target="_blank">Groq key (gsk_...)</a> &nbsp;|&nbsp; <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI key (sk-...)</a></small>';
     echo '</div>';
 
-    echo '<button class="btn btn-success" id="gpt-save-btn" onclick="saveGptApiKey()">💾 Save & Activate GPT</button>';
-    echo ' <button class="btn btn-outline-secondary ml-2" onclick="checkGptStatus()">🔄 Refresh Status</button>';
+    echo '<button class="btn btn-success" id="gpt-save-btn" onclick="saveGptApiKey()">&#x1F4BE; Save &amp; Activate</button>';
+    echo ' <button class="btn btn-outline-secondary ml-2" onclick="checkGptStatus()">&#x1F504; Refresh Status</button>';
 
     echo '<div id="gpt-save-result" class="mt-3" style="display:none;"></div>';
 
