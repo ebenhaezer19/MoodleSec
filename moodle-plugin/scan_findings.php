@@ -21,7 +21,8 @@ $PAGE->set_url(new moodle_url('/local/security_dashboard/scan_findings.php', ['s
 $PAGE->set_title('Scan Findings — ' . $scan_id);
 $PAGE->set_heading('Security Findings Detail');
 
-$proxy_url = rtrim(get_config('local_security_dashboard', 'proxy_url') ?: 'http://localhost:8999', '/');
+$proxy_url = rtrim(get_config('local_security_dashboard', 'proxy_url') ?: 'http://localhost:8998', '/');
+$plugin_url = (new moodle_url('/local/security_dashboard/'))->out(false);
 
 // Fetch findings from proxy
 $findings = [];
@@ -265,7 +266,8 @@ foreach ($config_fix as $platform => $cfg) {
 <?php endif; ?>
 
 <script>
-const proxyUrl = '<?php echo $proxy_url; ?>';
+// PHP-side proxy URL (avoids CORS from browser directly to port 8998)
+const proxyApiUrl = '<?php echo rtrim((new moodle_url("/local/security_dashboard/proxy_api.php"))->out(false), "/"); ?>';
 
 async function verifyFix(findingId, scanId, btn) {
     btn.disabled = true;
@@ -275,9 +277,10 @@ async function verifyFix(findingId, scanId, btn) {
     resultDiv.style.display = 'none';
 
     try {
-        const resp = await fetch(`${proxyUrl}/api/verify-fix/${findingId}?scan_id=${encodeURIComponent(scanId)}`, {
-            method: 'POST'
-        });
+        const resp = await fetch(
+            `${proxyApiUrl}?action=verify-fix&finding_id=${encodeURIComponent(findingId)}&scan_id=${encodeURIComponent(scanId)}&sesskey=<?php echo sesskey(); ?>`,
+            { method: 'POST' }
+        );
         const data = await resp.json();
 
         resultDiv.style.display = 'block';
@@ -291,6 +294,11 @@ async function verifyFix(findingId, scanId, btn) {
             resultDiv.className = 'verify-result alert alert-danger';
             resultDiv.innerHTML = `<strong>⚠️ Still Vulnerable</strong><br>${data.message}<br>
                 <small class="text-muted">Evidence: ${data.response_snippet || 'N/A'}</small>`;
+            btn.textContent = '🔍 Verify Fix';
+            btn.disabled = false;
+        } else if (data.status === 'error') {
+            resultDiv.className = 'verify-result alert alert-warning';
+            resultDiv.innerHTML = `<strong>⚠️ Error</strong><br>${data.message}`;
             btn.textContent = '🔍 Verify Fix';
             btn.disabled = false;
         } else {

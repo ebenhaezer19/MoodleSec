@@ -2323,7 +2323,93 @@ async def get_ml_dashboard_recent_scans(limit: int = 10):
 
 
 
-# IMPORTANT: Catch-all proxy route MUST be at the end to not interfere with specific endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+# SETTINGS ENDPOINTS — GPT API key management
+# ─────────────────────────────────────────────────────────────────────────────
+
+_GPT_KEY_FILE = Path(__file__).parent / ".openai_key"
+
+def _load_persisted_gpt_key() -> str:
+    """Load GPT key from persisted file on startup."""
+    try:
+        if _GPT_KEY_FILE.exists():
+            key = _GPT_KEY_FILE.read_text().strip()
+            if key.startswith('sk-'):
+                return key
+    except Exception:
+        pass
+    return os.environ.get('OPENAI_API_KEY', '')
+
+def _apply_gpt_key(api_key: str):
+    """Apply new GPT key to recommendation engine and persist it."""
+    import os as _os
+    _os.environ['OPENAI_API_KEY'] = api_key
+    # Update the live GPT client inside recommendation_engine
+    try:
+        rec = scanner_engine.rec_engine
+        if hasattr(rec, 'gpt_client') and rec.gpt_client:
+            rec.gpt_client.api_key = api_key
+            rec.gpt_client.enabled = True
+            rec.gpt_enabled = True
+            print(f"[Settings] GPT API key updated live in RecommendationEngine")
+    except Exception as e:
+        print(f"[Settings] Could not update live GPT key: {e}")
+    # Persist to file
+    try:
+        _GPT_KEY_FILE.write_text(api_key)
+        _GPT_KEY_FILE.chmod(0o600)
+    except Exception as e:
+        print(f"[Settings] Could not persist GPT key: {e}")
+
+
+@app.post("/api/settings/openai-key")
+async def save_openai_key(request: Request):
+    """
+    Update the OpenAI API key at runtime (no restart needed).
+    Called by Moodle plugin proxy_api.php when user saves settings.
+    """
+    try:
+        body = await request.json()
+        api_key = str(body.get('api_key', '')).strip()
+
+        if not api_key or not api_key.startswith('sk-') or len(api_key) < 20:
+            raise HTTPException(status_code=400, detail="Invalid API key format (must start with sk-)")
+
+        _apply_gpt_key(api_key)
+
+        return {
+            'status': 'ok',
+            'message': 'GPT API key updated. GPT mode active for new scans.',
+            'gpt_active': True
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save key: {str(e)}")
+
+
+@app.get("/api/settings/status")
+async def get_settings_status():
+    """Return current GPT / ML model status."""
+    gpt_key = os.environ.get('OPENAI_API_KEY', '')
+    gpt_active = bool(gpt_key and gpt_key.startswith('sk-') and len(gpt_key) > 20)
+
+    try:
+        rec = scanner_engine.rec_engine
+        gpt_mode = getattr(rec, 'gpt_enabled', False)
+    except Exception:
+        gpt_mode = False
+
+    return {
+        'gpt_active':            gpt_active and gpt_mode,
+        'gpt_key_set':           gpt_active,
+        'gpt_key_preview':       (gpt_key[:8] + '...' + gpt_key[-4:]) if gpt_active else None,
+        'severity_predictor':    'heuristic',
+        'fp_reducer':            'trained (v3.0-clean14)',
+        'anomaly_detector':      'trained',
+    }
+
+
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 async def proxy_request_catchall(request: Request, path: str) -> Response:
     """

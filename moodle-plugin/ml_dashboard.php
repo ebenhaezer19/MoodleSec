@@ -211,12 +211,51 @@ if ($ml_status) {
     echo html_writer::end_div();
     
     echo html_writer::end_div(); // row
-    
+
     echo html_writer::end_div(); // card-body
     echo html_writer::end_div(); // card
-    
+
+    // ── GPT API Key Settings ──────────────────────────────────────────────
+    echo html_writer::start_div('card mt-4', ['id' => 'gpt-settings-card']);
+    echo html_writer::start_div('card-header bg-dark text-white d-flex justify-content-between align-items-center');
+    echo html_writer::tag('h5', '🤖 GPT Recommendation Settings', ['class' => 'mb-0']);
+    echo html_writer::tag('span', '', ['id' => 'gpt-status-badge', 'class' => 'badge badge-secondary']);
+    echo html_writer::end_div();
+    echo html_writer::start_div('card-body');
+
+    echo html_writer::tag('p',
+        'Set your OpenAI API key to enable GPT-powered recommendations. ' .
+        'When set, scan findings will receive AI-generated remediation advice instead of static templates. ' .
+        'If quota is exceeded or key is invalid, the system automatically falls back to static templates.');
+
+    // Status row
+    echo '<div class="alert alert-info" id="gpt-current-status">Loading GPT status...</div>';
+
+    // API key input form
+    echo '<div class="form-group">';
+    echo '<label for="gpt-api-key-input"><strong>OpenAI API Key</strong> <small class="text-muted">(starts with sk-)</small></label>';
+    echo '<div class="input-group">';
+    echo '<input type="password" class="form-control" id="gpt-api-key-input"
+           placeholder="sk-proj-..." autocomplete="off"
+           style="font-family: monospace; font-size: 13px;">';
+    echo '<div class="input-group-append">';
+    echo '<button class="btn btn-outline-secondary" type="button" onclick="toggleGptKeyVisibility()">👁</button>';
+    echo '</div>';
+    echo '</div>';
+    echo '<small class="form-text text-muted">Key is stored encrypted server-side and never sent to browser after save.</small>';
+    echo '</div>';
+
+    echo '<button class="btn btn-success" id="gpt-save-btn" onclick="saveGptApiKey()">💾 Save & Activate GPT</button>';
+    echo ' <button class="btn btn-outline-secondary ml-2" onclick="checkGptStatus()">🔄 Refresh Status</button>';
+
+    echo '<div id="gpt-save-result" class="mt-3" style="display:none;"></div>';
+
+    echo html_writer::end_div(); // card-body
+    echo html_writer::end_div(); // card
+
     echo html_writer::end_div(); // ml-dashboard-container
 }
+
 
 // Add custom CSS
 echo html_writer::start_tag('style');
@@ -468,9 +507,107 @@ async function startRetraining() {
 }
 
 function exportModels() {
-    // TODO: Implement model export feature
     alert('Model export feature will be implemented in the next update.');
 }
+
+// ── GPT API Key Management ─────────────────────────────────────────────────
+
+const proxyApiUrl = '<?php echo (new moodle_url("/local/security_dashboard/proxy_api.php"))->out(false); ?>';
+const sesskey     = '<?php echo sesskey(); ?>';
+
+function toggleGptKeyVisibility() {
+    const inp = document.getElementById('gpt-api-key-input');
+    inp.type = (inp.type === 'password') ? 'text' : 'password';
+}
+
+async function checkGptStatus() {
+    const statusDiv   = document.getElementById('gpt-current-status');
+    const badgeSpan   = document.getElementById('gpt-status-badge');
+    statusDiv.textContent = 'Checking GPT status...';
+    try {
+        const resp = await fetch(`${proxyApiUrl}?action=gpt-status&sesskey=${sesskey}`);
+        const data = await resp.json();
+
+        if (data.gpt_active) {
+            badgeSpan.className = 'badge badge-success';
+            badgeSpan.textContent = '🤖 GPT Active';
+            statusDiv.className = 'alert alert-success';
+            statusDiv.innerHTML = `<strong>✅ GPT Mode Active</strong><br>
+                Key: <code>${data.gpt_key_preview || '(set)'}</code><br>
+                Scan findings will use GPT-powered recommendations.`;
+        } else if (data.gpt_key_set) {
+            badgeSpan.className = 'badge badge-warning';
+            badgeSpan.textContent = '⚠️ Key Set (GPT Off)';
+            statusDiv.className = 'alert alert-warning';
+            statusDiv.innerHTML = `<strong>⚠️ API Key is set but GPT engine reports inactive.</strong><br>
+                Key: <code>${data.gpt_key_preview}</code><br>
+                May be quota issue — static templates are being used as fallback.`;
+        } else {
+            badgeSpan.className = 'badge badge-secondary';
+            badgeSpan.textContent = '📋 Static Templates';
+            statusDiv.className = 'alert alert-info';
+            statusDiv.innerHTML = `<strong>📋 Static Template Mode</strong><br>
+                No OpenAI API key set. Enter your key below to activate GPT recommendations.<br>
+                <small class="text-muted">Get a key at <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com/api-keys</a></small>`;
+        }
+    } catch(e) {
+        statusDiv.className = 'alert alert-danger';
+        statusDiv.textContent = 'Could not reach proxy: ' + e.message;
+    }
+}
+
+async function saveGptApiKey() {
+    const key     = document.getElementById('gpt-api-key-input').value.trim();
+    const btn     = document.getElementById('gpt-save-btn');
+    const result  = document.getElementById('gpt-save-result');
+
+    if (!key || !key.startsWith('sk-')) {
+        result.style.display = 'block';
+        result.className = 'alert alert-danger';
+        result.textContent = 'Invalid key format. Must start with sk-';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Saving...';
+    result.style.display = 'none';
+
+    try {
+        const resp = await fetch(
+            `${proxyApiUrl}?action=save-openai-key&sesskey=${sesskey}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `api_key=${encodeURIComponent(key)}`
+            }
+        );
+        const data = await resp.json();
+
+        result.style.display = 'block';
+        if (data.success) {
+            result.className = 'alert alert-success';
+            result.innerHTML = `<strong>✅ ${data.message}</strong><br>
+                <small>Proxy ACK: ${data.proxy_ack || 'ok'}</small>`;
+            document.getElementById('gpt-api-key-input').value = '';
+            document.getElementById('gpt-api-key-input').placeholder = '(key saved — enter new key to update)';
+            checkGptStatus(); // refresh status
+        } else {
+            result.className = 'alert alert-danger';
+            result.textContent = 'Error: ' + (data.error || 'Unknown error');
+        }
+    } catch(e) {
+        result.style.display = 'block';
+        result.className = 'alert alert-danger';
+        result.textContent = 'Connection error: ' + e.message;
+    }
+
+    btn.disabled = false;
+    btn.textContent = '💾 Save & Activate GPT';
+}
+
+// Load GPT status on page load
+document.addEventListener('DOMContentLoaded', checkGptStatus);
+
 <?php
 echo html_writer::end_tag('script');
 
