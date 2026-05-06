@@ -552,15 +552,21 @@ class FalsePositiveReducer:
                         warnings.simplefilter('always', InconsistentVersionWarning)
                         model_data = pickle.load(f)
 
-                    # Surface any InconsistentVersionWarning messages
+                    # Surface any InconsistentVersionWarning messages (summary only)
+                    version_warns = []
                     for warn in w:
                         try:
                             if issubclass(warn.category, InconsistentVersionWarning):
-                                print(f"[FP Reducer] InconsistentVersionWarning loading {self.model_path}: {warn.message}")
-                                print(f"[FP Reducer] sklearn runtime version: {_sklearn_runtime_version}")
+                                version_warns.append(warn)
                         except Exception:
-                            # Non-fatal: continue
                             pass
+                    if version_warns:
+                        print(
+                            f"[FP Reducer] InconsistentVersionWarning loading "
+                            f"{self.model_path}: {len(version_warns)} warning(s) "
+                            f"(sklearn runtime={_sklearn_runtime_version}). "
+                            f"First: {version_warns[0].message}"
+                        )
 
                 self.model = model_data['model']
                 self.scaler = model_data['scaler']

@@ -20,6 +20,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Suppress sklearn InconsistentVersionWarning globally to prevent thousands of
+# per-estimator warning lines flooding stdout during model deserialization.
+# Individual model loaders still record and summarise these warnings internally.
+import warnings
+try:
+    from sklearn.exceptions import InconsistentVersionWarning
+    warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
+except ImportError:
+    pass
+
 from config import (
     MOODLE_URL,
     LISTEN_PORT,

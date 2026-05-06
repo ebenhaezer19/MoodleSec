@@ -23,6 +23,13 @@ from collections import defaultdict
 from .path_utils import normalize_model_path
 
 
+def _safe_issubclass(cls, target):
+    """issubclass() that never raises."""
+    try:
+        return issubclass(cls, target)
+    except Exception:
+        return False
+
 class AnomalyDetector:
     """
     Detects anomalous security findings using Isolation Forest.
@@ -1872,13 +1879,17 @@ class AnomalyDetector:
                         warnings.simplefilter('always', InconsistentVersionWarning)
                         model_data = pickle.load(f)
 
-                    for warn in w:
-                        try:
-                            if issubclass(warn.category, InconsistentVersionWarning):
-                                print(f"[Anomaly Detector] InconsistentVersionWarning loading {self.model_path}: {warn.message}")
-                                print(f"[Anomaly Detector] sklearn runtime version: {_sklearn_runtime_version}")
-                        except Exception:
-                            pass
+                    version_warns = [
+                        warn for warn in w
+                        if _safe_issubclass(warn.category, InconsistentVersionWarning)
+                    ]
+                    if version_warns:
+                        print(
+                            f"[Anomaly Detector] InconsistentVersionWarning loading "
+                            f"{self.model_path}: {len(version_warns)} warning(s) "
+                            f"(sklearn runtime={_sklearn_runtime_version}). "
+                            f"First: {version_warns[0].message}"
+                        )
 
                 self.model = model_data['model']
                 self.scaler = model_data['scaler']
