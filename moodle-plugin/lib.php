@@ -464,38 +464,43 @@ function local_security_dashboard_trigger_full_scan($max_depth = 2, $max_pages =
  * @return array Scan results including findings and statistics
  */
 function local_security_dashboard_trigger_native_auth_scan($max_depth = 2, $max_pages = 50, $username = 'admin', $password = 'Admin@1234') {
+    global $CFG;
+
     $proxy_url = get_config('local_security_dashboard', 'proxy_url');
-    
-    // Fallback to default localhost if not configured
     if (empty($proxy_url)) {
         $proxy_url = 'http://localhost:8999';
     }
-    
-    // Call the new native authenticated scan endpoint
+
     $url = rtrim($proxy_url, '/') . '/api/scan-native-auth';
-    
+
+    // Use Moodle's own wwwroot as target so each environment uses its own port.
+    // krisopras → http://localhost:8998  |  natha → http://localhost
+    $moodle_base = rtrim($CFG->wwwroot, '/');
+
     try {
         $curl = new curl();
         $response = $curl->post($url, json_encode([
-            'max_depth' => $max_depth,
-            'max_pages' => $max_pages,
-            'username' => $username,
-            'password' => $password
+            'max_depth'  => $max_depth,
+            'max_pages'  => $max_pages,
+            'username'   => $username,
+            'password'   => $password,
+            'target_url' => $moodle_base,   // ← proxy uses this, not hardcoded localhost
+            'moodle_url' => $moodle_base,
         ]), [
             'CURLOPT_HTTPHEADER' => ['Content-Type: application/json'],
-            'CURLOPT_TIMEOUT' => 600  // 10 minutes timeout for full authenticated scan
+            'CURLOPT_TIMEOUT'    => 600,
         ]);
-        
+
         if ($curl->get_errno()) {
             return ['error' => 'Connection error: ' . $curl->error];
         }
-        
+
         $result = json_decode($response, true);
-        
+
         if (json_last_error() !== JSON_ERROR_NONE) {
             return ['error' => 'Invalid response from proxy service'];
         }
-        
+
         return $result;
     } catch (Exception $e) {
         return ['error' => $e->getMessage()];

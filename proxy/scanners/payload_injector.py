@@ -16,9 +16,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-TRUSTED_SCANNER_HEADER_NAME = "X-MoodleSec-Scanner"
-TRUSTED_SCANNER_HEADER_VALUE = "internal"
-
 
 class PayloadInjector:
     """Handles payload injection and vulnerability detection through payload responses."""
@@ -608,11 +605,14 @@ class PayloadInjector:
                         'category': 'SQL Injection',
                         'type': 'Error-Based SQL Injection',
                         'description': f'SQL Injection detected in {injection_point} "{param_name}" (error-based)',
-                        'evidence': f'SQL error pattern detected after injecting payload',
+                        'evidence': f'SQL error triggered by payload [{payload_text[:80]}] '
+                                    f'in parameter "{param_name}" at {url}. '
+                                    f'Pattern: {pattern.pattern[:60]}',
+                        'url': url,
+                        'parameter': param_name,
                         'payload': payload_text[:200],
                         'payload_id': payload_id,
                         'injection_point': injection_point,
-                        'target': url,
                         'cwe': 'CWE-89',
                         'owasp': 'A03:2021 - Injection'
                     }
@@ -624,12 +624,14 @@ class PayloadInjector:
                     'category': 'SQL Injection',
                     'type': 'Error-Based SQL Injection (HTTP 500)',
                     'description': f'Potential SQL Injection in {injection_point} "{param_name}" - server error {status_code}',
-                    'evidence': f'HTTP {status_code} returned after injecting SQL payload. '
-                                f'Server may have failed processing the injected SQL.',
+                    'evidence': f'HTTP {status_code} returned after injecting [{payload_text[:80]}] '
+                                f'in parameter "{param_name}" at {url}. '
+                                f'Server may have crashed processing the injected SQL.',
+                    'url': url,
+                    'parameter': param_name,
                     'payload': payload_text[:200],
                     'payload_id': payload_id,
                     'injection_point': injection_point,
-                    'target': url,
                     'cwe': 'CWE-89',
                     'owasp': 'A03:2021 - Injection'
                 }
@@ -643,12 +645,14 @@ class PayloadInjector:
                     'category': 'SQL Injection',
                     'type': 'Time-Based Blind SQL Injection',
                     'description': f'Time-based blind SQL Injection in {injection_point} "{param_name}"',
-                    'evidence': f'Payload with sleep/delay caused {elapsed_ms:.0f}ms response time '
-                                f'(normal < 2000ms). Server executed the injected SQL.',
+                    'evidence': f'Payload [{payload_text[:80]}] in parameter "{param_name}" '
+                                f'caused {elapsed_ms:.0f}ms response at {url} '
+                                f'(normal <2000ms). Server executed the injected SQL sleep/delay.',
+                    'url': url,
+                    'parameter': param_name,
                     'payload': payload_text[:200],
                     'payload_id': payload_id,
                     'injection_point': injection_point,
-                    'target': url,
                     'cwe': 'CWE-89',
                     'owasp': 'A03:2021 - Injection'
                 }
@@ -664,11 +668,13 @@ class PayloadInjector:
                             'category': 'Cross-Site Scripting (XSS)',
                             'type': 'Reflected XSS via Payload',
                             'description': f'XSS detected in {injection_point} "{param_name}"',
-                            'evidence': f'JavaScript code reflected in response: {payload_text[:100]}',
+                            'evidence': f'Payload [{payload_text[:80]}] reflected in response '
+                                        f'from parameter "{param_name}" at {url}.',
+                            'url': url,
+                            'parameter': param_name,
                             'payload': payload_text[:200],
                             'payload_id': payload_id,
                             'injection_point': injection_point,
-                            'target': url,
                             'cwe': 'CWE-79',
                             'owasp': 'A03:2021 - Injection'
                         }
@@ -701,12 +707,14 @@ class PayloadInjector:
                         'category': 'Cross-Site Request Forgery (CSRF)',
                         'type': 'CSRF Token Bypass',
                         'description': f'CSRF protection may be missing on {injection_point} "{param_name}"',
-                        'evidence': f'Request with invalid/missing CSRF token was accepted (HTTP {status_code}). '
+                        'evidence': f'Request with invalid/missing CSRF token [{payload_text[:60]}] '
+                                    f'was accepted (HTTP {status_code}) at {url}. '
                                     f'Form may not validate CSRF tokens properly.',
+                        'url': url,
+                        'parameter': param_name,
                         'payload': payload_text[:200],
                         'payload_id': payload_id,
                         'injection_point': injection_point,
-                        'target': url,
                         'cwe': 'CWE-352',
                         'owasp': 'A01:2021 - Broken Access Control'
                     }
@@ -745,11 +753,6 @@ class PayloadInjector:
         if method is None:
             method = 'POST' if data else 'GET'
         method = method.upper()
-
-        effective_headers: Dict[str, str] = dict(headers or {})
-        # Mark scanner-generated traffic so proxy enforcement can selectively
-        # bypass blocking while still running classification and logging.
-        effective_headers.setdefault(TRUSTED_SCANNER_HEADER_NAME, TRUSTED_SCANNER_HEADER_VALUE)
         
         try:
             if not client:
@@ -762,7 +765,7 @@ class PayloadInjector:
                         method=method,
                         url=url,
                         params=params,
-                        headers=effective_headers,
+                        headers=headers,
                         data=data
                     )
                     return response
@@ -773,7 +776,7 @@ class PayloadInjector:
                         method=method,
                         url=url,
                         params=params,
-                        headers=effective_headers,
+                        headers=headers,
                         data=data,
                         timeout=timeout
                     )

@@ -109,40 +109,7 @@ if ($ml_status) {
         );
     }
     
-    // Model 3: Severity Predictor
-    if (isset($ml_status['modules']['severity_predictor'])) {
-        $sp_model = $ml_status['modules']['severity_predictor'];
-        echo render_model_card(
-            'Severity Predictor',
-            '📊',
-            $sp_model,
-            'Predicts accurate severity levels',
-            [
-                'Algorithm' => 'Gradient Boosting',
-                'Estimators' => $sp_model['n_estimators'] ?? 'N/A',
-                'Learning Rate' => $sp_model['learning_rate'] ?? 'N/A',
-                'Levels' => count($sp_model['severity_levels'] ?? [])
-            ]
-        );
-    }
-    
-    // Model 4: Rate Limiter
-    if (isset($ml_status['modules']['rate_limiter'])) {
-        $rl_model = $ml_status['modules']['rate_limiter'];
-        $limits = $rl_model['default_limits'] ?? [];
-        echo render_model_card(
-            'Rate Limiter',
-            '🚦',
-            $rl_model,
-            'Adaptive rate limiting with ML scoring',
-            [
-                'Per Minute' => $limits['per_minute'] ?? 'N/A',
-                'Per Hour' => $limits['per_hour'] ?? 'N/A',
-                'Whitelisted' => $rl_model['whitelist_count'] ?? 0,
-                'Blacklisted' => $rl_model['blacklist_count'] ?? 0
-            ]
-        );
-    }
+
     
     echo html_writer::end_div(); // row
     
@@ -162,9 +129,7 @@ if ($ml_status) {
     echo html_writer::tag('h5', 'Dataset Composition (Phase 3 Final)', ['class' => 'card-title mt-3']);
     echo html_writer::start_tag('ul');
     echo html_writer::tag('li', 'FP Reducer: 76 real balanced (38:38) + 40 synthetic TP augmentation');
-    echo html_writer::tag('li', 'Severity Predictor: 200 samples / 5 severity levels (XGBoost + GPU)');
     echo html_writer::tag('li', 'Anomaly Detector: 306 normal behaviour samples (Isolation Forest, unsupervised)');
-    echo html_writer::tag('li', 'Rate Limiter: 200 risk scoring samples (XGBoost Regressor + GPU)');
     echo html_writer::end_tag('ul');
     
     echo html_writer::end_div(); // card-body
@@ -175,48 +140,52 @@ if ($ml_status) {
     echo html_writer::start_div('row');
     
     echo render_metric_card('FP Reducer (Phase 5)', '92.9%', 'CV Acc ±6.9% (14 clean features)', 'success');
-    echo render_metric_card('Severity Prediction', '100%', 'Test Accuracy (XGBoost)', 'success');
     echo render_metric_card('Anomaly Detection', '~90%', 'Detection Rate', 'info');
-    echo render_metric_card('Rate Limiter', '0.74', 'Validation R² (XGBoost)', 'primary');
     
     echo html_writer::end_div(); // row
-    
-    // Management Actions
-    echo html_writer::tag('h3', '⚙️ Management', ['class' => 'mt-5 mb-3']);
-    echo html_writer::start_div('card');
+
+    echo html_writer::end_div(); // card
+
+    // ── GPT API Key Settings ──────────────────────────────────────────────
+    echo html_writer::start_div('card mt-4', ['id' => 'gpt-settings-card']);
+    echo html_writer::start_div('card-header bg-dark text-white d-flex justify-content-between align-items-center');
+    echo html_writer::tag('h5', '🤖 GPT Recommendation Settings', ['class' => 'mb-0']);
+    echo html_writer::tag('span', '', ['id' => 'gpt-status-badge', 'class' => 'badge badge-secondary']);
+    echo html_writer::end_div();
     echo html_writer::start_div('card-body');
-    
-    echo html_writer::start_div('row');
-    
-    // Retrain Models
-    echo html_writer::start_div('col-md-6 mb-3');
-    echo html_writer::tag('h5', '🔄 Retrain Models');
-    echo html_writer::tag('p', 'Retrain ML models with latest data to improve accuracy.');
-    echo html_writer::link(
-        '#',
-        'Retrain All Models',
-        ['class' => 'btn btn-primary', 'onclick' => 'retrainModels(); return false;']
-    );
-    echo html_writer::end_div();
-    
-    // Export Models
-    echo html_writer::start_div('col-md-6 mb-3');
-    echo html_writer::tag('h5', '💾 Export Models');
-    echo html_writer::tag('p', 'Download trained models for backup or analysis.');
-    echo html_writer::link(
-        '#',
-        'Export Models',
-        ['class' => 'btn btn-secondary', 'onclick' => 'exportModels(); return false;']
-    );
-    echo html_writer::end_div();
-    
-    echo html_writer::end_div(); // row
-    
+
+    echo html_writer::tag('p',
+        'Set your OpenAI API key to enable GPT-powered recommendations. ' .
+        'When set, scan findings will receive AI-generated remediation advice instead of static templates. ' .
+        'If quota is exceeded or key is invalid, the system automatically falls back to static templates.');
+
+    // Status row
+    echo '<div class="alert alert-info" id="gpt-current-status">Loading LLM status...</div>';
+
+    // API key input form
+    echo '<div class="form-group">';
+    echo '<label for="gpt-api-key-input"><strong>LLM API Key</strong> <small class="text-muted">(OpenAI: <code>sk-...</code> &nbsp;|&nbsp; Groq: <code>gsk_...</code>)</small></label>';
+    echo '<div class="input-group">';
+    echo '<input type="password" class="form-control" id="gpt-api-key-input"
+           placeholder="sk-proj-... or gsk_..." autocomplete="off"
+           style="font-family: monospace; font-size: 13px;">';
+    echo '<div class="input-group-append">';
+    echo '<button class="btn btn-outline-secondary" type="button" onclick="toggleGptKeyVisibility()">👁</button>';
+    echo '</div>';
+    echo '<small class="form-text text-muted">Free: <a href="https://console.groq.com/keys" target="_blank">Groq key (gsk_...)</a> &nbsp;|&nbsp; <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI key (sk-...)</a></small>';
+    echo '</div>';
+
+    echo '<button class="btn btn-success" id="gpt-save-btn" onclick="saveGptApiKey()">&#x1F4BE; Save &amp; Activate</button>';
+    echo ' <button class="btn btn-outline-secondary ml-2" onclick="checkGptStatus()">&#x1F504; Refresh Status</button>';
+
+    echo '<div id="gpt-save-result" class="mt-3" style="display:none;"></div>';
+
     echo html_writer::end_div(); // card-body
     echo html_writer::end_div(); // card
-    
+
     echo html_writer::end_div(); // ml-dashboard-container
 }
+
 
 // Add custom CSS
 echo html_writer::start_tag('style');
@@ -468,9 +437,101 @@ async function startRetraining() {
 }
 
 function exportModels() {
-    // TODO: Implement model export feature
     alert('Model export feature will be implemented in the next update.');
 }
+
+// ── GPT API Key Management ─────────────────────────────────────────────────
+
+const proxyApiUrl = '<?php echo (new moodle_url("/local/security_dashboard/proxy_api.php"))->out(false); ?>';
+const sesskey     = '<?php echo sesskey(); ?>';
+
+function toggleGptKeyVisibility() {
+    const inp = document.getElementById('gpt-api-key-input');
+    inp.type = (inp.type === 'password') ? 'text' : 'password';
+}
+
+async function checkGptStatus() {
+    const statusDiv = document.getElementById('gpt-current-status');
+    const badgeSpan = document.getElementById('gpt-status-badge');
+    statusDiv.textContent = 'Checking LLM status...';
+    try {
+        const resp = await fetch(`${proxyApiUrl}?action=gpt-status&sesskey=${sesskey}`);
+        const data = await resp.json();
+        const providerLabel = data.provider_label || 'None';
+        const keyPreview    = data.gpt_key_preview || '(set)';
+
+        if (data.gpt_active) {
+            const pColor = data.provider === 'groq' ? 'badge-info' : 'badge-success';
+            badgeSpan.className = `badge ${pColor}`;
+            badgeSpan.textContent = `🤖 ${providerLabel} Active`;
+            statusDiv.className = 'alert alert-success';
+            statusDiv.innerHTML = `<strong>✅ LLM Mode Active — ${providerLabel}</strong><br>Key: <code>${keyPreview}</code><br>Scan findings will use AI-powered recommendations.`;
+        } else if (data.gpt_key_set) {
+            badgeSpan.className = 'badge badge-warning';
+            badgeSpan.textContent = `⚠️ ${providerLabel} (Off)`;
+            statusDiv.className = 'alert alert-warning';
+            statusDiv.innerHTML = `<strong>⚠️ Key set (${providerLabel}) but LLM inactive.</strong><br>Key: <code>${keyPreview}</code><br>Quota/auth issue — using static templates.`;
+        } else {
+            badgeSpan.className = 'badge badge-secondary';
+            badgeSpan.textContent = '📋 Static Templates';
+            statusDiv.className = 'alert alert-info';
+            statusDiv.innerHTML = `<strong>📋 Static Template Mode</strong><br>No LLM key set. Supports OpenAI (<code>sk-</code>) or Groq (<code>gsk_</code>).<br><small class="text-muted">Free Groq: <a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a></small>`;
+        }
+    } catch(e) {
+        statusDiv.className = 'alert alert-danger';
+        statusDiv.textContent = 'Could not reach proxy: ' + e.message;
+    }
+}
+
+async function saveGptApiKey() {
+    const key    = document.getElementById('gpt-api-key-input').value.trim();
+    const btn    = document.getElementById('gpt-save-btn');
+    const result = document.getElementById('gpt-save-result');
+
+    const isOpenAI = key.startsWith('sk-')  && key.length > 20;
+    const isGroq   = key.startsWith('gsk_') && key.length > 20;
+
+    if (!isOpenAI && !isGroq) {
+        result.style.display = 'block';
+        result.className = 'alert alert-danger';
+        result.textContent = 'Invalid key. OpenAI keys start with sk-, Groq keys start with gsk_';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Saving...';
+    result.style.display = 'none';
+
+    try {
+        const resp = await fetch(
+            `${proxyApiUrl}?action=save-openai-key&sesskey=${sesskey}`,
+            { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'},
+              body: `api_key=${encodeURIComponent(key)}` }
+        );
+        const data = await resp.json();
+        result.style.display = 'block';
+        if (data.success) {
+            result.className = 'alert alert-success';
+            result.innerHTML = `<strong>✅ ${data.message}</strong><br><small>Provider: <strong>${data.provider || '?'}</strong> | Proxy: ${data.proxy_ack || 'ok'}</small>`;
+            document.getElementById('gpt-api-key-input').value = '';
+            document.getElementById('gpt-api-key-input').placeholder = '(key saved — enter new key to update)';
+            checkGptStatus();
+        } else {
+            result.className = 'alert alert-danger';
+            result.textContent = 'Error: ' + (data.error || 'Unknown error');
+        }
+    } catch(e) {
+        result.style.display = 'block';
+        result.className = 'alert alert-danger';
+        result.textContent = 'Connection error: ' + e.message;
+    }
+    btn.disabled = false;
+    btn.textContent = '💾 Save & Activate';
+}
+
+// Load LLM status on page load
+document.addEventListener('DOMContentLoaded', checkGptStatus);
+
 <?php
 echo html_writer::end_tag('script');
 
