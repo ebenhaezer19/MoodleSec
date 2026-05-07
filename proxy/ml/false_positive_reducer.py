@@ -15,6 +15,7 @@ from collections import Counter
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
+from .path_utils import normalize_model_path
 
 
 class FalsePositiveReducer:
@@ -46,7 +47,7 @@ class FalsePositiveReducer:
         Args:
             model_path: Path to save/load the trained model
         """
-        self.model_path = model_path
+        self.model_path = normalize_model_path(model_path, "fp_reducer.pkl")
         self.model = None
         self.scaler = StandardScaler()
         self.is_trained = False
