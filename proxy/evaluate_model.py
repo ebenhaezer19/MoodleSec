@@ -34,15 +34,20 @@ if isinstance(bundle, dict):
     model   = bundle['model']
     version = bundle.get('version', '?')
     ts      = bundle.get('timestamp', '?')
-    n_feat  = bundle.get('n_features', 14)
     print(f"\n[OK] Bundle loaded: v{version} @ {ts}")
-    print(f"     Features: {n_feat}")
 else:
-    # Direct model object (Windows sklearn version diff)
     model   = bundle
     version = 'unknown'
-    n_feat  = model.n_features_in_ if hasattr(model, 'n_features_in_') else 14
-    print(f"\n[OK] Direct model: {type(model).__name__}, features={n_feat}")
+    print(f"\n[OK] Direct model: {type(model).__name__}")
+
+# Get actual n_features from model (Clean-14 = 14, not bundle's 16)
+if hasattr(model, 'n_features_in_'):
+    n_feat = model.n_features_in_
+elif hasattr(model, 'estimator') and hasattr(model.estimator, 'n_features_in_'):
+    n_feat = model.estimator.n_features_in_
+else:
+    n_feat = 14  # default Clean-14
+print(f"     Model n_features_in: {n_feat}")
 
 # ── 2. Load FalsePositiveReducer untuk extract_features ─────────
 from ml.false_positive_reducer import FalsePositiveReducer
@@ -132,7 +137,7 @@ def build_from_templates(n_tp=38, n_fp=38, synthetic_tp=40, synthetic_fp=8):
         ctx = {'status_code': random.choice([200, 302, 500]),
                'response_time': random.uniform(50, 400),
                'occurrence_count': 1, 'days_since_first_seen': 0}
-        feat = fp_instance.extract_features(f, ctx)
+        feat = np.array(fp_instance.extract_features(f, ctx)).flatten()
         all_X.append(feat); all_y.append(0)  # 0 = TP
 
     for _ in range(n_fp):
@@ -141,7 +146,7 @@ def build_from_templates(n_tp=38, n_fp=38, synthetic_tp=40, synthetic_fp=8):
         ctx = {'status_code': random.choice([200, 301]),
                'response_time': random.uniform(80, 300),
                'occurrence_count': 1, 'days_since_first_seen': 0}
-        feat = fp_instance.extract_features(f, ctx)
+        feat = np.array(fp_instance.extract_features(f, ctx)).flatten()
         all_X.append(feat); all_y.append(1)  # 1 = FP
 
     # Synthetic augmentation
@@ -151,7 +156,7 @@ def build_from_templates(n_tp=38, n_fp=38, synthetic_tp=40, synthetic_fp=8):
         ctx = {'status_code': random.choice([200, 500, 403]),
                'response_time': random.uniform(30, 600),
                'occurrence_count': 1, 'days_since_first_seen': 0}
-        feat = fp_instance.extract_features(f, ctx)
+        feat = np.array(fp_instance.extract_features(f, ctx)).flatten()
         all_X.append(feat); all_y.append(0)
 
     for _ in range(synthetic_fp):
@@ -160,7 +165,7 @@ def build_from_templates(n_tp=38, n_fp=38, synthetic_tp=40, synthetic_fp=8):
         ctx = {'status_code': 200,
                'response_time': random.uniform(100, 250),
                'occurrence_count': 1, 'days_since_first_seen': 0}
-        feat = fp_instance.extract_features(f, ctx)
+        feat = np.array(fp_instance.extract_features(f, ctx)).flatten()
         all_X.append(feat); all_y.append(1)
 
     return np.array(all_X, dtype=float), np.array(all_y)
@@ -187,7 +192,7 @@ if os.path.exists(csv_path):
                'occurrence_count': 1, 'days_since_first_seen': 0}
         tmpl = random.choice(TP_TEMPLATES)
         f = dict(tmpl); f['cvss_score'] = 0.0; f['risk_score'] = 0.0
-        all_X.append(fp_instance.extract_features(f, ctx))
+        all_X.append(np.array(fp_instance.extract_features(f, ctx)).flatten())
         all_y.append(0)
     for r in random.sample(normals, min(len(normals), 38)):
         ctx = {'status_code': int(float(r['response_status'])),
@@ -195,7 +200,7 @@ if os.path.exists(csv_path):
                'occurrence_count': 1, 'days_since_first_seen': 0}
         tmpl = random.choice(FP_TEMPLATES)
         f = dict(tmpl); f['cvss_score'] = 0.0; f['risk_score'] = 0.0
-        all_X.append(fp_instance.extract_features(f, ctx))
+        all_X.append(np.array(fp_instance.extract_features(f, ctx)).flatten())
         all_y.append(1)
     for _ in range(40):
         r = random.choice(attacks)
@@ -204,7 +209,7 @@ if os.path.exists(csv_path):
                'occurrence_count': 1, 'days_since_first_seen': 0}
         tmpl = random.choice(TP_TEMPLATES)
         f = dict(tmpl); f['cvss_score'] = 0.0; f['risk_score'] = 0.0
-        all_X.append(fp_instance.extract_features(f, ctx)); all_y.append(0)
+        all_X.append(np.array(fp_instance.extract_features(f, ctx)).flatten()); all_y.append(0)
     for _ in range(8):
         r = random.choice(normals)
         ctx = {'status_code': int(float(r['response_status'])),
@@ -212,7 +217,7 @@ if os.path.exists(csv_path):
                'occurrence_count': 1, 'days_since_first_seen': 0}
         tmpl = random.choice(FP_TEMPLATES)
         f = dict(tmpl); f['cvss_score'] = 0.0; f['risk_score'] = 0.0
-        all_X.append(fp_instance.extract_features(f, ctx)); all_y.append(1)
+        all_X.append(np.array(fp_instance.extract_features(f, ctx)).flatten()); all_y.append(1)
     X = np.array(all_X, dtype=float)
     y = np.array(all_y)
     data_source = "phase3_balanced_dataset_FINAL.csv"
