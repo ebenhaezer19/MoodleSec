@@ -253,11 +253,17 @@ class PayloadInjector:
                               f"Timeout on sleep payload in param '{param_name}'")
                         
                         if self.payload_repo and payload_id != "unknown":
-                            self.payload_repo.update_payload_stats(
-                                payload_id=int(payload_id) if isinstance(payload_id, (str, int)) else 0,
-                                success=True,
-                                severity='Critical'
-                            )
+                            try:
+                                self.payload_repo.record_usage(
+                                    payload_id=int(payload_id),
+                                    scan_id=scan_id,
+                                    target_url=url,
+                                    parameter=param_name,
+                                    success=True,
+                                    response="Time-based blind SQLi: timeout triggered"
+                                )
+                            except Exception as _re:
+                                logger.debug(f"[PayloadInjector] record_usage failed: {_re}")
                         continue
                     
                     if self.debug_logger:
@@ -282,18 +288,24 @@ class PayloadInjector:
                             payload_id=payload_id,
                             elapsed_ms=elapsed_ms
                         )
+                        # Record usage regardless of finding (updates used_count + success_rate)
+                        if self.payload_repo and payload_id != "unknown":
+                            try:
+                                resp_snippet = response.text[:300] if hasattr(response, 'text') else ""
+                                self.payload_repo.record_usage(
+                                    payload_id=int(payload_id),
+                                    scan_id=scan_id,
+                                    target_url=url,
+                                    parameter=param_name,
+                                    success=bool(finding),
+                                    response=resp_snippet
+                                )
+                            except Exception as _re:
+                                logger.debug(f"[PayloadInjector] record_usage failed: {_re}")
+
                         if finding:
                             findings.append(finding)
                             print(f"[PayloadInjector] ✓ Found vulnerability: {finding['description']}")
-                            
-                            # Update payload stats with successful injection
-                            if self.payload_repo and payload_id != "unknown":
-                                severity = finding.get('severity', 'High')
-                                self.payload_repo.update_payload_stats(
-                                    payload_id=int(payload_id) if isinstance(payload_id, (str, int)) else 0,
-                                    success=True,
-                                    severity=severity
-                                )
                 
                 except Exception as e:
                     logger.error(f"Error injecting payload to {param_name}: {e}")

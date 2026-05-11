@@ -52,3 +52,6 @@ proxy/data/backup/*.json
 !proxy/data/processed/.gitkeep
 !proxy/data/merged/.gitkeep
 !proxy/data/backup/.gitkeep
+
+MOODLESEC_RANGKUMAN.md
+fix_button.py
