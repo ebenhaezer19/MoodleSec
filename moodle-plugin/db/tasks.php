@@ -9,14 +9,5 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$tasks = [
-    [
-        'classname' => 'local_security_dashboard\task\scan_task',
-        'blocking' => 0,
-        'minute' => '0',
-        'hour' => '2',      // Run at 2 AM
-        'day' => '*',
-        'dayofweek' => '*',
-        'month' => '*'
-    ],
-];
+// Scheduled tasks removed - automated scanning is handled by the anomaly detector.
+$tasks = [];

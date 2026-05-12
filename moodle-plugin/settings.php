@@ -32,13 +32,6 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
     
-    // Add Scheduler page
-    $ADMIN->add('local_security_dashboard', new admin_externalpage(
-        'local_security_dashboard_scheduler',
-        'Scheduler',
-        new moodle_url('/local/security_dashboard/scheduler.php'),
-        'moodle/site:config'
-    ));
     
     // Add Phishing Scanner page
     $ADMIN->add('local_security_dashboard', new admin_externalpage(
@@ -102,14 +95,6 @@ if ($hassiteconfig) {
         PARAM_URL
     ));
     
-    // Scheduled scan paths
-    $settingspage->add(new admin_setting_configtextarea(
-        'local_security_dashboard/scheduled_scan_paths',
-        get_string('scheduled_scan_paths', 'local_security_dashboard'),
-        get_string('scheduled_scan_paths_desc', 'local_security_dashboard'),
-        '/login/index.php',
-        PARAM_TEXT
-    ));
     
     // Database path for vulnerability map - DISABLED (requires external SQLite setup)
     // $settingspage->add(new admin_setting_configtext(

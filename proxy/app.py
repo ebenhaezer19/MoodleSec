@@ -33,7 +33,6 @@ from scanners.phishing_detector import PhishingDetector
 from crawler.web_crawler import WebCrawler
 from risk.risk_scorer import RiskScorer
 from database.scan_history import ScanHistoryDB
-from database.scheduler_db import SchedulerDB
 from database.payload_repository import PayloadRepositoryManager
 from reporting.pdf_generator import PDFReportGenerator
 from integrations.integration_manager import IntegrationManager
@@ -88,8 +87,6 @@ risk_scorer = RiskScorer()
 # Initialize scan history database
 scan_history_db = ScanHistoryDB()
 
-# Initialize scheduler database
-scheduler_db = SchedulerDB()
 
 # Initialize PDF generator
 pdf_generator = PDFReportGenerator()
@@ -1091,120 +1088,6 @@ async def create_ticket(
             return {'success': False, 'error': 'Failed to create ticket'}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ticket creation failed: {str(e)}")
-
-
-class ScheduleRequest(BaseModel):
-    """Request model for creating a schedule."""
-    target_url: str
-    cron_expression: str
-    scan_type: str = "full"
-    priority: str = "normal"
-
-
-@app.post("/schedule/create")
-async def create_schedule(schedule_req: ScheduleRequest) -> Dict[str, Any]:
-    """
-    Create a scheduled scan.
-    
-    Args:
-        schedule_req: Schedule request data
-        
-    Returns:
-        Schedule details
-    """
-    try:
-        import uuid
-        from datetime import datetime
-        
-        # Create schedule ID
-        schedule_id = str(uuid.uuid4())
-        
-        # Calculate next run time
-        next_run = scheduler_db.calculate_next_run(schedule_req.cron_expression)
-        
-        # Create schedule data
-        schedule_info = {
-            'schedule_id': schedule_id,
-            'target_url': schedule_req.target_url,
-            'cron_expression': schedule_req.cron_expression,
-            'scan_type': schedule_req.scan_type,
-            'priority': schedule_req.priority,
-            'next_run': next_run
-        }
-        
-        # Save to database
-        result = scheduler_db.create_schedule(schedule_info)
-        
-        if 'error' in result:
-            raise HTTPException(status_code=400, detail=result['error'])
-        
-        return result
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create schedule: {str(e)}")
-
-
-@app.get("/schedule/list")
-async def list_schedules() -> List[Dict[str, Any]]:
-    """
-    Get all scheduled scans.
-    
-    Returns:
-        List of schedules
-    """
-    try:
-        schedules = scheduler_db.get_all_schedules()
-        return schedules
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list schedules: {str(e)}")
-
-
-@app.delete("/schedule/{schedule_id}")
-async def delete_schedule(schedule_id: str) -> Dict[str, Any]:
-    """
-    Delete a scheduled scan.
-    
-    Args:
-        schedule_id: Schedule ID to delete
-        
-    Returns:
-        Success status
-    """
-    try:
-        success = scheduler_db.delete_schedule(schedule_id)
-        
-        if success:
-            return {'success': True, 'message': 'Schedule deleted'}
-        else:
-            raise HTTPException(status_code=404, detail='Schedule not found')
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete schedule: {str(e)}")
-
-
-@app.get("/schedule/{schedule_id}/history")
-async def get_schedule_history(schedule_id: str, limit: int = 50) -> List[Dict[str, Any]]:
-    """
-    Get execution history for a schedule.
-    
-    Args:
-        schedule_id: Schedule ID
-        limit: Maximum number of records
-        
-    Returns:
-        Execution history
-    """
-    try:
-        history = scheduler_db.get_execution_history(schedule_id, limit)
-        return history
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get history: {str(e)}")
 
 
 @app.get("/scan-history")

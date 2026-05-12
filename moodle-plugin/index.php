@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * Security Dashboard main page
  *
@@ -70,11 +70,6 @@ if (isset($logs_data['error'])) {
          'title' => 'Reload scanner with latest payloads (without proxy restart)']
     );
     
-    echo html_writer::link(
-        new moodle_url('/local/security_dashboard/scheduler.php'),
-        '<i class="fa fa-clock-o"></i> Scheduler',
-        ['class' => 'btn btn-info mr-2']
-    );
     echo html_writer::link(
         new moodle_url('/local/security_dashboard/reports.php'),
         '<i class="fa fa-file-pdf-o"></i> Reports',
