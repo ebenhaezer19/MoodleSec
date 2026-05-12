@@ -41,14 +41,7 @@ if ($hassiteconfig) {
         'moodle/site:config'
     ));
     
-    // Add Login Monitor page
-    $ADMIN->add('local_security_dashboard', new admin_externalpage(
-        'local_security_dashboard_login',
-        'Login Activity Monitor',
-        new moodle_url('/local/security_dashboard/login_monitor.php'),
-        'moodle/site:config'
-    ));
-    
+
     // Add Trends page
     $ADMIN->add('local_security_dashboard', new admin_externalpage(
         'local_security_dashboard_trends',
