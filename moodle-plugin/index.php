@@ -181,6 +181,83 @@ if (isset($logs_data['error'])) {
     }
 }
 
+// ── VULNERABILITY TRENDS CHART ──────────────────────────────────────────────
+if (!isset($logs_data['error']) && !empty($logs_data['logs'])) {
+    // Build chart data from logs
+    $chart_labels   = [];
+    $chart_critical = [];
+    $chart_high     = [];
+    $chart_medium   = [];
+    $chart_low      = [];
+
+    // Take up to 10 most recent scans (logs are already DESC, reverse for chronological)
+    $chart_logs = array_slice($logs_data['logs'], 0, 10);
+    $chart_logs = array_reverse($chart_logs);
+
+    foreach ($chart_logs as $i => $log) {
+        $ts = $log['timestamp'] ?? '';
+        // Short label: date + time only
+        $label = strlen($ts) >= 10 ? substr($ts, 0, 10) . ' #' . ($i + 1) : ('Scan ' . ($i + 1));
+        $chart_labels[]   = $label;
+        $chart_critical[] = intval($log['critical'] ?? 0);
+        $chart_high[]     = intval($log['high']     ?? 0);
+        $chart_medium[]   = intval($log['medium']   ?? 0);
+        $chart_low[]      = intval($log['low']      ?? 0);
+    }
+
+    $js_labels   = json_encode($chart_labels);
+    $js_critical = json_encode($chart_critical);
+    $js_high     = json_encode($chart_high);
+    $js_medium   = json_encode($chart_medium);
+    $js_low      = json_encode($chart_low);
+
+    echo html_writer::start_div('card mt-4');
+    echo html_writer::start_div('card-header');
+    echo html_writer::tag('h5', '📊 Vulnerability Trends (Recent Scans)', ['class' => 'mb-0']);
+    echo html_writer::end_div();
+    echo html_writer::start_div('card-body');
+    echo '<canvas id="trendChart" height="90"></canvas>';
+    echo html_writer::end_div();
+    echo html_writer::end_div();
+
+    echo html_writer::script(<<<JS
+(function() {
+    // Lazy-load Chart.js from CDN then render
+    var script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+    script.onload = function() {
+        var ctx = document.getElementById('trendChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: $js_labels,
+                datasets: [
+                    { label: 'Critical', data: $js_critical, backgroundColor: '#c0392b' },
+                    { label: 'High',     data: $js_high,     backgroundColor: '#e67e22' },
+                    { label: 'Medium',   data: $js_medium,   backgroundColor: '#d4ac0d' },
+                    { label: 'Low',      data: $js_low,      backgroundColor: '#27ae60' }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: { mode: 'index', intersect: false }
+                },
+                scales: {
+                    x: { stacked: true, grid: { display: false } },
+                    y: { stacked: true, beginAtZero: true, ticks: { precision: 0 },
+                         title: { display: true, text: 'Findings Count' } }
+                }
+            }
+        });
+    };
+    document.head.appendChild(script);
+})();
+JS
+    );
+}
+
 // ZAP INTEGRATION SECTION (Phase 2)
 echo html_writer::start_div('', ['style' => 'margin-top: 30px;']);
 echo html_writer::tag('h3', 'ZAP Vulnerability Scanning');
