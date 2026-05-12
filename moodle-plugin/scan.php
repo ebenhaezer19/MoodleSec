@@ -28,41 +28,52 @@ $scan_triggered = false;
 $scan_result = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
-    // Enhanced input validation
-    $path = required_param('path', PARAM_PATH);
-    $method = required_param('method', PARAM_ALPHA);
-    
+    // Use PARAM_RAW then sanitize manually so query strings (?id=1) are preserved.
+    $raw_path  = required_param('path', PARAM_RAW);
+    $method    = required_param('method', PARAM_ALPHA);
+
+    // Strip any HTML tags and trim whitespace
+    $raw_path = trim(strip_tags($raw_path));
+
     // Validate method
     $allowed_methods = ['GET', 'POST'];
     if (!in_array($method, $allowed_methods)) {
         $method = 'GET';
     }
-    
+
+    // Separate path portion from query string for targeted validation
+    $path_parts   = explode('?', $raw_path, 2);
+    $path_only    = $path_parts[0];                         // e.g. /course/view.php
+    $query_string = isset($path_parts[1]) ? $path_parts[1] : '';  // e.g. id=1
+
+    // Reassemble full path for use in scan
+    $path = $query_string !== '' ? $path_only . '?' . $query_string : $path_only;
+
     // Strict path validation - prevent path traversal and system file access
     $validation_errors = [];
-    
+
     // Check 1: Must start with /
-    if (!preg_match('#^/#', $path)) {
+    if (!preg_match('#^/#', $path_only)) {
         $validation_errors[] = 'Path must start with /';
     }
-    
+
     // Check 2: No path traversal patterns
     if (preg_match('#\.\.|//|\\\\#', $path)) {
         $validation_errors[] = 'Path contains invalid patterns (.. or // or \\)';
     }
-    
+
     // Check 3: Block system/sensitive paths
     $blocked_paths = [
         '/etc/', '/var/', '/usr/', '/bin/', '/sbin/', '/root/', '/home/',
         '/proc/', '/sys/', '/dev/', '/tmp/', '/boot/', '/opt/', '/mnt/'
     ];
     foreach ($blocked_paths as $blocked) {
-        if (stripos($path, $blocked) === 0) {
+        if (stripos($path_only, $blocked) === 0) {
             $validation_errors[] = 'Access to system directories is not allowed';
             break;
         }
     }
-    
+
     // Check 4: Whitelist allowed Moodle paths
     $allowed_prefixes = [
         '/login/', '/course/', '/user/', '/mod/', '/admin/', '/local/',
@@ -70,29 +81,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
         '/calendar/', '/badges/', '/cohort/', '/tag/', '/question/',
         '/enrol/', '/auth/', '/lib/', '/webservice/', '/repository/'
     ];
-    
+
     $is_allowed = false;
     foreach ($allowed_prefixes as $prefix) {
-        if (stripos($path, $prefix) === 0) {
+        if (stripos($path_only, $prefix) === 0) {
             $is_allowed = true;
             break;
         }
     }
-    
+
     if (!$is_allowed) {
         $validation_errors[] = 'Path must start with an allowed Moodle directory (e.g., /login/, /course/, /user/)';
     }
-    
-    // Check 5: Only allowed characters
-    if (!preg_match('#^/[a-zA-Z0-9/_\-\.]+$#', $path)) {
-        $validation_errors[] = 'Path contains invalid characters';
+
+    // Check 5: Path portion — only safe filesystem characters
+    if (!preg_match('#^/[a-zA-Z0-9/_\-\.]+$#', $path_only)) {
+        $validation_errors[] = 'Path contains invalid characters (only letters, numbers, /, _, -, . allowed before the ?)';
     }
-    
-    // Check 6: Path length limit
-    if (strlen($path) > 255) {
-        $validation_errors[] = 'Path is too long (max 255 characters)';
+
+    // Check 5b: Query string — only safe URL characters (no script injection)
+    if ($query_string !== '' && !preg_match('#^[a-zA-Z0-9=&%+_\-\.\[\]]*$#', $query_string)) {
+        $validation_errors[] = 'Query string contains invalid characters';
     }
-    
+
+    // Check 6: Total length limit
+    if (strlen($path) > 512) {
+        $validation_errors[] = 'Path is too long (max 512 characters)';
+    }
+
     if (!empty($validation_errors)) {
         foreach ($validation_errors as $error) {
             echo $OUTPUT->notification($error, 'error');
