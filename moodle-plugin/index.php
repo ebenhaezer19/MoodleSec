@@ -181,81 +181,96 @@ if (isset($logs_data['error'])) {
     }
 }
 
-// ── VULNERABILITY TRENDS CHART ──────────────────────────────────────────────
+// ── VULNERABILITY TRENDS CHART (pure PHP SVG — no JS/CDN required) ──────────
 if (!isset($logs_data['error']) && !empty($logs_data['logs'])) {
-    // Build chart data from logs
-    $chart_labels   = [];
-    $chart_critical = [];
-    $chart_high     = [];
-    $chart_medium   = [];
-    $chart_low      = [];
+    $chart_logs = array_reverse(array_slice($logs_data['logs'], 0, 10));
 
-    // Take up to 10 most recent scans (logs are already DESC, reverse for chronological)
-    $chart_logs = array_slice($logs_data['logs'], 0, 10);
-    $chart_logs = array_reverse($chart_logs);
-
+    $bars = [];
     foreach ($chart_logs as $i => $log) {
         $ts = $log['timestamp'] ?? '';
-        // Short label: date + time only
-        $label = strlen($ts) >= 10 ? substr($ts, 0, 10) . ' #' . ($i + 1) : ('Scan ' . ($i + 1));
-        $chart_labels[]   = $label;
-        $chart_critical[] = intval($log['critical'] ?? 0);
-        $chart_high[]     = intval($log['high']     ?? 0);
-        $chart_medium[]   = intval($log['medium']   ?? 0);
-        $chart_low[]      = intval($log['low']      ?? 0);
+        $label = strlen($ts) >= 10 ? substr($ts, 5, 5) . ' #' . ($i + 1) : 'S' . ($i + 1);
+        $bars[] = [
+            'label'    => $label,
+            'critical' => intval($log['critical'] ?? 0),
+            'high'     => intval($log['high']     ?? 0),
+            'medium'   => intval($log['medium']   ?? 0),
+            'low'      => intval($log['low']      ?? 0),
+        ];
     }
 
-    $js_labels   = json_encode($chart_labels);
-    $js_critical = json_encode($chart_critical);
-    $js_high     = json_encode($chart_high);
-    $js_medium   = json_encode($chart_medium);
-    $js_low      = json_encode($chart_low);
+    $max_total = 1;
+    foreach ($bars as $b) {
+        $t = $b['critical'] + $b['high'] + $b['medium'] + $b['low'];
+        if ($t > $max_total) $max_total = $t;
+    }
+
+    $n    = count($bars);
+    $svgW = 600; $svgH = 240;
+    $padL = 45;  $padR = 15; $padT = 25; $padB = 48;
+    $plotW = $svgW - $padL - $padR;
+    $plotH = $svgH - $padT - $padB;
+    $barW  = max(18, (int)($plotW / ($n * 1.6)));
+    $gap   = $n > 1 ? (int)(($plotW - $barW * $n) / ($n + 1)) : (int)(($plotW - $barW) / 2);
+
+    $colors = ['critical'=>'#c0392b','high'=>'#e67e22','medium'=>'#d4ac0d','low'=>'#27ae60'];
+
+    $svg  = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {$svgW} {$svgH}' style='width:100%;font-family:Segoe UI,sans-serif;'>";
+    $svg .= "<rect x='{$padL}' y='{$padT}' width='{$plotW}' height='{$plotH}' fill='#f9fafb' stroke='#d0dae6'/>";
+
+    // Y gridlines
+    $y_steps = min($max_total, 5);
+    for ($g = 0; $g <= $y_steps; $g++) {
+        $val = (int)round($max_total * $g / $y_steps);
+        $gy  = round($padT + $plotH - ($val / $max_total * $plotH), 1);
+        $svg .= "<line x1='{$padL}' y1='{$gy}' x2='" . ($padL+$plotW) . "' y2='{$gy}' stroke='#e2e8f0' stroke-width='1'/>";
+        $svg .= "<text x='" . ($padL-4) . "' y='" . ($gy+4) . "' text-anchor='end' font-size='10' fill='#666'>{$val}</text>";
+    }
+
+    // Bars (stacked: low→medium→high→critical)
+    foreach ($bars as $i => $b) {
+        $bx       = $padL + $gap + $i * ($barW + $gap);
+        $y_cursor = $padT + $plotH;
+        foreach (['low','medium','high','critical'] as $sev) {
+            $val = $b[$sev];
+            if ($val <= 0) continue;
+            $bh = max(1, round($val / $max_total * $plotH, 1));
+            $y_cursor -= $bh;
+            $label_sev = ucfirst($sev);
+            $svg .= "<rect x='" . round($bx,1) . "' y='" . round($y_cursor,1) . "' width='{$barW}' height='{$bh}' fill='" . $colors[$sev] . "' rx='1'><title>{$label_sev}: {$val}</title></rect>";
+        }
+        $lx    = round($bx + $barW / 2, 1);
+        $total = $b['critical'] + $b['high'] + $b['medium'] + $b['low'];
+        $svg .= "<text x='{$lx}' y='" . ($padT+$plotH+13) . "' text-anchor='middle' font-size='9' fill='#555'>" . htmlspecialchars($b['label']) . "</text>";
+        if ($total > 0) {
+            $svg .= "<text x='{$lx}' y='" . ($padT+$plotH+24) . "' text-anchor='middle' font-size='9' fill='#999'>({$total})</text>";
+        }
+    }
+
+    // Axes
+    $svg .= "<line x1='{$padL}' y1='{$padT}' x2='{$padL}' y2='" . ($padT+$plotH) . "' stroke='#888' stroke-width='1.5'/>";
+    $svg .= "<line x1='{$padL}' y1='" . ($padT+$plotH) . "' x2='" . ($padL+$plotW) . "' y2='" . ($padT+$plotH) . "' stroke='#888' stroke-width='1.5'/>";
+
+    // Y-axis label
+    $my = round($padT + $plotH / 2, 1);
+    $svg .= "<text transform='rotate(-90)' x='-{$my}' y='13' text-anchor='middle' font-size='10' fill='#666'>Findings</text>";
+
+    // Legend (top-left)
+    $loffset = 0; $ly = $padT + 6;
+    foreach (['Critical'=>'#c0392b','High'=>'#e67e22','Medium'=>'#d4ac0d','Low'=>'#27ae60'] as $lbl => $col) {
+        $svg .= "<rect x='" . ($padL+8+$loffset) . "' y='{$ly}' width='10' height='10' fill='{$col}' rx='2'/>";
+        $svg .= "<text x='" . ($padL+22+$loffset) . "' y='" . ($ly+9) . "' font-size='10' fill='#333'>{$lbl}</text>";
+        $loffset += 66;
+    }
+    $svg .= "</svg>";
 
     echo html_writer::start_div('card mt-4');
     echo html_writer::start_div('card-header');
     echo html_writer::tag('h5', '📊 Vulnerability Trends (Recent Scans)', ['class' => 'mb-0']);
     echo html_writer::end_div();
     echo html_writer::start_div('card-body');
-    echo '<canvas id="trendChart" height="90"></canvas>';
+    echo $svg;
     echo html_writer::end_div();
     echo html_writer::end_div();
-
-    echo html_writer::script(<<<JS
-(function() {
-    // Lazy-load Chart.js from CDN then render
-    var script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
-    script.onload = function() {
-        var ctx = document.getElementById('trendChart').getContext('2d');
-        new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: $js_labels,
-                datasets: [
-                    { label: 'Critical', data: $js_critical, backgroundColor: '#c0392b' },
-                    { label: 'High',     data: $js_high,     backgroundColor: '#e67e22' },
-                    { label: 'Medium',   data: $js_medium,   backgroundColor: '#d4ac0d' },
-                    { label: 'Low',      data: $js_low,      backgroundColor: '#27ae60' }
-                ]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { position: 'top' },
-                    tooltip: { mode: 'index', intersect: false }
-                },
-                scales: {
-                    x: { stacked: true, grid: { display: false } },
-                    y: { stacked: true, beginAtZero: true, ticks: { precision: 0 },
-                         title: { display: true, text: 'Findings Count' } }
-                }
-            }
-        });
-    };
-    document.head.appendChild(script);
-})();
-JS
-    );
 }
 
 // ZAP INTEGRATION SECTION (Phase 2)
