@@ -168,3 +168,8 @@ $string['scan_test_user_desc'] = 'Username to use for authenticated scans.';
 $string['ml_filtering'] = 'Machine Learning Filtering';
 $string['ml_filtering_desc'] = 'Configure machine learning settings to filter false positives.';
 $string['notification_settings_desc'] = 'Configure notifications for security findings.';
+
+// SOC Dashboard
+$string['soc_dashboard'] = 'SOC Dashboard';
+$string['soc_dashboard_desc'] = 'Live attack monitoring, anomaly detection, ML pipeline visualization, and admin response workflow.';
+

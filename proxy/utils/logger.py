@@ -71,7 +71,7 @@ def read_logs(log_dir: str, max_entries: int = 100) -> List[Dict[str, Any]]:
     # Read logs from files until we have enough entries
     for log_file in log_files:
         try:
-            with open(log_file, "r", encoding="utf-8") as f:
+            with open(log_file, "r", encoding="utf-8-sig") as f:
                 lines = f.readlines()
                 # Read from end of file backwards
                 for line in reversed(lines):

@@ -2,6 +2,18 @@
 Configuration constants for the Moodle proxy service.
 """
 
+# ── Demo Mode ──────────────────────────────────────────────────────────
+# When True, the proxy detects attacks but NEVER blocks (monitoring-only).
+# All ML detection, scoring, and logging remain fully active.
+# Set to False for production enforcement (full blocking).
+DEMO_MODE: bool = True
+
+# ── SOC Interactive Mode ───────────────────────────────────────────────
+# When True (requires DEMO_MODE=True), detected attacks are queued for
+# admin review via /soc/alerts endpoints. Admins can BLOCK, ALLOW, or
+# IGNORE specific threats. Future matching requests follow admin decisions.
+SOC_MODE: bool = True
+
 # Target Moodle instance base URL
 MOODLE_URL: str = "http://localhost/"
 # MOODLE_URL: str = "http://localhost:9000"

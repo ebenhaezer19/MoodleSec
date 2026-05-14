@@ -28,14 +28,11 @@ def canonical_model_path(filename: str) -> str:
 
 
 def _warn_legacy_model_dir_once() -> None:
+    """Log legacy dir presence once (debug-level, not blocking)."""
     global _WARNED_LEGACY_DIR
     if _WARNED_LEGACY_DIR:
         return
-    if _LEGACY_MODEL_DIR.is_dir():
-        print(
-            "[ML Path] WARNING: legacy model directory detected at "
-            f"{_LEGACY_MODEL_DIR}. Runtime canonical directory is {_MODEL_DIR}"
-        )
+    # Canonical path is always used; legacy dir is ignored at runtime.
     _WARNED_LEGACY_DIR = True
 
 

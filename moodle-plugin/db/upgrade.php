@@ -179,7 +179,7 @@ function xmldb_local_security_dashboard_upgrade($oldversion) {
     if ($oldversion < 2026031400) {
         
         // Create scans table
-        $table = new xmldb_table('local_security_dashboard_scans');
+        $table = new xmldb_table('local_secdash_scans');
         
         if (!$dbman->table_exists($table)) {
             $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
@@ -204,7 +204,7 @@ function xmldb_local_security_dashboard_upgrade($oldversion) {
         }
 
         // Create findings table
-        $table = new xmldb_table('local_security_dashboard_findings');
+        $table = new xmldb_table('local_secdash_findings');
         
         if (!$dbman->table_exists($table)) {
             $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
@@ -225,8 +225,7 @@ function xmldb_local_security_dashboard_upgrade($oldversion) {
             $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL);
             
             $table->add_key('primary', XMLDB_KEY_PRIMARY, array('id'));
-            $table->add_key('scan_id_fk', XMLDB_KEY_FOREIGN, array('scan_id'), 'local_security_dashboard_scans', array('id'));
-            $table->add_index('scan_id', XMLDB_INDEX_NOTUNIQUE, array('scan_id'));
+            $table->add_key('scan_id_fk', XMLDB_KEY_FOREIGN, array('scan_id'), 'local_secdash_scans', array('id'));
             $table->add_index('risk', XMLDB_INDEX_NOTUNIQUE, array('risk'));
             $table->add_index('type', XMLDB_INDEX_NOTUNIQUE, array('type'));
             
@@ -234,7 +233,7 @@ function xmldb_local_security_dashboard_upgrade($oldversion) {
         }
 
         // Create remediation table
-        $table = new xmldb_table('local_security_dashboard_remediation');
+        $table = new xmldb_table('local_secdash_remediation');
         
         if (!$dbman->table_exists($table)) {
             $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
@@ -250,7 +249,7 @@ function xmldb_local_security_dashboard_upgrade($oldversion) {
             $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL);
             
             $table->add_key('primary', XMLDB_KEY_PRIMARY, array('id'));
-            $table->add_key('finding_id_fk', XMLDB_KEY_FOREIGN, array('finding_id'), 'local_security_dashboard_findings', array('id'));
+            $table->add_key('finding_id_fk', XMLDB_KEY_FOREIGN, array('finding_id'), 'local_secdash_findings', array('id'));
             $table->add_index('status', XMLDB_INDEX_NOTUNIQUE, array('status'));
             $table->add_index('priority', XMLDB_INDEX_NOTUNIQUE, array('priority'));
             
@@ -258,7 +257,7 @@ function xmldb_local_security_dashboard_upgrade($oldversion) {
         }
 
         // Create audit table
-        $table = new xmldb_table('local_security_dashboard_audit');
+        $table = new xmldb_table('local_secdash_audit');
         
         if (!$dbman->table_exists($table)) {
             $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);

@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MoodleSec — AI Security Operations Center</title>
+  <meta name="description" content="AI-Powered Security Operations Center Dashboard for MoodleSec Proxy">
+
+  <!-- Google Fonts: Inter + JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+
+  <!-- Dashboard CSS -->
+  <link rel="stylesheet" href="css/variables.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/animations.css">
+</head>
+<body>
+  <div class="app-layout">
+
+    <!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <div>
+          <div class="sidebar-title">MoodleSec</div>
+          <div class="sidebar-subtitle">SOC Dashboard</div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <!-- Monitoring -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-label">Monitoring</div>
+          <div class="sidebar-item active" data-page="overview" id="nav-overview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <span>Overview</span>
+          </div>
+          <div class="sidebar-item" data-page="alerts" id="nav-alerts">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span>Alerts</span>
+            <span class="sidebar-badge" id="nav-alerts-badge" style="display:none">0</span>
+          </div>
+          <div class="sidebar-item" data-page="pipeline" id="nav-pipeline">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            <span>ML Pipeline</span>
+          </div>
+        </div>
+
+        <!-- Analytics -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-label">Analytics</div>
+          <div class="sidebar-item" data-page="statistics" id="nav-statistics">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            <span>Statistics</span>
+          </div>
+        </div>
+
+        <!-- System -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-label">System</div>
+          <div class="sidebar-item" data-page="health" id="nav-health">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            <span>System Health</span>
+          </div>
+          <div class="sidebar-item" data-page="logs" id="nav-logs">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            <span>Trace Logs</span>
+          </div>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-status">
+          <div class="sidebar-status-dot" id="sidebar-backend-dot"></div>
+          <span id="sidebar-backend-label">Connecting...</span>
+        </div>
+        <div class="sidebar-status" style="margin-top: var(--space-2)">
+          <div class="sidebar-status-dot" id="sidebar-soc-dot"></div>
+          <span id="sidebar-soc-label">SOC Mode</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ═══════════════════ MAIN AREA ═══════════════════ -->
+    <main class="main-area">
+
+      <!-- ── Top Navbar ──────────────────────────────── -->
+      <header class="navbar">
+        <div class="navbar-left">
+          <h1 class="navbar-page-title" id="page-title">Overview</h1>
+        </div>
+        <div class="navbar-right">
+          <div class="navbar-indicator" id="navbar-mode-indicator">
+            <div class="dot" id="navbar-mode-dot"></div>
+            <span id="navbar-mode-label">SOC Mode</span>
+          </div>
+          <div class="navbar-indicator" id="navbar-api-indicator">
+            <div class="dot" id="navbar-api-dot"></div>
+            <span id="navbar-api-label">API Connected</span>
+          </div>
+          <div class="navbar-clock" id="navbar-clock">--:--:--</div>
+        </div>
+      </header>
+
+      <!-- ── Content Area ────────────────────────────── -->
+      <div class="content" id="content-area">
+        <div class="content-inner">
+
+          <!-- ══════════ PAGE: Overview ══════════ -->
+          <section class="page-section active" id="page-overview">
+
+            <!-- Metric Cards -->
+            <div class="grid-4 mb-6" id="overview-cards">
+              <!-- Populated by overview-cards.js -->
+              <div class="metric-card skeleton skeleton-card"></div>
+              <div class="metric-card skeleton skeleton-card"></div>
+              <div class="metric-card skeleton skeleton-card"></div>
+              <div class="metric-card skeleton skeleton-card"></div>
+              <div class="metric-card skeleton skeleton-card"></div>
+              <div class="metric-card skeleton skeleton-card"></div>
+              <div class="metric-card skeleton skeleton-card"></div>
+              <div class="metric-card skeleton skeleton-card"></div>
+            </div>
+
+            <!-- Alert Feed + Threat Activity -->
+            <div class="grid-2-1 mb-6">
+              <!-- Recent Alerts Table -->
+              <div class="panel" id="overview-alerts-panel">
+                <div class="panel-header">
+                  <div class="panel-title">Recent Alerts</div>
+                  <button class="btn btn-ghost btn-sm" data-page="alerts">View All</button>
+                </div>
+                <div class="panel-body" id="overview-alerts-body">
+                  <div class="skeleton skeleton-row"></div>
+                  <div class="skeleton skeleton-row"></div>
+                  <div class="skeleton skeleton-row"></div>
+                  <div class="skeleton skeleton-row"></div>
+                  <div class="skeleton skeleton-row"></div>
+                </div>
+              </div>
+
+              <!-- Threat Activity Feed -->
+              <div class="panel" id="overview-threat-feed">
+                <div class="panel-header">
+                  <div class="panel-title">Threat Activity</div>
+                </div>
+                <div class="panel-body" id="threat-feed-body">
+                  <div class="skeleton skeleton-row"></div>
+                  <div class="skeleton skeleton-row"></div>
+                  <div class="skeleton skeleton-row"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Quick Charts -->
+            <div class="grid-2">
+              <div class="panel">
+                <div class="panel-header">
+                  <div class="panel-title">Decision Distribution</div>
+                </div>
+                <div class="panel-body">
+                  <canvas id="chart-decision-dist" height="200"></canvas>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-header">
+                  <div class="panel-title">Attack Types</div>
+                </div>
+                <div class="panel-body">
+                  <canvas id="chart-attack-types" height="200"></canvas>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ══════════ PAGE: Alerts ══════════ -->
+          <section class="page-section" id="page-alerts">
+            <div class="section-header">
+              <div>
+                <div class="section-title">SOC Alert Queue</div>
+                <div class="section-description">Real-time threat detection and admin review</div>
+              </div>
+              <div style="display:flex;gap:var(--space-3);align-items:center">
+                <span class="text-muted" style="font-size:var(--text-xs)" id="alerts-last-update">Last update: --</span>
+                <div class="spinner" id="alerts-spinner" style="display:none"></div>
+                <button class="btn btn-danger btn-sm" id="btn-reset-queue" onclick="resetAlertQueue()" title="Clear all alerts from the queue">Reset Queue</button>
+              </div>
+            </div>
+
+            <!-- Filter Bar -->
+            <div class="filter-bar" id="alerts-filter-bar">
+              <input type="text" class="filter-input" id="alert-search" placeholder="Search by IP, path, attack type...">
+              <select class="filter-select" id="alert-filter-status">
+                <option value="">All Status</option>
+                <option value="PENDING_ADMIN_ACTION">Pending</option>
+                <option value="ADMIN_BLOCK">Blocked</option>
+                <option value="ADMIN_ALLOW">Allowed</option>
+                <option value="ADMIN_IGNORE">Ignored</option>
+              </select>
+              <select class="filter-select" id="alert-filter-severity">
+                <option value="">All Severity</option>
+                <option value="HIGH">High</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="LOW">Low</option>
+              </select>
+            </div>
+
+            <!-- Alerts Table -->
+            <div class="panel">
+              <div class="panel-body" style="padding:0">
+                <table class="data-table" id="alerts-table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Attack Type</th>
+                      <th>Severity</th>
+                      <th>Confidence</th>
+                      <th>Source IP</th>
+                      <th>Path</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="alerts-table-body">
+                    <tr><td colspan="8"><div class="skeleton skeleton-row"></div></td></tr>
+                    <tr><td colspan="8"><div class="skeleton skeleton-row"></div></td></tr>
+                    <tr><td colspan="8"><div class="skeleton skeleton-row"></div></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- ══════════ PAGE: ML Pipeline ══════════ -->
+          <section class="page-section" id="page-pipeline">
+            <div class="section-header">
+              <div>
+                <div class="section-title">ML Pipeline Visualization</div>
+                <div class="section-description">Real-time AI security decision workflow</div>
+              </div>
+            </div>
+
+            <!-- Pipeline Flow Diagram -->
+            <div class="panel mb-6">
+              <div class="panel-body">
+                <div id="pipeline-flow-container">
+                  <div class="skeleton" style="height:200px;border-radius:var(--radius-lg)"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Pipeline Details -->
+            <div class="grid-2">
+              <div class="panel">
+                <div class="panel-header">
+                  <div class="panel-title">Latest Decision Detail</div>
+                </div>
+                <div class="panel-body" id="pipeline-latest-decision">
+                  <div class="empty-state">
+                    <div class="empty-state-icon">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    </div>
+                    <div class="empty-state-title">Waiting for data</div>
+                    <div class="empty-state-description">Pipeline decisions will appear here in real-time</div>
+                  </div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-header">
+                  <div class="panel-title">SOC Workflow Timeline</div>
+                </div>
+                <div class="panel-body" id="pipeline-workflow-timeline">
+                  <div class="empty-state">
+                    <div class="empty-state-icon">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    </div>
+                    <div class="empty-state-title">No active workflow</div>
+                    <div class="empty-state-description">Select an alert to view its decision workflow</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ══════════ PAGE: Statistics ══════════ -->
+          <section class="page-section" id="page-statistics">
+            <div class="section-header">
+              <div>
+                <div class="section-title">SOC Statistics</div>
+                <div class="section-description">Attack analytics and decision metrics</div>
+              </div>
+            </div>
+
+            <div class="grid-3 mb-6" id="stats-summary-cards">
+              <div class="skeleton skeleton-card"></div>
+              <div class="skeleton skeleton-card"></div>
+              <div class="skeleton skeleton-card"></div>
+            </div>
+
+            <div class="grid-2 mb-6">
+              <div class="panel">
+                <div class="panel-header"><div class="panel-title">Attack Distribution</div></div>
+                <div class="panel-body"><canvas id="chart-attack-dist" height="250"></canvas></div>
+              </div>
+              <div class="panel">
+                <div class="panel-header"><div class="panel-title">Severity Distribution</div></div>
+                <div class="panel-body"><canvas id="chart-severity-dist" height="250"></canvas></div>
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div class="panel">
+                <div class="panel-header"><div class="panel-title">Decision Ratio</div></div>
+                <div class="panel-body"><canvas id="chart-decision-ratio" height="250"></canvas></div>
+              </div>
+              <div class="panel">
+                <div class="panel-header"><div class="panel-title">Top Attacker IPs</div></div>
+                <div class="panel-body" id="stats-top-ips">
+                  <div class="skeleton skeleton-row"></div>
+                  <div class="skeleton skeleton-row"></div>
+                  <div class="skeleton skeleton-row"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ══════════ PAGE: System Health ══════════ -->
+          <section class="page-section" id="page-health">
+            <div class="section-header">
+              <div>
+                <div class="section-title">System Health</div>
+                <div class="section-description">Backend, ML pipeline, and persistence monitoring</div>
+              </div>
+            </div>
+
+            <div class="grid-3 mb-6" id="health-cards">
+              <div class="skeleton skeleton-card"></div>
+              <div class="skeleton skeleton-card"></div>
+              <div class="skeleton skeleton-card"></div>
+            </div>
+
+            <div class="grid-2">
+              <!-- ML Models Status -->
+              <div class="panel">
+                <div class="panel-header"><div class="panel-title">ML Model Status</div></div>
+                <div class="panel-body" id="health-ml-models">
+                  <div class="skeleton skeleton-row"></div>
+                  <div class="skeleton skeleton-row"></div>
+                </div>
+              </div>
+
+              <!-- Persistence / Queue Health -->
+              <div class="panel">
+                <div class="panel-header"><div class="panel-title">Persistence & Queue</div></div>
+                <div class="panel-body" id="health-persistence">
+                  <div class="skeleton skeleton-row"></div>
+                  <div class="skeleton skeleton-row"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ══════════ PAGE: Trace Logs ══════════ -->
+          <section class="page-section" id="page-logs">
+            <div class="section-header">
+              <div>
+                <div class="section-title">Trace Logs</div>
+                <div class="section-description">Real-time pipeline trace console</div>
+              </div>
+              <div style="display:flex;gap:var(--space-3);align-items:center">
+                <button class="btn btn-ghost btn-sm" id="logs-pause-btn">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                  Pause
+                </button>
+                <button class="btn btn-ghost btn-sm" id="logs-clear-btn">Clear</button>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-body" style="padding:0">
+                <div id="log-viewer-container" style="height:calc(100vh - 240px);overflow-y:auto;padding:var(--space-4);font-family:var(--font-mono);font-size:var(--text-xs);background:var(--bg-root);border-radius:var(--radius-lg)">
+                  <div class="empty-state">
+                    <div class="empty-state-icon">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                    </div>
+                    <div class="empty-state-title">Trace console ready</div>
+                    <div class="empty-state-description">Waiting for pipeline trace events...</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ═══════════════════ ALERT DETAIL DRAWER ═══════════════════ -->
+  <div class="drawer-backdrop" id="drawer-backdrop"></div>
+  <div class="detail-drawer" id="alert-detail-drawer">
+    <div class="drawer-header">
+      <h3 id="drawer-title">Alert Detail</h3>
+      <button class="drawer-close" id="drawer-close">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body" id="drawer-body">
+      <!-- Populated by admin-panel.js -->
+    </div>
+  </div>
+
+  <!-- ═══════════════════ CONFIRMATION MODAL ═══════════════════ -->
+  <div class="modal-overlay" id="confirm-modal">
+    <div class="modal">
+      <div class="modal-title" id="confirm-modal-title">Confirm Action</div>
+      <div class="modal-body" id="confirm-modal-body">Are you sure?</div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="confirm-modal-cancel">Cancel</button>
+        <button class="btn btn-danger" id="confirm-modal-confirm">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ TOAST CONTAINER ═══════════════════ -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- ═══════════════════ JAVASCRIPT ═══════════════════ -->
+  <script src="js/utils/formatters.js"></script>
+  <script src="js/utils/dom.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/polling.js"></script>
+  <script src="js/components/overview-cards.js"></script>
+  <script src="js/components/alert-feed.js"></script>
+  <script src="js/components/admin-panel.js"></script>
+  <script src="js/components/threat-feed.js"></script>
+  <script src="js/components/pipeline-viz.js"></script>
+  <script src="js/components/stats-charts.js"></script>
+  <script src="js/components/health-panel.js"></script>
+  <script src="js/components/persistence-view.js"></script>
+  <script src="js/components/log-viewer.js"></script>
+  <script src="js/components/pipeline-trace-viz.js"></script>
+  <script src="js/app.js"></script>
+
+  <!-- Reset Queue handler (inline for reliability) -->
+  <script>
+    async function resetAlertQueue() {
+      var btn = document.getElementById('btn-reset-queue');
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      btn.textContent = 'Resetting...';
+      try {
+        var resp = await fetch(window.location.origin + '/soc/alerts/reset-all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        var data = await resp.json();
+        if (data && data.success) {
+          if (typeof State !== 'undefined') State.set('alerts', []);
+          btn.textContent = 'Cleared!';
+        } else {
+          btn.textContent = 'Failed';
+        }
+      } catch (e) {
+        console.error('[ResetQueue]', e);
+        btn.textContent = 'Error';
+      }
+      setTimeout(function() { btn.textContent = 'Reset Queue'; btn.disabled = false; }, 2000);
+    }
+  </script>
+
+</body>
+</html>

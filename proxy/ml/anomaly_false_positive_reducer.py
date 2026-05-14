@@ -542,37 +542,29 @@ class FalsePositiveReducer:
     def _load_model(self):
         """Load trained model from disk if available."""
         if os.path.exists(self.model_path):
+            model_data = None
+            # Try joblib first (new models saved with joblib), then fallback to pickle
             try:
-                import warnings
-                from sklearn import __version__ as _sklearn_runtime_version
-                from sklearn.exceptions import InconsistentVersionWarning
-
-                with open(self.model_path, 'rb') as f:
-                    with warnings.catch_warnings(record=True) as w:
-                        warnings.simplefilter('always', InconsistentVersionWarning)
+                import joblib
+                model_data = joblib.load(self.model_path)
+            except Exception as joblib_err:
+                try:
+                    with open(self.model_path, 'rb') as f:
                         model_data = pickle.load(f)
+                except Exception as pickle_err:
+                    print(f"[FP Reducer] Failed to load model: {pickle_err}")
+                    self.is_trained = False
+                    return
 
-                    # Surface any InconsistentVersionWarning messages (summary only)
-                    version_warns = []
-                    for warn in w:
-                        try:
-                            if issubclass(warn.category, InconsistentVersionWarning):
-                                version_warns.append(warn)
-                        except Exception:
-                            pass
-                    if version_warns:
-                        print(
-                            f"[FP Reducer] InconsistentVersionWarning loading "
-                            f"{self.model_path}: {len(version_warns)} warning(s) "
-                            f"(sklearn runtime={_sklearn_runtime_version}). "
-                            f"First: {version_warns[0].message}"
-                        )
+            if model_data is None:
+                self.is_trained = False
+                return
 
+            try:
                 self.model = model_data['model']
                 self.scaler = model_data['scaler']
                 self.is_trained = model_data['is_trained']
 
-                # If model file includes training sklearn version metadata, show it
                 training_ver = None
                 if isinstance(model_data, dict):
                     training_ver = model_data.get('sklearn_version') or (model_data.get('metadata') or {}).get('sklearn_version')

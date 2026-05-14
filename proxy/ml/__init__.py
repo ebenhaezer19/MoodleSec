@@ -8,7 +8,7 @@ Provides machine learning capabilities for:
 - Intelligent rate limiting
 """
 
-from .anomaly_false_positive_reducer import FalsePositiveReducer
+from .false_positive_reducer import FalsePositiveReducer  # Production 14-feature class (Clean-14)
 from .scanner_false_positive_reducer import ScannerFalsePositiveReducer
 from .anomaly_detector import AnomalyDetector
 from .severity_predictor import SeverityPredictor

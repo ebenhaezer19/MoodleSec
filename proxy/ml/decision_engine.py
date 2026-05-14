@@ -13,6 +13,13 @@ class DecisionEngine:
         medium_anomaly_max: float = 0.7,
         medium_confidence_min: float = 0.4,
         medium_confidence_max: float = 0.7,
+        # Upper bound of the IGNORE-for-normal window.
+        # Requests classified as normal with anomaly >= this value escalate to
+        # ALERT instead of being silently ignored, improving SOC visibility for
+        # behavioral attacks with no payload signature.
+        # Lowered from legacy 0.90 to 0.85 — keeps burst-traffic noise quiet
+        # (0.70-0.84) while surfacing very high anomaly signals (0.85+).
+        anomaly_only_ignore_max: float = 0.85,
         severity_downgrade_probability: float = 0.05,
         random_seed: int = 42,
         debug_logging: bool = True,
@@ -26,6 +33,9 @@ class DecisionEngine:
         self.MEDIUM_ANOMALY_MAX = float(medium_anomaly_max)
         self.MEDIUM_CONFIDENCE_MIN = float(medium_confidence_min)
         self.MEDIUM_CONFIDENCE_MAX = float(medium_confidence_max)
+
+        # IGNORE-for-normal upper boundary (tunable).
+        self.ANOMALY_ONLY_IGNORE_MAX = float(anomaly_only_ignore_max)
 
         self.SEVERITY_DOWNGRADE_PROBABILITY = float(severity_downgrade_probability)
         self._rng = random.Random(random_seed)
@@ -175,7 +185,7 @@ class DecisionEngine:
             # High anomaly alone can still happen on odd but benign traffic.
             # We only downgrade when the classifier explicitly says "normal"
             # with low confidence and no strong exploit evidence.
-            if is_normal_prediction and confidence_value <= 0.35 and anomaly_score_value < 0.90:
+            if is_normal_prediction and confidence_value <= 0.35 and anomaly_score_value < self.ANOMALY_ONLY_IGNORE_MAX:
                 decision = "IGNORE"
             elif confidence_value >= self.HIGH_CONFIDENCE_THRESHOLD and not is_normal_prediction:
                 decision = "BLOCK"
@@ -204,7 +214,7 @@ class DecisionEngine:
             decision == "IGNORE"
             and confidence_value < self.LOW_CONFIDENCE_THRESHOLD
             and anomaly_score_value >= self.LOW_ANOMALY_THRESHOLD
-            and not (is_normal_prediction and anomaly_score_value < 0.90)
+            and not (is_normal_prediction and anomaly_score_value < self.ANOMALY_ONLY_IGNORE_MAX)
         ):
             decision = "ALERT"
 

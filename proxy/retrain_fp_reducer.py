@@ -13,7 +13,7 @@ import sys, os, csv, random
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from ml.anomaly_false_positive_reducer import FalsePositiveReducer
+from ml.false_positive_reducer import FalsePositiveReducer  # 14-feature production class (Clean-14)
 
 random.seed(42)
 np.random.seed(42)
@@ -41,14 +41,14 @@ with open(csv_path, 'r') as f:
 print(f"\nLoaded {len(rows)} rows from phase3_balanced_dataset_FINAL.csv")
 attacks = [r for r in rows if float(r['label']) == 1.0]
 normals = [r for r in rows if float(r['label']) == 0.0]
-print(f"  Attacks (→ TP findings): {len(attacks)}")
-print(f"  Normals (→ FP findings): {len(normals)}")
+print(f"  Attacks (-> TP findings): {len(attacks)}")
+print(f"  Normals (-> FP findings): {len(normals)}")
 
 # ── Leakage Analysis (Phase 0 methodology) ──────────────────────
-print(f"\n[LEAKAGE PREVENTION — Phase 0 methodology]")
-print(f"  ⚠ cvss_score and risk_score are SET TO 0 for ALL samples")
-print(f"  ⚠ This prevents the model from using them as shortcuts")
-print(f"  ⚠ Model must learn from: evidence text, keywords, category,")
+print(f"\n[LEAKAGE PREVENTION -- Phase 0 methodology]")
+print(f"  [!] cvss_score and risk_score are SET TO 0 for ALL samples")
+print(f"  [!] This prevents the model from using them as shortcuts")
+print(f"  [!] Model must learn from: evidence text, keywords, category,")
 print(f"    response_time, status_code, occurrence_count")
 print(f"  Reference: PHASE0_DATA_LEAKAGE_REMOVAL.md (Cohen's d=5.23)")
 
@@ -313,7 +313,7 @@ for i, name in [(0, 'severity'), (6, 'cvss_score'), (7, 'risk_score')]:
     tp_mean, fp_mean = tp_vals.mean(), fp_vals.mean()
     pooled_std = np.sqrt((tp_vals.std()**2 + fp_vals.std()**2) / 2) if (tp_vals.std() + fp_vals.std()) > 0 else 1
     cohens_d = abs(tp_mean - fp_mean) / pooled_std if pooled_std > 0 else 0
-    status = "✓ SAFE" if cohens_d < 2.0 else "⚠ LEAKY" if cohens_d < 5.0 else "❌ EXTREME LEAKAGE"
+    status = "[OK] SAFE" if cohens_d < 2.0 else "[!] LEAKY" if cohens_d < 5.0 else "[X] EXTREME LEAKAGE"
     print(f"  Feature {i} ({name:>12}): TP mean={tp_mean:.2f}, FP mean={fp_mean:.2f}, d={cohens_d:.2f} {status}")
 
 # 5-fold CV
@@ -430,18 +430,18 @@ correct = 0
 for finding, context, name, expected in tests:
     is_fp, conf = reducer.predict(finding, context)
     pred = "FP" if is_fp else "TP"
-    ok = "✓" if pred == expected else "✗"
+    ok = "[OK]" if pred == expected else "[X]"
     if pred == expected:
         correct += 1
-    print(f"  {ok} {name:<25} → {pred} ({conf:.0%}) [expected {expected}]")
+    print(f"  {ok} {name:<25} -> {pred} ({conf:.0%}) [expected {expected}]")
 
 print(f"\n  Score: {correct}/{len(tests)}")
 if correct >= 7:
-    print("  ✅ Model trained successfully!")
+    print("  [OK] Model trained successfully!")
 elif correct >= 5:
-    print("  ⚠️  Acceptable — some borderline cases wrong")
+    print("  [!] Acceptable -- some borderline cases wrong")
 else:
-    print("  ❌ Needs more training data")
+    print("  [X] Needs more training data")
 
 print(f"\nModel saved to: ml/models/fp_reducer.pkl")
 print("Restart the proxy server to use the new model.")

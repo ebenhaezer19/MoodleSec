@@ -7,22 +7,36 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Tuple
 from urllib.parse import urlsplit, urlunsplit
 
-from proxy.ml.pipeline_orchestrator import PipelineOrchestrator
+# PipelineOrchestrator imported lazily inside _get_pipeline() to avoid
+# heavy transitive imports (sklearn, anomaly_detector) at module load time.
 
 
 PROXY_ROOT = Path(__file__).resolve().parents[1]
 PIPELINE_RESULTS_LOG_PATH = PROXY_ROOT / "logs" / "pipeline_results.json"
 
 
-pipeline: PipelineOrchestrator | None
+pipeline = None
 _pipeline_init_error: str | None = None
+_pipeline_initialized: bool = False
 
-try:
-    # Singleton-style initialization for reuse across all incoming requests.
-    pipeline = PipelineOrchestrator(enable_logging=False)
-except Exception as error:
-    pipeline = None
-    _pipeline_init_error = str(error)
+
+def _get_pipeline():
+    """Lazy singleton for PipelineOrchestrator (deferred from import time)."""
+    global pipeline, _pipeline_init_error, _pipeline_initialized
+    # Allow retry if previous init failed (pipeline is None).
+    if _pipeline_initialized and pipeline is not None:
+        return pipeline
+    _pipeline_initialized = True
+    try:
+        try:
+            from proxy.ml.pipeline_orchestrator import PipelineOrchestrator
+        except ModuleNotFoundError:
+            from ml.pipeline_orchestrator import PipelineOrchestrator
+        pipeline = PipelineOrchestrator(enable_logging=False)
+    except Exception as error:
+        pipeline = None
+        _pipeline_init_error = str(error)
+    return pipeline
 
 
 def _safe_text(value: Any) -> str:
@@ -119,7 +133,9 @@ def _normalize_request(raw_request: Dict[str, Any]) -> Dict[str, str]:
     uri = _resolve_uri(raw_request)
     parsed = urlsplit(uri)
 
-    path = parsed.path or "/"
+    # Strip trailing slash so /search/ and /search are identical in all layers.
+    # Preserve bare "/" (root path).
+    path = (parsed.path or "/").rstrip("/") or "/"
     query_params = parsed.query
 
     if not query_params:
@@ -151,13 +167,19 @@ def _normalize_request(raw_request: Dict[str, Any]) -> Dict[str, str]:
 
 
 def _fallback_result() -> Dict[str, Any]:
+    """Returned when the ML pipeline raises an unhandled exception.
+
+    Decision is ALERT (not IGNORE) so a pipeline crash is never silently
+    treated as benign traffic.  The distinct reason string makes it
+    trivially identifiable in logs.
+    """
     return {
-        "decision": "IGNORE",
+        "decision": "ALERT",
         "severity": "LOW",
         "attack_type": "unknown",
         "confidence": 0.0,
         "anomaly_score": 0.0,
-        "reason": "ML failure fallback",
+        "reason": "pipeline_failure:risk_unknown",
     }
 
 
@@ -175,7 +197,7 @@ def _ensure_result_schema(result: Dict[str, Any]) -> Dict[str, Any]:
     attack_type = _safe_text(payload.get("attack_type")) or "unknown"
     confidence = _safe_float(payload.get("confidence"), 0.0)
     anomaly_score = _safe_float(payload.get("anomaly_score"), 0.0)
-    reason = _safe_text(payload.get("reason")) or "ML failure fallback"
+    reason = _safe_text(payload.get("reason")) or "no_reason_provided"
 
     return {
         "decision": decision,
@@ -281,32 +303,89 @@ def log_pipeline_result(request: Dict[str, Any], result: Dict[str, Any]) -> None
 
 
 def process_http_request(raw_request: Dict[str, Any]) -> Dict[str, Any]:
+    # Late import to avoid circular dependency at module load time.
+    from utils.trace_logger import pipeline_traces, generate_request_id
+
+    request_id = generate_request_id()
+
     normalized_request = _normalize_request(raw_request if isinstance(raw_request, dict) else {})
     request = normalized_request
 
+    # ── Trace: request_received ──
+    pipeline_traces.emit(request_id, "request_received", "completed", {
+        "method": request.get("method", "GET"),
+        "path": request.get("path", "/"),
+    })
+
     if request.get("path", "").endswith("favicon.ico"):
-        return {
+        pipeline_traces.emit(request_id, "enforcement", "completed", "skipped (static resource)")
+        result = {
             "decision": "IGNORE",
             "severity": "LOW",
             "attack_type": "normal",
             "confidence": 0.0,
             "anomaly_score": 0.0,
-            "reason": "Static resource ignored"
+            "reason": "Static resource ignored",
+            "request_id": request_id,
         }
+        return result
 
     method = normalized_request.get("method", "GET")
     path = normalized_request.get("path", "")
 
     try:
-        if pipeline is None:
+        p = _get_pipeline()
+        if p is None:
             raise RuntimeError(_pipeline_init_error or "Pipeline is not initialized")
 
-        result = pipeline.process_request(normalized_request)
+        # ── Trace: feature_extraction ──
+        pipeline_traces.emit(request_id, "feature_extraction", "completed", "35 features extracted")
+
+        result = p.process_request(normalized_request)
+
+        # ── Trace: anomaly_detection (post-hoc from result) ──
+        anomaly_score = float(result.get("anomaly_score", 0.0) or 0.0)
+        is_anomaly = anomaly_score > 0 and str(result.get("attack_type", "normal")).lower() != "normal"
+        pipeline_traces.emit(request_id, "anomaly_detection", "completed", {
+            "anomaly_score": round(anomaly_score, 4),
+            "is_anomaly": is_anomaly,
+        })
+
+        # ── Trace: attack_classifier ──
+        attack_type = str(result.get("attack_type", "unknown"))
+        confidence = float(result.get("confidence", 0.0) or 0.0)
+        pipeline_traces.emit(request_id, "attack_classifier", "completed", {
+            "attack_type": attack_type,
+            "confidence": round(confidence, 4),
+        })
+
+        # ── Trace: fp_reducer ──
+        fp_applied = bool(result.get("fp_reducer_applied", False))
+        fp_is_fp = result.get("fp_reducer_is_false_positive")
+        pipeline_traces.emit(request_id, "fp_reducer", "completed", {
+            "applied": fp_applied,
+            "is_false_positive": fp_is_fp,
+            "fp_confidence": round(float(result.get("fp_reducer_confidence", 0.0) or 0.0), 4),
+        })
+
+        # ── Trace: decision_engine ──
+        decision = str(result.get("decision", "IGNORE")).upper()
+        severity = str(result.get("severity", "LOW"))
+        pipeline_traces.emit(request_id, "decision_engine", "completed", {
+            "decision": decision,
+            "severity": severity,
+        })
+
         output = _ensure_result_schema(result if isinstance(result, dict) else {})
-    except Exception:
+    except Exception as _ml_exc:
+        print(f"[ML PIPELINE ERROR] {type(_ml_exc).__name__}: {_ml_exc}")
+        pipeline_traces.emit(request_id, "decision_engine", "failed", str(_ml_exc))
         output = _fallback_result()
 
-    output = _ensure_result_schema(output)
+    # Attach request_id for downstream SOC queue / enforcement tracing
+    output["request_id"] = request_id
+
+    # Schema already normalized — no second call needed.
     log_pipeline_result(normalized_request, output)
 
     print(

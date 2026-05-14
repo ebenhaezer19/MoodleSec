@@ -13,6 +13,7 @@ import httpx
 from fastapi import FastAPI, Request, Response, HTTPException, Body
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 # Ensure canonical package imports resolve independent of current working directory.
@@ -42,9 +43,19 @@ from config import (
     ANOMALY_MIN_SCORE_TO_LOG,
     ANOMALY_BLOCK_ON_DETECTION,
     ANOMALY_BLOCK_THRESHOLD,
+    DEMO_MODE,
+    SOC_MODE,
 )
 from utils.logger import append_log, read_logs, ensure_log_directory
 from utils.slack_notifier import SlackNotifier
+from utils.security_events import emit_security_event
+from utils.alert_queue import alert_queue
+from utils.trace_logger import (
+    trace_request_in, trace_pipeline_start, trace_features,
+    trace_ml_pre, trace_decision, trace_soc,
+    trace_anomaly_post, trace_response,
+    pipeline_traces,
+)
 from scanners.scanner_engine import ScannerEngine
 from scanners.phishing_detector import PhishingDetector
 from crawler.web_crawler import WebCrawler
@@ -71,76 +82,122 @@ from routers.scanner_router import (
 
 app = FastAPI(
     title="Moodle Proxy Service",
+    redirect_slashes=False,
     description="Reverse proxy for Moodle with request/response logging and DAST scanning",
     version="2.0.0"
 )
 
+# Enforcement middleware: block replayed attacks
+@app.middleware("http")
+async def enforce_blocked_requests(request: Request, call_next):
+    client_ip = _get_client_ip(request)
+    # Normalize trailing slash so /search and /search/ share one fingerprint.
+    norm_path = request.url.path.rstrip("/") or "/"
+    fingerprint = f"{request.method}:{norm_path}:{client_ip}"
+    # Emit REQUEST_IN here so it fires for EVERY request — including those that
+    # are blocked before proxy_request_catchall is entered.
+    trace_request_in(request.method, norm_path, str(request.url.query), client_ip)
+    if alert_queue.is_fingerprint_blocked(fingerprint):
+        from fastapi.responses import JSONResponse
+        trace_soc(f"ENFORCE_DENY fingerprint={fingerprint}")
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Blocked request (policy enforced)"},
+        )
+    response = await call_next(request)
+    return response
+
+
+
 # Add CORS middleware to allow requests from Moodle UI
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],  # Moodle URL
+    allow_origins=[
+        "http://localhost",
+        "http://localhost:8000",
+        "http://localhost:8998",    # krisopras: Moodle via proxy
+        "http://localhost:8999",
+        "http://127.0.0.1",
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8998",
+        "http://127.0.0.1:8999",
+        "http://moodle-proxy.local",
+        "http://localhost:8001",
+        "http://localhost:8997",
+        "http://moodle-proxy.local:8001",
+        "http://moodle-proxy.local:8997",
+        "http://[IP_ADDRESS]",
+        "http://[IP_ADDRESS]",
+        "null"
+    ],
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods (GET, POST, etc.)
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Initialize log directory on startup
 ensure_log_directory(LOG_DIR)
 
-# Runtime integrity checks (non-fatal; warn about legacy models/paths)
+# ────────────────────────────────────────────────────────────────────
+# COMPONENT INITIALIZATION (with performance timing)
+# MLManager uses lazy model loading (0ms init, models load on first request).
+# Other components initialize at module level for route availability.
+# ────────────────────────────────────────────────────────────────────
+import time as _startup_time
+_boot_start = _startup_time.perf_counter()
+
+def _timed_init(name, factory):
+    """Initialize a component with timing."""
+    t0 = _startup_time.perf_counter()
+    obj = factory()
+    elapsed = (_startup_time.perf_counter() - t0) * 1000
+    print(f"[Startup] {name}: {elapsed:.0f}ms")
+    sys.stdout.flush()
+    return obj
+
+# Runtime integrity (non-fatal)
 try:
     from proxy.ml.runtime_integrity import validate_runtime_integrity
-
     integrity_status = validate_runtime_integrity()
-    print(f"[Runtime Integrity] {integrity_status.get('summary')}")
     if integrity_status.get('missing_critical'):
-        print(f"[Runtime Integrity] CRITICAL missing models: {integrity_status.get('missing_critical')}")
+        print(f"[Runtime Integrity] CRITICAL: {integrity_status.get('missing_critical')}")
 except Exception as _ri_err:
-    print(f"[Runtime Integrity] check failed: {_ri_err}")
+    print(f"[Runtime Integrity] check skipped: {_ri_err}")
 
-# Initialize scanner engine
-scanner_engine = ScannerEngine()
+# Core components (timed)
+scanner_engine = _timed_init("ScannerEngine", ScannerEngine)
+risk_scorer = _timed_init("RiskScorer", RiskScorer)
+scan_history_db = _timed_init("ScanHistoryDB", ScanHistoryDB)
+scheduler_db = _timed_init("SchedulerDB", SchedulerDB)
+pdf_generator = _timed_init("PDFGenerator", PDFReportGenerator)
+integration_manager = _timed_init("IntegrationManager", IntegrationManager)
 
-# Initialize risk scorer
-risk_scorer = RiskScorer()
+# ML Manager (lazy — 0ms init, models load on first scan request)
+ml_manager = _timed_init("MLManager", lambda: MLManager(enable_ml=True))
 
-# Initialize scan history database
-scan_history_db = ScanHistoryDB()
-
-# Initialize scheduler database
-scheduler_db = SchedulerDB()
-
-# Initialize PDF generator
-pdf_generator = PDFReportGenerator()
-
-# Initialize integration manager
-integration_manager = IntegrationManager()
-
-# Initialize ML Manager
-ml_manager = MLManager(enable_ml=True)
-
-# Initialize Payload Repository
-payload_repo = PayloadRepositoryManager()
+# Payload repository
+payload_repo = _timed_init("PayloadRepo", PayloadRepositoryManager)
 
 # Register routers and inject dependencies
 app.include_router(payload_router)
 app.include_router(scanner_router)
 set_payload_repo(payload_repo)
-payload_router_set_scanner_engine(scanner_engine)  # payload_router needs scanner for reload
-scanner_router_set_scanner_engine(scanner_engine)  # scanner_router status/reload endpoints
+payload_router_set_scanner_engine(scanner_engine)
+scanner_router_set_scanner_engine(scanner_engine)
 
-# Connect payload repository to scanner engine for active injection testing
-# (scanner_engine was initialized before payload_repo existed, so we wire them now)
+# Connect payload repo to scanner
 scanner_engine.payload_repo = payload_repo
-scanner_engine.initialize_scanners()  # re-creates detectors + PayloadInjector with the repo
+scanner_engine.initialize_scanners()
 print(f"[Scanner Engine] Payload repository connected: {type(payload_repo).__name__}")
 
-
-
-# Initialize Phishing Detector
-MOODLE_BASE_DOMAIN = "localhost"  # Change to your actual domain
+# Phishing detector
+MOODLE_BASE_DOMAIN = "localhost"
 phishing_detector = PhishingDetector(moodle_base_domain=MOODLE_BASE_DOMAIN)
 print(f"[Phishing Detector] Initialized with base domain: {MOODLE_BASE_DOMAIN}")
+
+_boot_elapsed = (_startup_time.perf_counter() - _boot_start) * 1000
+print(f"[Startup] Total boot time: {_boot_elapsed:.0f}ms")
+sys.stdout.flush()
 
 # Initialize Slack notifier (if enabled)
 slack_notifier = None
@@ -566,6 +623,24 @@ async def full_site_scan(max_depth: int = 2, max_pages: int = 30) -> Dict[str, A
                 continue
         
         # Step 3: ML Processing
+        # Cross-endpoint deduplication: Remove duplicate findings across endpoints
+        # Keeps first occurrence of each (category, description, severity) tuple.
+        # Confirmed findings (from payload injection) are always kept regardless.
+        seen_keys = set()
+        deduped_findings = []
+        for f in all_findings:
+            # Confirmed exploits are never deduplicated — each is unique evidence
+            if f.get('confidence_tier') == 'confirmed':
+                deduped_findings.append(f)
+                continue
+            key = (f.get('category', ''), f.get('description', ''), f.get('severity', ''))
+            if key not in seen_keys:
+                seen_keys.add(key)
+                deduped_findings.append(f)
+        if len(all_findings) != len(deduped_findings):
+            print(f"[Full Scan] Cross-endpoint dedup: {len(all_findings)} → {len(deduped_findings)} findings")
+        all_findings = deduped_findings
+        
         print(f"[Full Scan] BEFORE ML: {len(all_findings)} findings")
         
         # Apply ML-enhanced processing
@@ -1580,9 +1655,19 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
             except Exception as e:
                 print(f"[Native Auth Scan] Error crawling {url}: {str(e)}")
         
-        # Start crawling from Moodle dashboard
-        dashboard_url = f"{MOODLE_URL}/my/"
-        await crawl_authenticated_url(dashboard_url)
+        # Start crawling from multiple seed URLs for broader coverage.
+        # Moodle's link-heavy dashboard limits depth-first crawling,
+        # so seeding from key entry points ensures admin, course, and
+        # user management surfaces are discovered.
+        seed_urls = [
+            f"{MOODLE_URL}/my/",                      # Dashboard (original)
+            f"{MOODLE_URL}/admin/search.php",          # Admin search (links to all admin pages)
+            f"{MOODLE_URL}/course/index.php",          # Course listing
+            f"{MOODLE_URL}/user/profile.php",          # User profile
+            f"{MOODLE_URL}/login/index.php",           # Login page (form-heavy)
+        ]
+        for seed_url in seed_urls:
+            await crawl_authenticated_url(seed_url)
         
         print(f"[Native Auth Scan] Crawl complete! Visited {len(visited_urls)} pages")
         print(f"[Native Auth Scan] Discovered {len(targets)} endpoints to scan")
@@ -1635,7 +1720,25 @@ async def scan_native_authenticated(request: NativeAuthScanRequest) -> Dict[str,
         
         # Step 4: ML-Enhanced Processing
         print(f"\n[Native Auth Scan] STEP 4: ML-Enhanced Processing...")
-        print(f"[Native Auth Scan] BEFORE ML: {len(all_findings)} findings")
+        # Cross-endpoint deduplication: Remove duplicate findings across endpoints.
+        # Keeps first occurrence of each (category, description, severity) tuple.
+        # Confirmed findings (from payload injection) are always kept regardless.
+        seen_keys = set()
+        deduped_findings = []
+        for f in all_findings:
+            # Confirmed exploits are never deduplicated — each is unique evidence
+            if f.get('confidence_tier') == 'confirmed':
+                deduped_findings.append(f)
+                continue
+            key = (f.get('category', ''), f.get('description', ''), f.get('severity', ''))
+            if key not in seen_keys:
+                seen_keys.add(key)
+                deduped_findings.append(f)
+        if len(all_findings) != len(deduped_findings):
+            print(f"[Native Auth Scan] Cross-endpoint dedup: {len(all_findings)} → {len(deduped_findings)} findings")
+        all_findings = deduped_findings
+        
+        print(f"[Native Auth Scan] BEFORE ML: {len(all_findings)} findings (after dedup)")
         
         # Apply ML filtering
         ml_results = ml_manager.filter_findings(all_findings, context={
@@ -2187,6 +2290,207 @@ async def get_ml_dashboard_recent_scans(limit: int = 10):
 
 
 
+@app.get("/ml/demo-status")
+async def get_demo_mode_status() -> Dict[str, Any]:
+    """Return current DEMO_MODE status and enforcement mode."""
+    return {
+        "demo_mode": DEMO_MODE,
+        "soc_mode": SOC_MODE,
+        "enforcement_mode": "SOC" if (DEMO_MODE and SOC_MODE) else ("DEMO" if DEMO_MODE else "ENFORCE"),
+        "description": (
+            "SOC: detect + queue for admin review + forward."
+            if (DEMO_MODE and SOC_MODE)
+            else ("DEMO: detect + log + forward (never block)." if DEMO_MODE else "ENFORCE: detect + block.")
+        ),
+    }
+
+
+# ---- SOC Admin API Endpoints ----
+
+@app.get("/soc/status")
+async def get_soc_status() -> Dict[str, Any]:
+    """Return SOC mode status and alert queue summary."""
+    return {
+        "soc_mode": SOC_MODE,
+        "demo_mode": DEMO_MODE,
+        "active": bool(DEMO_MODE and SOC_MODE),
+        "enforcement_mode": "SOC" if (DEMO_MODE and SOC_MODE) else ("DEMO" if DEMO_MODE else "ENFORCE"),
+        "alert_stats": alert_queue.get_stats(),
+    }
+
+
+@app.get("/soc/alerts")
+async def list_soc_alerts(
+    status: Optional[str] = None,
+    severity: Optional[str] = None,
+    limit: int = 100,
+) -> Dict[str, Any]:
+    """List alerts in the SOC queue with optional filters."""
+    alerts = alert_queue.get_alerts(status=status, severity=severity, limit=limit)
+    return {
+        "success": True,
+        "count": len(alerts),
+        "alerts": alerts,
+        "stats": alert_queue.get_stats(),
+    }
+
+
+@app.get("/soc/alerts/stats")
+async def get_soc_alert_stats() -> Dict[str, Any]:
+    """Get summary counts of alerts by status."""
+    return {
+        "success": True,
+        **alert_queue.get_stats(),
+    }
+
+
+@app.get("/soc/alerts/{alert_id}")
+async def get_soc_alert_detail(alert_id: str) -> Dict[str, Any]:
+    """Get a single alert by ID."""
+    alert = alert_queue.get_alert(alert_id)
+    if not alert:
+        raise HTTPException(status_code=404, detail=f"Alert not found: {alert_id}")
+    return {"success": True, "alert": alert}
+
+
+class AlertResolveRequest(BaseModel):
+    """Request model for resolving an alert."""
+    action: str = Field(..., description="Admin decision: BLOCK, ALLOW, or IGNORE")
+
+
+@app.post("/soc/alerts/{alert_id}/resolve")
+async def resolve_soc_alert(alert_id: str, body: AlertResolveRequest) -> Dict[str, Any]:
+    """
+    Admin resolves a pending alert.
+
+    Accepted actions: BLOCK, ALLOW, IGNORE.
+    Once resolved, future requests matching the same (attack_type, client_ip)
+    pattern will automatically follow the admin decision.
+    """
+    action = body.action.upper()
+    if action not in {"BLOCK", "ALLOW", "IGNORE"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid action: {body.action}. Must be BLOCK, ALLOW, or IGNORE.",
+        )
+
+    resolved = alert_queue.resolve_alert(alert_id, action)
+    if not resolved:
+        raise HTTPException(status_code=404, detail=f"Alert not found: {alert_id}")
+
+    return {
+        "success": True,
+        "alert_id": alert_id,
+        "action": action,
+        "alert": resolved,
+    }
+
+
+class SocResolveRequest(BaseModel):
+    """Flat-body alias for POST /soc/resolve (alert_id in body)."""
+    alert_id: str = Field(..., description="ID of the alert to resolve")
+    action: str = Field(..., description="Admin decision: BLOCK, ALLOW, or IGNORE")
+
+
+@app.post("/soc/resolve")
+async def resolve_soc_alert_flat(body: SocResolveRequest) -> Dict[str, Any]:
+    """
+    Alias for POST /soc/alerts/{alert_id}/resolve.
+
+    Accepts alert_id in the request body instead of the URL path,
+    which is more ergonomic for scripting and automated tests.
+    """
+    action = body.action.upper()
+    if action not in {"BLOCK", "ALLOW", "IGNORE"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid action: {body.action}. Must be BLOCK, ALLOW, or IGNORE.",
+        )
+    resolved = alert_queue.resolve_alert(body.alert_id, action)
+    if not resolved:
+        raise HTTPException(status_code=404, detail=f"Alert not found: {body.alert_id}")
+
+    return {
+        "success": True,
+        "alert_id": body.alert_id,
+        "action": action,
+        "alert": resolved,
+    }
+
+
+@app.post("/soc/alerts/reset/{alert_id}")
+async def reset_soc_alert(alert_id: str) -> Dict[str, Any]:
+    """
+    Reset an enforced/blocked alert to ALLOW state for re-testing.
+
+    This is a DEMO/TESTING feature for false-positive review.
+    It clears the enforcement fingerprint and override so the same
+    request can be re-evaluated by the ML pipeline.
+
+    The original ML decision (ml_decision_original) is preserved
+    for audit trail.
+    """
+    reset = alert_queue.reset_alert(alert_id)
+    if not reset:
+        raise HTTPException(status_code=404, detail=f"Alert not found: {alert_id}")
+
+    return {
+        "success": True,
+        "alert_id": alert_id,
+        "status": "RESET",
+        "effective_decision": "ALLOW",
+        "message": "Alert reset to allow state for re-testing",
+        "alert": reset,
+    }
+
+
+@app.post("/soc/alerts/reset-all")
+async def reset_all_soc_alerts() -> Dict[str, Any]:
+    """
+    Clear ALL alerts from the SOC queue.
+
+    Removes all alerts, overrides, and blocked fingerprints.
+    This is a destructive action intended for demo/testing resets.
+    """
+    result = alert_queue.reset_all()
+    return {
+        "success": True,
+        **result,
+    }
+
+
+# ---- Pipeline Trace Endpoints ----
+
+@app.get("/soc/pipeline/trace/latest")
+async def get_latest_pipeline_traces(limit: int = 20) -> Dict[str, Any]:
+    """Return the most recent pipeline execution traces."""
+    safe_limit = max(1, min(limit, 100))
+    traces = pipeline_traces.get_latest(safe_limit)
+    return {
+        "success": True,
+        "count": len(traces),
+        "traces": traces,
+    }
+
+
+@app.get("/soc/pipeline/trace/{request_id}")
+async def get_pipeline_trace(request_id: str) -> Dict[str, Any]:
+    """Return full pipeline trace for a specific request_id."""
+    trace_data = pipeline_traces.get_trace(request_id)
+    if trace_data is None:
+        raise HTTPException(status_code=404, detail=f"Trace not found: {request_id}")
+    return {"success": True, "trace": trace_data}
+
+
+# ── SOC Dashboard static file serving ──────────────────────────────────
+# Mount BEFORE the catch-all proxy route so /dashboard/* is served locally.
+_dashboard_dir = Path(__file__).resolve().parent / "soc-dashboard"
+if _dashboard_dir.is_dir():
+    app.mount("/dashboard", StaticFiles(directory=str(_dashboard_dir), html=True), name="soc-dashboard")
+    print(f"[SOC] Dashboard mounted at /dashboard (dir={_dashboard_dir})")
+else:
+    print(f"[SOC] Dashboard directory not found: {_dashboard_dir} — skipping mount")
+
 # IMPORTANT: Catch-all proxy route MUST be at the end to not interfere with specific endpoints
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 async def proxy_request_catchall(request: Request, path: str) -> Response:
@@ -2194,6 +2498,8 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
     Proxy all other requests to the target Moodle instance.
     This route catches everything that doesn't match specific endpoints above.
     """
+    print("CATCH ALL HIT:", request.method, request.url)
+
     # Build target URL
     target_url = f"{MOODLE_URL}/{path}"
     if request.url.query:
@@ -2203,6 +2509,9 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
     headers = dict(request.headers)
     headers.pop("host", None)
     client_ip = _get_client_ip(request)
+    # Normalize path here so it's available for tracing and ML from the same source.
+    _ml_norm_path = request.url.path.rstrip("/") or "/"
+    trace_request_in(request.method, _ml_norm_path, request.url.query, client_ip)
     trusted_scanner_request, trusted_scanner_detail = _is_trusted_scanner_request(request)
     enforcement_bypassed = False
     bypass_reasons: List[str] = []
@@ -2228,31 +2537,40 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
 
     # Run ML pipeline check before forwarding request to destination.
     try:
+        trace_pipeline_start(_ml_norm_path)
         ml_raw_request = {
             "uri": str(request.url),
             "method": request.method,
             "headers": dict(request.headers),
             "body": body.decode("utf-8", errors="ignore") if body else "",
-            "request_raw": f"{request.method} {request.url.path}"
+            "request_raw": f"{request.method} {_ml_norm_path}"
             + (f"?{request.url.query}" if request.url.query else ""),
         }
         ml_result = process_http_request(ml_raw_request)
         print("[PROXY ML RESULT]", ml_result)
+        trace_features(ml_result)
+        trace_ml_pre(ml_result)
     except Exception as ml_error:
+        print(f"[PROXY ML ERROR] {type(ml_error).__name__}: {ml_error}")
         ml_result = {
             "decision": "IGNORE",
             "severity": "LOW",
             "attack_type": "unknown",
             "confidence": 0.0,
             "anomaly_score": 0.0,
-            "reason": "ML failure fallback",
+            "reason": f"proxy_catchall_exception:{type(ml_error).__name__}",
         }
         print("[PROXY ML RESULT]", ml_result)
 
-    if str(ml_result.get("decision", "")).upper() == "BLOCK":
+    ml_decision_upper = str(ml_result.get("decision", "")).upper()
+    trace_decision(ml_result, ml_decision_upper)
+    _soc_action = "IGNORE no_action"  # updated in each branch below
+
+    if ml_decision_upper in ("BLOCK", "ALERT"):
         if trusted_scanner_request:
             enforcement_bypassed = True
             bypass_reasons.append("ml_pipeline_block_bypassed_for_trusted_scanner")
+            _soc_action = "BYPASSED trusted_scanner"
             append_log(LOG_DIR, {
                 "type": "proxy_ml_block_bypassed",
                 "client_ip": client_ip,
@@ -2266,7 +2584,141 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
                 "trusted_scanner_detail": trusted_scanner_detail,
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             })
-        else:
+        elif DEMO_MODE and SOC_MODE:
+            # -- SOC MODE: check admin override, else queue for review --
+            admin_override = alert_queue.check_admin_override(
+                attack_type=ml_result.get("attack_type", "unknown"),
+                client_ip=client_ip,
+            )
+            if admin_override == "ADMIN_BLOCK":
+                # Admin previously decided to BLOCK this pattern
+                append_log(LOG_DIR, {
+                    "type": "proxy_ml_blocked_by_admin",
+                    "client_ip": client_ip,
+                    "method": request.method,
+                    "path": path,
+                    "target_url": target_url,
+                    "ml_result": ml_result,
+                    "admin_override": "ADMIN_BLOCK",
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                })
+                _trace_rid = ml_result.get("request_id", "")
+                if _trace_rid:
+                    pipeline_traces.emit(_trace_rid, "soc_queue", "completed", "admin_override=BLOCK")
+                    pipeline_traces.emit(_trace_rid, "enforcement", "completed", "403 BLOCK (admin)")
+                trace_soc("BLOCK enforced (admin_override)")
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "status": 403,
+                        "message": "Blocked by SOC admin decision",
+                        "reason": ml_result.get("reason", "Admin override BLOCK"),
+                    },
+                )
+            elif admin_override in ("ADMIN_ALLOW", "ADMIN_IGNORE"):
+                # Admin previously decided to allow/ignore this pattern
+                ml_result["decision"] = "DETECTED"
+                ml_result["demo_mode"] = True
+                ml_result["soc_admin_override"] = admin_override
+                _soc_action = f"ALLOW admin_override={admin_override}"
+                _trace_rid = ml_result.get("request_id", "")
+                if _trace_rid:
+                    pipeline_traces.emit(_trace_rid, "soc_queue", "completed", f"admin_override={admin_override}")
+                    pipeline_traces.emit(_trace_rid, "enforcement", "completed", "forwarded (admin allow)")
+                # Fall through to forward request
+            else:
+                # No admin decision yet -- queue alert and forward
+                try:
+                    alert = alert_queue.add_alert(
+                        attack_type=ml_result.get("attack_type", "unknown"),
+                        severity=ml_result.get("severity", "LOW"),
+                        confidence=float(ml_result.get("confidence", 0.0)),
+                        anomaly_score=float(ml_result.get("anomaly_score", 0.0)),
+                        client_ip=client_ip,
+                        method=request.method,
+                        path=path,
+                        url=target_url,
+                        reason=ml_result.get("reason", "Pipeline decision"),
+                        ml_decision_original=ml_decision_upper,
+                        source="ml_pipeline",
+                        ml_result=ml_result,
+                    )
+                except Exception as _aq_err:
+                    print(f"[TRACE][SOC_ERROR] alert_queue.add_alert failed: {type(_aq_err).__name__}: {_aq_err}")
+                    alert = {"alert_id": None, "status": "ALERT_QUEUE_ERROR"}
+                emit_security_event(
+                    attack_type=ml_result.get("attack_type", "unknown"),
+                    severity=ml_result.get("severity", "LOW"),
+                    confidence=float(ml_result.get("confidence", 0.0)),
+                    anomaly_score=float(ml_result.get("anomaly_score", 0.0)),
+                    url=target_url,
+                    method=request.method,
+                    path=path,
+                    reason=ml_result.get("reason", "Pipeline decision"),
+                    source="ml_pipeline",
+                    client_ip=client_ip,
+                    ml_result=ml_result,
+                    alert_id=alert.get("alert_id"),
+                    action_override="pending_admin_action",
+                )
+                append_log(LOG_DIR, {
+                    "type": "proxy_ml_pending_admin",
+                    "client_ip": client_ip,
+                    "method": request.method,
+                    "path": path,
+                    "target_url": target_url,
+                    "ml_result": ml_result,
+                    "alert_id": alert.get("alert_id"),
+                    "soc_mode": True,
+                    "original_decision": ml_decision_upper,
+                    "effective_decision": "PENDING_ADMIN_ACTION",
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                })
+                ml_result["decision"] = "DETECTED"
+                ml_result["demo_mode"] = True
+                ml_result["soc_alert_id"] = alert.get("alert_id")
+                _soc_action = f"ALERT queued alert_id={alert.get('alert_id')}"
+                _trace_rid = ml_result.get("request_id", "")
+                if _trace_rid:
+                    pipeline_traces.emit(_trace_rid, "soc_queue", "completed", {"alert_id": alert.get("alert_id"), "status": "PENDING_ADMIN_ACTION"})
+                    pipeline_traces.emit(_trace_rid, "enforcement", "completed", "forwarded (pending admin)")
+                # Do NOT return 403 -- fall through to forward request
+        elif DEMO_MODE:
+            # -- DEMO MODE: detect + log + forward (never block) --
+            emit_security_event(
+                attack_type=ml_result.get("attack_type", "unknown"),
+                severity=ml_result.get("severity", "LOW"),
+                confidence=float(ml_result.get("confidence", 0.0)),
+                anomaly_score=float(ml_result.get("anomaly_score", 0.0)),
+                url=target_url,
+                method=request.method,
+                path=path,
+                reason=ml_result.get("reason", "Pipeline decision BLOCK"),
+                source="ml_pipeline",
+                client_ip=client_ip,
+                ml_result=ml_result,
+            )
+            append_log(LOG_DIR, {
+                "type": "proxy_ml_block_demoted_demo",
+                "client_ip": client_ip,
+                "method": request.method,
+                "path": path,
+                "target_url": target_url,
+                "ml_result": ml_result,
+                "demo_mode": True,
+                "original_decision": ml_decision_upper,
+                "effective_decision": "DETECTED",
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            })
+            ml_result["decision"] = "DETECTED"
+            ml_result["demo_mode"] = True
+            _soc_action = "ALERT logged (demo_mode)"
+            _trace_rid = ml_result.get("request_id", "")
+            if _trace_rid:
+                pipeline_traces.emit(_trace_rid, "soc_queue", "completed", "logged (demo_mode)")
+                pipeline_traces.emit(_trace_rid, "enforcement", "completed", "forwarded (demo)")
+            # Do NOT return 403 -- fall through to forward request
+        elif ml_decision_upper == "BLOCK":
             ml_blocked_event = {
                 "type": "proxy_ml_blocked_request",
                 "client_ip": client_ip,
@@ -2280,6 +2732,11 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             }
             append_log(LOG_DIR, ml_blocked_event)
+            _trace_rid = ml_result.get("request_id", "")
+            if _trace_rid:
+                pipeline_traces.emit(_trace_rid, "soc_queue", "completed", "direct enforcement")
+                pipeline_traces.emit(_trace_rid, "enforcement", "completed", "403 BLOCK")
+            trace_soc("BLOCK enforced returning 403")
             return JSONResponse(
                 status_code=403,
                 content={
@@ -2288,7 +2745,137 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
                     "reason": ml_result.get("reason", "Pipeline decision BLOCK"),
                 },
             )
+        elif ml_decision_upper == "ALERT":
+            # Production mode (no DEMO, no SOC): ALERT must be logged — it is
+            # not silently ignored. The request is forwarded but the alert is
+            # recorded for operator review.
+            append_log(LOG_DIR, {
+                "type": "proxy_ml_alert_production",
+                "client_ip": client_ip,
+                "method": request.method,
+                "path": path,
+                "target_url": target_url,
+                "ml_result": ml_result,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            })
+            _soc_action = "ALERT logged (production)"
+            _trace_rid = ml_result.get("request_id", "")
+            if _trace_rid:
+                pipeline_traces.emit(_trace_rid, "soc_queue", "completed", "logged (production alert)")
+                pipeline_traces.emit(_trace_rid, "enforcement", "completed", "forwarded")
     
+    # Emit soc_queue + enforcement for IGNORE decisions (benign traffic)
+    _trace_rid = ml_result.get("request_id", "")
+    if _trace_rid and _soc_action == "IGNORE no_action":
+        pipeline_traces.emit(_trace_rid, "soc_queue", "completed", "not queued (benign)")
+        pipeline_traces.emit(_trace_rid, "enforcement", "completed", "forwarded")
+
+    trace_soc(_soc_action)
+
+    # ── ENFORCEMENT GATE ─────────────────────────────────────────────────
+    # If ML pipeline decided BLOCK, terminate the request here.
+    # Do NOT forward to Moodle backend. Return 403 immediately.
+    # Synchronizes with SOC alert queue so dashboard shows enforcement result.
+    if ml_decision_upper == "BLOCK" and not enforcement_bypassed:
+        _trace_rid = ml_result.get("request_id", "")
+        _existing_alert_id = ml_result.get("soc_alert_id", "")
+
+        # 1. SOC Alert Sync — update existing or create new
+        if _existing_alert_id:
+            # Alert already created by SOC mode branch → UPDATE to ENFORCED_BLOCK
+            _updated = alert_queue.update_alert_enforcement(
+                _existing_alert_id,
+                final_decision="BLOCK",
+                enforcement_source="enforcement_gate",
+                http_status=403,
+                request_id=_trace_rid,
+            )
+            _enforcement_alert_id = _existing_alert_id
+        else:
+            # No prior alert (production mode / direct block) → CREATE new
+            try:
+                _enforcement_alert = alert_queue.add_alert(
+                    attack_type=ml_result.get("attack_type", "unknown"),
+                    severity=ml_result.get("severity", "HIGH"),
+                    confidence=float(ml_result.get("confidence", 0.0)),
+                    anomaly_score=float(ml_result.get("anomaly_score", 0.0)),
+                    client_ip=client_ip,
+                    method=request.method,
+                    path=path,
+                    url=target_url,
+                    reason=ml_result.get("reason", "ML_DECISION_BLOCK"),
+                    ml_decision_original=ml_decision_upper,
+                    source="enforcement_gate",
+                    ml_result=ml_result,
+                )
+                _enforcement_alert_id = _enforcement_alert.get("alert_id", "")
+                # Immediately update to ENFORCED_BLOCK
+                alert_queue.update_alert_enforcement(
+                    _enforcement_alert_id,
+                    final_decision="BLOCK",
+                    enforcement_source="enforcement_gate",
+                    http_status=403,
+                    request_id=_trace_rid,
+                )
+            except Exception as _aq_exc:
+                print(f"[ENFORCEMENT_SYNC] alert_queue error: {_aq_exc}", flush=True)
+                _enforcement_alert_id = ""
+
+        # 2. Pipeline trace — enforcement stage with linked alert
+        if _trace_rid:
+            pipeline_traces.emit(
+                _trace_rid, "enforcement", "completed", {
+                    "decision_final": "BLOCK",
+                    "reason": "ML_DECISION_BLOCK",
+                    "http_status": 403,
+                    "linked_alert_id": _enforcement_alert_id,
+                    "alert_origin": "enforcement_gate",
+                }
+            )
+
+        # 3. Console log
+        print(
+            f"[ENFORCEMENT] BLOCKED request_id={_trace_rid} "
+            f"reason=ML_DECISION_BLOCK path={path} ip={client_ip}",
+            flush=True,
+        )
+        print(
+            f"[ENFORCEMENT_SYNC] alert_id={_enforcement_alert_id} "
+            f"status=ENFORCED_BLOCK",
+            flush=True,
+        )
+
+        # 4. Persistent log
+        append_log(LOG_DIR, {
+            "type": "enforcement_blocked",
+            "client_ip": client_ip,
+            "method": request.method,
+            "path": path,
+            "target_url": target_url,
+            "ml_decision": ml_decision_upper,
+            "attack_type": ml_result.get("attack_type", "unknown"),
+            "confidence": float(ml_result.get("confidence", 0.0)),
+            "request_id": _trace_rid,
+            "alert_id": _enforcement_alert_id,
+            "alert_origin": "enforcement_gate",
+            "effective_decision": "ENFORCED_BLOCK",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        })
+
+        # 5. HTTP 403 — request terminates here, never reaches backend
+        return JSONResponse(
+            status_code=403,
+            content={
+                "status": 403,
+                "message": "Blocked by SOC Engine",
+                "request_id": _trace_rid,
+                "alert_id": _enforcement_alert_id,
+                "attack_type": ml_result.get("attack_type", "unknown"),
+                "reason": ml_result.get("reason", "ML_DECISION_BLOCK"),
+                "effective_decision": "ENFORCED_BLOCK",
+            },
+        )
+
     try:
         request_start = datetime.utcnow()
 
@@ -2371,50 +2958,27 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
 
         if (
             ANOMALY_DETECTION_ENABLED
-            and ANOMALY_BLOCK_ON_DETECTION
             and anomaly_detected
             and anomaly_score >= ANOMALY_BLOCK_THRESHOLD
         ):
-            if trusted_scanner_request:
-                enforcement_bypassed = True
-                bypass_reasons.append("anomaly_block_bypassed_for_trusted_scanner")
-                append_log(LOG_DIR, {
-                    "type": "proxy_anomaly_block_bypassed",
-                    "client_ip": client_ip,
-                    "method": request.method,
-                    "path": path,
-                    "target_url": target_url,
-                    "status_code": response.status_code,
-                    "anomaly_score": round(float(anomaly_score), 4),
-                    "anomaly_reason": anomaly_reason,
-                    "trusted_scanner_request": True,
-                    "enforcement_bypassed": True,
-                    "bypass_reason": bypass_reasons[-1],
-                    "trusted_scanner_detail": trusted_scanner_detail,
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                })
-            else:
-                blocked_event = {
-                    "type": "proxy_blocked_response",
-                    "client_ip": client_ip,
-                    "method": request.method,
-                    "path": path,
-                    "target_url": target_url,
-                    "status_code": response.status_code,
-                    "anomaly_score": round(float(anomaly_score), 4),
-                    "anomaly_reason": anomaly_reason,
-                    "trusted_scanner_request": False,
-                    "enforcement_bypassed": False,
-                    "bypass_reason": "",
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                }
-                append_log(LOG_DIR, blocked_event)
-                return Response(
-                    content='{"detail":"Response blocked by anomaly detector"}',
-                    status_code=403,
-                    media_type="application/json",
-                    headers={"X-MoodleSec-Blocked": "anomaly"},
-                )
+            # POST-FORWARD ANOMALY: support signal only — DO NOT create SOC alerts
+            # or return 403 from this path.  DecisionEngine (pre-forward) is the
+            # SOLE authority for BLOCK / ALERT / SOC queue decisions.
+            # This block exists only to surface the behavioral anomaly in logs.
+            append_log(LOG_DIR, {
+                "type": "proxy_postforward_anomaly_signal",
+                "note": "observability_only_not_a_decision",
+                "client_ip": client_ip,
+                "method": request.method,
+                "path": path,
+                "target_url": target_url,
+                "status_code": response.status_code,
+                "anomaly_score": round(float(anomaly_score), 4),
+                "anomaly_reason": anomaly_reason,
+                "pre_forward_decision": ml_result.get("decision", "IGNORE"),
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            })
+            trace_anomaly_post(float(anomaly_score))
         
         # Log the response
         response_log = {
@@ -2454,7 +3018,13 @@ async def proxy_request_catchall(request: Request, path: str) -> Response:
         if enforcement_bypassed:
             response_headers["X-MoodleSec-Enforcement-Bypass"] = "trusted-scanner"
             response_headers["X-MoodleSec-Scanner"] = "internal"
+
+        # ── DEMO MODE: attach alert metadata header when attack was detected ──
+        if DEMO_MODE and ml_result.get("demo_mode"):
+            response_headers["X-MoodleSec-Alert"] = ml_result.get("attack_type", "unknown")
+            response_headers["X-MoodleSec-Mode"] = "DEMO"
         
+        trace_response(response.status_code, ml_decision_upper)
         return Response(
             content=response.content,
             status_code=response.status_code,

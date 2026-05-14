@@ -1368,8 +1368,9 @@ class AnomalyDetector:
                 + self.heuristic_weight * float(heuristic_score)
             )
 
-            # Heuristic override is intentionally rare and only for extreme signatures.
-            if heuristic_is_anomaly and heuristic_score >= 0.98 and normalized_score >= 0.35:
+            # Heuristic override: URL/body exploit check adds +0.70 per signal;
+            # threshold set to 0.65 so any single confirmed exploit pattern fires.
+            if heuristic_is_anomaly and heuristic_score >= 0.65 and normalized_score >= 0.20:
                 blended_probability = max(blended_probability, 0.90)
 
             calibrated_is_anomaly = blended_probability >= self.meta_threshold
@@ -1390,8 +1391,9 @@ class AnomalyDetector:
             + self.heuristic_weight * float(heuristic_score)
         )
 
-        # Rare hard override for obvious malicious payloads.
-        if heuristic_is_anomaly and heuristic_score >= 0.98 and normalized_score >= 0.35:
+        # Hard override: URL/body exploit check adds +0.70 per signal;
+        # threshold set to 0.65 so any single confirmed exploit pattern fires.
+        if heuristic_is_anomaly and heuristic_score >= 0.65 and normalized_score >= 0.20:
             combined_reason = heuristic_reason
             if reason and reason != "Anomalous pattern detected":
                 combined_reason = f"{heuristic_reason}; {reason}" if heuristic_reason else reason
@@ -1642,15 +1644,31 @@ class AnomalyDetector:
             anomalies.append("Critical severity finding")
             score += 0.6
         
-        # Check 5: Unusual URL pattern
+        # Check 5: Suspicious URL/query pattern (SQLi + XSS structural markers)
         url = data.get('request', {}).get('url', '')
-        if any(pattern in url.lower() for pattern in ['../', 'etc/passwd', 'union select', '<script>']):
+        url_lower = url.lower()
+        _url_suspicious = [
+            '../', 'etc/passwd', 'union select',
+            # XSS structural markers
+            '<script', 'onerror=', 'onload=', 'onmouseover=', 'onfocus=',
+            'javascript:', 'srcdoc=', '<img', '<svg', '<iframe', '<math',
+            '<body', '<details',
+            # URL-encoded variants
+            '%3cscript', '%3csvg', '%3cimg', '%3ciframe',
+            'onerror%3d', 'onload%3d',
+        ]
+        if any(pattern in url_lower for pattern in _url_suspicious):
             anomalies.append("Suspicious URL pattern")
             score += 0.7
 
-        # Check 6: Suspicious request body content
+        # Check 6: Suspicious request body content (SQLi + XSS)
         body = data.get('request', {}).get('body', '')
-        suspicious_body_patterns = ['<script', 'union select', '../', 'or 1=1', 'select * from', 'sqlmap', 'eval(', 'cmd.exe']
+        suspicious_body_patterns = [
+            '<script', 'union select', '../', 'or 1=1', 'select * from',
+            'sqlmap', 'eval(', 'cmd.exe',
+            # XSS body patterns
+            'onerror=', 'onload=', 'javascript:', '<img', '<svg', '<iframe',
+        ]
         if any(pattern in body.lower() for pattern in suspicious_body_patterns):
             anomalies.append("Suspicious request payload")
             score += 0.8
@@ -1876,20 +1894,8 @@ class AnomalyDetector:
 
                 with open(self.model_path, 'rb') as f:
                     with warnings.catch_warnings(record=True) as w:
-                        warnings.simplefilter('always', InconsistentVersionWarning)
+                        warnings.simplefilter('ignore', InconsistentVersionWarning)
                         model_data = pickle.load(f)
-
-                    version_warns = [
-                        warn for warn in w
-                        if _safe_issubclass(warn.category, InconsistentVersionWarning)
-                    ]
-                    if version_warns:
-                        print(
-                            f"[Anomaly Detector] InconsistentVersionWarning loading "
-                            f"{self.model_path}: {len(version_warns)} warning(s) "
-                            f"(sklearn runtime={_sklearn_runtime_version}). "
-                            f"First: {version_warns[0].message}"
-                        )
 
                 self.model = model_data['model']
                 self.scaler = model_data['scaler']

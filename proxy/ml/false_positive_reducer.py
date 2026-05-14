@@ -223,7 +223,11 @@ class FalsePositiveReducer:
         """
         if not self.is_trained:
             # If model not trained, use rule-based heuristics
-            return self._heuristic_classification(finding)
+            is_fp, conf = self._heuristic_classification(finding)
+            print(f"[FP Reducer] PREDICT (heuristic): is_fp={is_fp} conf={conf:.2f} "
+                  f"cat={finding.get('category','?')[:25]} "
+                  f"desc={finding.get('description','?')[:40]}")
+            return is_fp, conf
         
         try:
             # Extract features
@@ -239,6 +243,12 @@ class FalsePositiveReducer:
             # prediction: 0 = True Positive, 1 = False Positive
             is_false_positive = bool(prediction)
             confidence = probability[1] if is_false_positive else probability[0]
+            
+            # Diagnostic: show actual ML confidence for each finding
+            print(f"[FP Reducer] PREDICT (ML model): is_fp={is_false_positive} conf={confidence:.4f} "
+                  f"proba=[TP:{probability[0]:.3f}, FP:{probability[1]:.3f}] "
+                  f"cat={finding.get('category','?')[:25]} "
+                  f"desc={finding.get('description','?')[:40]}")
             
             return is_false_positive, float(confidence)
         except Exception as e:
@@ -467,7 +477,7 @@ class FalsePositiveReducer:
                     # Direct access if not voting
                     feature_importance = dict(zip(feature_names, base_estimator.feature_importances_.tolist()))
         except Exception as e:
-            print(f"⚠️  Warning: Could not extract feature importance: {e}")
+            print(f"[FP Reducer] WARNING: Could not extract feature importance: {e}")
             feature_importance = {name: 0.0 for name in feature_names}
 
         # Save model
@@ -564,24 +574,48 @@ class FalsePositiveReducer:
     def _load_model(self):
         """Load trained model from disk if available."""
         if os.path.exists(self.model_path):
+            model_data = None
+            # Try joblib first, then fall back to pickle for backward compatibility
             try:
                 import joblib
                 model_data = joblib.load(self.model_path)
-                
+            except Exception as joblib_err:
+                print(f"[FP Reducer] joblib.load failed: {joblib_err}, trying pickle...")
+                try:
+                    with open(self.model_path, 'rb') as f:
+                        model_data = pickle.load(f)
+                except Exception as pickle_err:
+                    print(f"[FP Reducer] pickle.load also failed: {pickle_err}")
+                    self.is_trained = False
+                    return
+
+            if model_data is None:
+                self.is_trained = False
+                return
+
+            try:
                 self.model = model_data['model']
                 self.scaler = model_data['scaler']
                 self.is_trained = model_data['is_trained']
                 
-                # Log version info
+                # Log version info (ASCII only — Unicode chars cause charmap failure on Windows)
                 timestamp  = model_data.get('timestamp', 'UNKNOWN')
                 version    = model_data.get('version', 'v2.0')
                 n_features = len(self.scaler.mean_) if hasattr(self.scaler, 'mean_') else 'unknown'
-                print(f"[FP Reducer] ✓ Loaded model from {self.model_path}")
+                
+                # === STARTUP DIAGNOSTICS ===
+                print(f"[FP Reducer] ========================================")
+                print(f"[FP Reducer] MODEL LOADED SUCCESSFULLY")
+                print(f"[FP Reducer]   Path      : {self.model_path}")
                 print(f"[FP Reducer]   Version   : {version}")
                 print(f"[FP Reducer]   Timestamp : {timestamp}")
                 print(f"[FP Reducer]   Features  : {n_features}")
+                print(f"[FP Reducer]   Inference : ENABLED (ML predictions active)")
+                print(f"[FP Reducer]   Fallback  : DISABLED (model loaded)")
+                print(f"[FP Reducer] ========================================")
             except Exception as e:
-                print(f"[FP Reducer] Failed to load model: {e}")
+                print(f"[FP Reducer] FAILED to extract model data: {e}")
+                print(f"[FP Reducer] Inference : DISABLED (falling back to heuristics)")
                 self.is_trained = False
     
     def get_model_info(self) -> Dict[str, Any]:

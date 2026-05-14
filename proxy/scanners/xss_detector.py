@@ -186,6 +186,7 @@ class XSSDetector:
                         findings.append({
                             'severity': 'High',
                             'category': 'Cross-Site Scripting (XSS)',
+                            'confidence_tier': 'heuristic',  # Passive pattern match — no active exploit proof
                             'description': f'Potential reflected XSS in parameter "{param_name}"',
                             'evidence': f'Parameter value "{param_value[:100]}" appears unescaped in response',
                             'recommendation': 'Encode all user input before displaying. Use Content-Security-Policy headers.',
@@ -219,6 +220,7 @@ class XSSDetector:
                 findings.append({
                     'severity': 'Medium',
                     'category': 'Cross-Site Scripting (XSS)',
+                    'confidence_tier': 'informational',  # CMS-native HTML — not an exploit indicator
                     'description': f'Potentially dangerous HTML tag detected: <{tag}>',
                     'evidence': f'Found {len(matches)} instance(s) of <{tag}> tag in {url}',
                     'recommendation': 'Review usage of dangerous HTML tags. Implement Content-Security-Policy.',
@@ -233,6 +235,7 @@ class XSSDetector:
                 findings.append({
                     'severity': 'Medium',
                     'category': 'Cross-Site Scripting (XSS)',
+                    'confidence_tier': 'heuristic',  # Passive pattern match — no active exploit proof
                     'description': f'Inline event handler detected: {handler}',
                     'evidence': f'Event handler "{handler}" found in response from {url}',
                     'recommendation': 'Avoid inline event handlers. Use addEventListener() instead.',
@@ -246,6 +249,7 @@ class XSSDetector:
             findings.append({
                 'severity': 'High',
                 'category': 'Cross-Site Scripting (XSS)',
+                'confidence_tier': 'heuristic',  # Passive pattern match — no active exploit proof
                 'description': 'JavaScript protocol detected in response',
                 'evidence': f'javascript: protocol found in {url}',
                 'recommendation': 'Remove javascript: protocol usage. Use proper event handlers.',
@@ -280,6 +284,7 @@ class XSSDetector:
                 findings.append({
                     'severity': 'Medium',
                     'category': 'Cross-Site Scripting (XSS)',
+                    'confidence_tier': 'heuristic',  # Passive pattern match — no active exploit proof
                     'description': f'Dangerous JavaScript sink detected: {sink}',
                     'evidence': f'Potentially dangerous sink "{sink}" found in {url}',
                     'recommendation': 'Avoid using dangerous sinks with user input. Use safe alternatives like textContent.',
@@ -300,6 +305,7 @@ class XSSDetector:
                 findings.append({
                     'severity': 'High',
                     'category': 'Cross-Site Scripting (XSS)',
+                    'confidence_tier': 'heuristic',  # Passive pattern match — no active exploit proof
                     'description': 'Unsafe DOM manipulation detected',
                     'evidence': f'Unsafe DOM operation found in {url}',
                     'recommendation': 'Use safe DOM manipulation methods. Sanitize all user input.',
@@ -332,6 +338,7 @@ class XSSDetector:
             findings.append({
                 'severity': 'Info',
                 'category': 'Cross-Site Scripting (XSS)',
+                'confidence_tier': 'informational',  # Observation only — not exploitable
                 'description': f'Found {len(inputs)} input field(s) - verify XSS protection',
                 'evidence': f'Input fields detected in {url}. Ensure proper output encoding.',
                 'recommendation': 'Implement Content-Security-Policy header. Encode all output.',

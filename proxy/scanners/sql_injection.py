@@ -183,6 +183,7 @@ class SQLInjectionDetector:
                 return {
                     'severity': 'High',
                     'category': 'SQL Injection',
+                    'confidence_tier': 'heuristic',  # Passive error detection — no active exploit proof
                     'description': 'SQL error message detected in response - indicates potential SQL injection vulnerability',
                     'evidence': f'SQL error pattern found: "{match.group()}" in response from {url}',
                     'recommendation': 'Use parameterized queries or prepared statements. Validate and sanitize all user inputs.',
@@ -215,6 +216,7 @@ class SQLInjectionDetector:
                     findings.append({
                         'severity': 'Medium',
                         'category': 'SQL Injection',
+                        'confidence_tier': 'heuristic',  # Passive pattern match — no active exploit proof
                         'description': f'SQL keyword detected in parameter "{param_name}"',
                         'evidence': f'Parameter "{param_name}" contains SQL keyword: {keyword}. Value: {param_value[:100]}',
                         'recommendation': 'Validate input to reject SQL keywords. Use allowlists for expected values.',
@@ -230,6 +232,7 @@ class SQLInjectionDetector:
                     findings.append({
                         'severity': 'Medium',
                         'category': 'SQL Injection',
+                        'confidence_tier': 'heuristic',  # Passive pattern match — no active exploit proof
                         'description': f'Suspicious SQL character detected in parameter "{param_name}"',
                         'evidence': f'Parameter "{param_name}" contains "{char}". Value: {param_value[:100]}',
                         'recommendation': 'Escape special characters. Use parameterized queries.',
@@ -263,6 +266,7 @@ class SQLInjectionDetector:
                         return {
                             'severity': 'Medium',
                             'category': 'SQL Injection',
+                            'confidence_tier': 'heuristic',  # Passive URL pattern match
                             'description': f'SQL keyword detected in URL parameter "{param_name}"',
                             'evidence': f'URL parameter "{param_name}" contains SQL keyword: {keyword}. URL: {url}',
                             'recommendation': 'Validate URL parameters. Use parameterized queries.',

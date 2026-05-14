@@ -84,7 +84,7 @@ class AttackClassifier:
                 max_iter=1000,
                 class_weight="balanced",
                 solver="lbfgs",
-                multi_class="auto",
+                # multi_class removed in sklearn 1.5 — default behaviour is equivalent
             ),
         }
         self.default_model_name = "random_forest"

@@ -10,7 +10,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_security_dashboard';
-$plugin->version = 2026031400;  // YYYYMMDDXX - ZAP Integration & Vulnerability Scanning
-$plugin->requires = 2022041900; // Moodle 4.0+
+$plugin->version = 2026051200;  // YYYYMMDDXX - SOC Dashboard Integration
+$plugin->requires = 2019111800; // Moodle 3.8+
 $plugin->maturity = MATURITY_BETA;
-$plugin->release = 'v2.0.0-beta';
+$plugin->release = 'v2.1.0-beta';

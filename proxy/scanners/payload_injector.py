@@ -238,6 +238,7 @@ class PayloadInjector:
                             'severity': 'Critical',
                             'category': 'SQL Injection',
                             'type': 'Time-Based Blind SQL Injection',
+                            'confidence_tier': 'confirmed',  # Active exploit evidence — bypass FP reduction
                             'description': f'Time-based blind SQL Injection detected in parameter "{param_name}"',
                             'evidence': f'Payload with sleep/delay caused request timeout ({elapsed_ms:.0f}ms). '
                                         f'Server executed the injected SQL sleep command.',
@@ -604,6 +605,7 @@ class PayloadInjector:
                         'severity': 'Critical',
                         'category': 'SQL Injection',
                         'type': 'Error-Based SQL Injection',
+                        'confidence_tier': 'confirmed',  # Active exploit evidence — bypass FP reduction
                         'description': f'SQL Injection detected in {injection_point} "{param_name}" (error-based)',
                         'evidence': f'SQL error triggered by payload [{payload_text[:80]}] '
                                     f'in parameter "{param_name}" at {url}. '
@@ -623,6 +625,7 @@ class PayloadInjector:
                     'severity': 'High',
                     'category': 'SQL Injection',
                     'type': 'Error-Based SQL Injection (HTTP 500)',
+                    'confidence_tier': 'confirmed',  # Active exploit evidence — bypass FP reduction
                     'description': f'Potential SQL Injection in {injection_point} "{param_name}" - server error {status_code}',
                     'evidence': f'HTTP {status_code} returned after injecting [{payload_text[:80]}] '
                                 f'in parameter "{param_name}" at {url}. '
@@ -644,6 +647,7 @@ class PayloadInjector:
                     'severity': 'Critical',
                     'category': 'SQL Injection',
                     'type': 'Time-Based Blind SQL Injection',
+                    'confidence_tier': 'confirmed',  # Active exploit evidence — bypass FP reduction
                     'description': f'Time-based blind SQL Injection in {injection_point} "{param_name}"',
                     'evidence': f'Payload [{payload_text[:80]}] in parameter "{param_name}" '
                                 f'caused {elapsed_ms:.0f}ms response at {url} '
@@ -667,6 +671,7 @@ class PayloadInjector:
                             'severity': 'High',
                             'category': 'Cross-Site Scripting (XSS)',
                             'type': 'Reflected XSS via Payload',
+                            'confidence_tier': 'confirmed',  # Active exploit evidence — bypass FP reduction
                             'description': f'XSS detected in {injection_point} "{param_name}"',
                             'evidence': f'Payload [{payload_text[:80]}] reflected in response '
                                         f'from parameter "{param_name}" at {url}.',
@@ -706,6 +711,7 @@ class PayloadInjector:
                         'severity': 'High',
                         'category': 'Cross-Site Request Forgery (CSRF)',
                         'type': 'CSRF Token Bypass',
+                        'confidence_tier': 'confirmed',  # Active exploit evidence — bypass FP reduction
                         'description': f'CSRF protection may be missing on {injection_point} "{param_name}"',
                         'evidence': f'Request with invalid/missing CSRF token [{payload_text[:60]}] '
                                     f'was accepted (HTTP {status_code}) at {url}. '

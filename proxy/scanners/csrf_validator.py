@@ -144,6 +144,7 @@ class CSRFValidator:
             findings.append({
                 'severity': 'High',
                 'category': 'Cross-Site Request Forgery (CSRF)',
+                'confidence_tier': 'heuristic',  # Structural observation — no active exploit proof
                 'description': f'Missing CSRF protection on {method} request',
                 'evidence': f'{method} request to {url} does not include CSRF token',
                 'recommendation': 'Implement CSRF tokens for all state-changing operations. Use synchronizer token pattern or double-submit cookie.',
@@ -189,6 +190,7 @@ class CSRFValidator:
                     findings.append({
                         'severity': 'High',
                         'category': 'Cross-Site Request Forgery (CSRF)',
+                        'confidence_tier': 'heuristic',  # Structural observation — no active exploit proof
                         'description': f'Form without CSRF protection detected',
                         'evidence': f'Form #{i+1} in {url} uses {method_match.group(1).upper()} but has no CSRF token',
                         'recommendation': 'Add CSRF token to all forms. Use framework-provided CSRF protection.',
@@ -225,6 +227,7 @@ class CSRFValidator:
                 findings.append({
                     'severity': 'Medium',
                     'category': 'Cross-Site Request Forgery (CSRF)',
+                    'confidence_tier': 'informational',  # Best-practice observation
                     'description': 'Cookie without SameSite attribute',
                     'evidence': f'Set-Cookie header in {url} does not include SameSite attribute',
                     'recommendation': 'Set SameSite=Strict or SameSite=Lax for all cookies to prevent CSRF attacks.',
@@ -235,6 +238,7 @@ class CSRFValidator:
                 findings.append({
                     'severity': 'Medium',
                     'category': 'Cross-Site Request Forgery (CSRF)',
+                    'confidence_tier': 'informational',  # Best-practice observation
                     'description': 'Cookie with SameSite=None',
                     'evidence': f'Cookie in {url} uses SameSite=None, which offers no CSRF protection',
                     'recommendation': 'Use SameSite=Strict or SameSite=Lax unless cross-site access is required.',
