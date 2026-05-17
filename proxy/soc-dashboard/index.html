@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MoodleSec — AI Security Operations Center</title>
   <meta name="description" content="AI-Powered Security Operations Center Dashboard for MoodleSec Proxy">
+  <base href="/dashboard/">
 
   <!-- Google Fonts: Inter + JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -54,6 +55,11 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
             <span>ML Pipeline</span>
           </div>
+          <div class="sidebar-item" data-page="incidents" id="nav-incidents">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+            <span>Incidents</span>
+            <span class="sidebar-badge" id="nav-incidents-badge" style="display:none">0</span>
+          </div>
         </div>
 
         <!-- Analytics -->
@@ -63,11 +69,19 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
             <span>Statistics</span>
           </div>
+          <div class="sidebar-item" data-page="mlperf" id="nav-mlperf">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+            <span>ML Performance</span>
+          </div>
         </div>
 
         <!-- System -->
         <div class="sidebar-section">
           <div class="sidebar-section-label">System</div>
+          <div class="sidebar-item" data-page="architecture" id="nav-architecture">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+            <span>Architecture</span>
+          </div>
           <div class="sidebar-item" data-page="health" id="nav-health">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
             <span>System Health</span>
@@ -149,16 +163,39 @@
                 </div>
               </div>
 
-              <!-- Threat Activity Feed -->
-              <div class="panel" id="overview-threat-feed">
-                <div class="panel-header">
-                  <div class="panel-title">Threat Activity</div>
+              <!-- Incident Correlation + Threat Feed -->
+              <div style="display:flex;flex-direction:column;gap:var(--space-4)">
+                <!-- Correlated Incidents -->
+                <div class="panel">
+                  <div class="panel-header">
+                    <div class="panel-title">Correlated Incidents</div>
+                    <button class="btn btn-ghost btn-sm" data-page="incidents">View All</button>
+                  </div>
+                  <div class="panel-body" style="padding:0" id="overview-incidents-body">
+                    <div class="skeleton skeleton-row"></div>
+                    <div class="skeleton skeleton-row"></div>
+                  </div>
                 </div>
-                <div class="panel-body" id="threat-feed-body">
-                  <div class="skeleton skeleton-row"></div>
-                  <div class="skeleton skeleton-row"></div>
-                  <div class="skeleton skeleton-row"></div>
+                <!-- Threat Activity Feed -->
+                <div class="panel" id="overview-threat-feed">
+                  <div class="panel-header">
+                    <div class="panel-title">Threat Activity</div>
+                  </div>
+                  <div class="panel-body" id="threat-feed-body">
+                    <div class="skeleton skeleton-row"></div>
+                    <div class="skeleton skeleton-row"></div>
+                  </div>
                 </div>
+              </div>
+            </div>
+
+            <!-- Mini Timeline -->
+            <div class="panel mb-6">
+              <div class="panel-header">
+                <div class="panel-title">Attack Timeline (Last 60 min)</div>
+              </div>
+              <div class="panel-body" style="height:120px">
+                <canvas id="chart-mini-timeline" height="100"></canvas>
               </div>
             </div>
 
@@ -307,6 +344,12 @@
               <div class="skeleton skeleton-card"></div>
             </div>
 
+            <!-- Attack Timeline Chart -->
+            <div class="panel mb-6">
+              <div class="panel-header"><div class="panel-title">Attack Timeline</div></div>
+              <div class="panel-body" style="height:280px"><canvas id="chart-attack-timeline" height="260"></canvas></div>
+            </div>
+
             <div class="grid-2 mb-6">
               <div class="panel">
                 <div class="panel-header"><div class="panel-title">Attack Distribution</div></div>
@@ -401,6 +444,67 @@
             </div>
           </section>
 
+          <!-- ══════════ PAGE: Incidents ══════════ -->
+          <section class="page-section" id="page-incidents">
+            <div class="section-header">
+              <div>
+                <div class="section-title">Correlated Incidents</div>
+                <div class="section-description">Alerts grouped by source IP + attack type within 5-minute windows</div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-body" style="padding:0" id="incidents-full-body">
+                <div class="skeleton skeleton-row"></div>
+                <div class="skeleton skeleton-row"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ══════════ PAGE: ML Performance ══════════ -->
+          <section class="page-section" id="page-mlperf">
+            <div class="section-header">
+              <div>
+                <div class="section-title">ML Pipeline Performance</div>
+                <div class="section-description">Model evaluation metrics and training data summary</div>
+              </div>
+            </div>
+            <div class="grid-3 mb-6" id="ml-perf-cards">
+              <div class="skeleton skeleton-card"></div>
+              <div class="skeleton skeleton-card"></div>
+              <div class="skeleton skeleton-card"></div>
+              <div class="skeleton skeleton-card"></div>
+              <div class="skeleton skeleton-card"></div>
+              <div class="skeleton skeleton-card"></div>
+            </div>
+            <div class="panel mb-6">
+              <div class="panel-header"><div class="panel-title">Model Comparison</div></div>
+              <div class="panel-body" style="padding:0" id="ml-perf-models">
+                <div class="skeleton skeleton-row"></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-header"><div class="panel-title">Pipeline Configuration</div></div>
+              <div class="panel-body" id="ml-perf-summary">
+                <div class="skeleton skeleton-row"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ══════════ PAGE: Architecture ══════════ -->
+          <section class="page-section" id="page-architecture">
+            <div class="section-header">
+              <div>
+                <div class="section-title">System Architecture</div>
+                <div class="section-description">MoodleSec security pipeline flow and component overview</div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-body" id="architecture-diagram">
+                <div class="skeleton" style="height:400px;border-radius:var(--radius-lg)"></div>
+              </div>
+            </div>
+          </section>
+
         </div>
       </div>
     </main>
@@ -451,6 +555,10 @@
   <script src="js/components/persistence-view.js"></script>
   <script src="js/components/log-viewer.js"></script>
   <script src="js/components/pipeline-trace-viz.js"></script>
+  <script src="js/components/incident-correlator.js"></script>
+  <script src="js/components/timeline-chart.js"></script>
+  <script src="js/components/ml-performance.js"></script>
+  <script src="js/components/architecture-viz.js"></script>
   <script src="js/app.js"></script>
 
   <!-- Reset Queue handler (inline for reliability) -->

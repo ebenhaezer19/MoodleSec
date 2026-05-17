@@ -1,8 +1,5 @@
 """
-False Positive Reduction using Random Forest
-
-Reduces false positives by learning from historical scan data
-and user feedback to classify findings as true/false positives.
+Anomaly-stage FP reducer using ensemble classifier.
 """
 
 import numpy as np
@@ -19,26 +16,9 @@ from .path_utils import normalize_model_path
 
 
 class FalsePositiveReducer:
-    """
-    Reduces false positives using Random Forest classifier.
-    
-    Features used:
-    - Finding severity (encoded)
-    - Finding category (encoded)
-    - Evidence length
-    - URL pattern features
-    - Historical occurrence count
-    - Response status code
-    - Response time
-    """
+    """RF+GB ensemble for anomaly-stage FP reduction."""
     
     def __init__(self, model_path: str = "ml/models/fp_reducer.pkl"):
-        """
-        Initialize False Positive Reducer.
-        
-        Args:
-            model_path: Path to save/load the trained model
-        """
         self.model_path = normalize_model_path(model_path, "fp_reducer.pkl")
         self.model = None
         self.scaler = StandardScaler()
@@ -53,7 +33,7 @@ class FalsePositiveReducer:
             'info': 1
         }
         
-        # Enhanced category encoding with more categories
+        # Category encoding
         self.category_encoding = {}
         self._build_category_encoding()
     
@@ -103,16 +83,7 @@ class FalsePositiveReducer:
             return int(default)
     
     def extract_features(self, finding: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> np.ndarray:
-        """
-        Extract features from a finding for classification.
-        
-        Args:
-            finding: Security finding dictionary
-            context: Additional context (response time, status code, etc.)
-            
-        Returns:
-            Feature vector as numpy array
-        """
+        """Extract feature vector from finding."""
         features = []
         
         # Feature 1: Severity (encoded)
@@ -190,16 +161,7 @@ class FalsePositiveReducer:
         return np.array(features).reshape(1, -1)
     
     def predict(self, finding: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Tuple[bool, float]:
-        """
-        Predict if a finding is a false positive.
-        
-        Args:
-            finding: Security finding dictionary
-            context: Additional context
-            
-        Returns:
-            Tuple of (is_false_positive, confidence)
-        """
+        """Predict if finding is a false positive."""
         if not self.is_trained:
             # If model not trained, use rule-based heuristics
             return self._heuristic_classification(finding)
@@ -226,15 +188,7 @@ class FalsePositiveReducer:
             return self._heuristic_classification(finding)
     
     def _heuristic_classification(self, finding: Dict[str, Any]) -> Tuple[bool, float]:
-        """
-        Rule-based heuristic classification when model is not trained.
-        
-        Args:
-            finding: Security finding dictionary
-            
-        Returns:
-            Tuple of (is_false_positive, confidence)
-        """
+        """Rule-based fallback when model is not trained."""
         # Low confidence heuristics
         confidence = 0.5
         
@@ -255,9 +209,7 @@ class FalsePositiveReducer:
         if len(evidence) < 10:
             return True, 0.6
 
-        # Pattern 4: Natural-language educational context without exploit structure.
-        # Downgrade benign prose that contains keywords like "select" or "script" but
-        # lacks operators, HTML tags, or traversal markers.
+        # Educational context without exploit structure
         edu_tokens = (
             "course",
             "materials",
@@ -279,16 +231,7 @@ class FalsePositiveReducer:
         return False, 0.5
     
     def train(self, training_data: List[Dict[str, Any]], labels: List[int]) -> Dict[str, Any]:
-        """
-        Train the Random Forest model.
-        
-        Args:
-            training_data: List of findings with context
-            labels: List of labels (0 = True Positive, 1 = False Positive)
-            
-        Returns:
-            Training metrics
-        """
+        """Train the ensemble model."""
         if len(training_data) < 10:
             return {
                 'error': 'Insufficient training data (minimum 10 samples required)',
@@ -298,7 +241,7 @@ class FalsePositiveReducer:
         # Extract features for all training samples
         X = []
         for sample in training_data:
-            # ✅ FIX: Handle both nested and flat formats
+            # Handle both nested and flat formats
             if 'finding' in sample:
                 # Nested format: {'finding': {...}, 'context': {...}}
                 finding = sample['finding']
@@ -314,8 +257,7 @@ class FalsePositiveReducer:
         X = np.array(X)
         y = np.array(labels)
         
-        # Split data (80/20 train/test with stratification)
-        # Using larger test set for better evaluation of generalization
+        # Train/test split
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.25, random_state=42, stratify=y if len(np.unique(y)) > 1 else None
         )
@@ -332,10 +274,7 @@ class FalsePositiveReducer:
         from sklearn.svm import SVC
         from sklearn.metrics import precision_score, recall_score, f1_score, classification_report
 
-        # Model 1: Random Forest (Anti-Overfitting Configuration)
-        # Reduced complexity to prevent overfitting on small datasets
-        # Changes: n_estimators 150→100, max_depth 12→8, added max_features
-        # min_samples_split 4→6, min_samples_leaf 2→3 for better generalization
+        # Random Forest (regularized)
         rf_model = RandomForestClassifier(
             n_estimators=100,        # Reduced from 150
             max_depth=8,             # Reduced from 12 to prevent memorization
@@ -346,10 +285,7 @@ class FalsePositiveReducer:
             class_weight='balanced'
         )
 
-        # Model 2: Gradient Boosting (Regularized)
-        # Reduced complexity for better generalization
-        # Note: GradientBoostingClassifier doesn't have class_weight parameter
-        # Instead, we handle imbalance through subsample and learning_rate tuning
+        # Gradient Boosting (regularized)
         gb_model = GradientBoostingClassifier(
             n_estimators=75,         # Reduced from 100
             max_depth=4,             # Reduced from 5
@@ -428,7 +364,7 @@ class FalsePositiveReducer:
             'status_code', 'response_time_log', 'occurrence_count_log', 'days_since_first_seen_log'
         ]
         
-        # ✅ FIX: Proper feature importance extraction from ensemble
+        # Feature importance extraction
         feature_importance = {}
         try:
             # Get the base ensemble model before calibration
@@ -445,7 +381,7 @@ class FalsePositiveReducer:
                     # Direct access if not voting
                     feature_importance = dict(zip(feature_names, base_estimator.feature_importances_.tolist()))
         except Exception as e:
-            print(f"⚠️  Warning: Could not extract feature importance: {e}")
+            print(f"[FP Reducer] Warning: Could not extract feature importance: {e}")
             feature_importance = {name: 0.0 for name in feature_names}
 
         # Save model
@@ -474,16 +410,9 @@ class FalsePositiveReducer:
             'timestamp': datetime.utcnow().isoformat() + 'Z'
         }
     
-    def update_with_feedback(self, finding: Dict[str, Any], is_false_positive: bool, 
+    def update_with_feedback(self, finding: Dict[str, Any], is_false_positive: bool,
                             context: Optional[Dict[str, Any]] = None):
-        """
-        Update model with user feedback (for incremental learning).
-        
-        Args:
-            finding: Security finding
-            is_false_positive: User feedback (True = FP, False = TP)
-            context: Additional context
-        """
+        """Store user feedback for incremental learning."""
         # Store feedback for next training cycle
         feedback_file = "ml/data/fp_feedback.pkl"
         
@@ -595,7 +524,7 @@ class FalsePositiveReducer:
                 'n_features': len(self.scaler.mean_) if hasattr(self.scaler, 'mean_') else 16,
                 'model_path': self.model_path,
                 'confidence': '97.6%',  # Based on training accuracy
-                'status': '✅ Trained'
+                'status': 'trained'
             }
             
             # Check if it's a voting classifier with Random Forest
@@ -634,5 +563,5 @@ class FalsePositiveReducer:
                 'n_features': 16,
                 'model_path': self.model_path,
                 'confidence': '97.6%',
-                'status': '✅ Trained'
+                'status': 'trained'
             }

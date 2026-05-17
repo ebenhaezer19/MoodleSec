@@ -7,7 +7,10 @@ const App = (() => {
     overview: 'Overview',
     alerts: 'SOC Alert Queue',
     pipeline: 'ML Pipeline',
+    incidents: 'Correlated Incidents',
     statistics: 'Statistics',
+    mlperf: 'ML Performance',
+    architecture: 'System Architecture',
     health: 'System Health',
     logs: 'Trace Logs',
   };
@@ -26,6 +29,10 @@ const App = (() => {
     PersistenceView.init();
     LogViewer.init();
     PipelineTraceViz.init();
+    IncidentCorrelator.init();
+    TimelineChart.init();
+    MLPerformance.init();
+    ArchitectureViz.init();
 
     // Navigation
     document.querySelectorAll('.sidebar-item[data-page]').forEach(item => {

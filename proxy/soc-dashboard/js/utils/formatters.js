@@ -136,6 +136,8 @@ const Formatters = (() => {
       'directory traversal': 'Directory Traversal',
       'lfi': 'Local File Inclusion',
       'rfi': 'Remote File Inclusion',
+      'ssrf': 'Server-Side Request Forgery (SSRF)',
+      'server-side request forgery': 'Server-Side Request Forgery (SSRF)',
       'normal': 'Normal Traffic',
       'unknown': 'Unknown',
     };

@@ -1,12 +1,6 @@
 #!/usr/bin/env python3
 """
-Phishing and HTML Injection Detector for Moodle Comments
-
-Detects malicious content in user-generated content including:
-- HTML injection attempts
-- Phishing URLs
-- Social engineering patterns
-- Malicious scripts
+Phishing and HTML injection detector for Moodle comments.
 """
 
 import re
@@ -82,16 +76,7 @@ class PhishingDetector:
                 self.is_trained = False
     
     def detect(self, content: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
-        """
-        Detect phishing/HTML injection in content.
-        
-        Args:
-            content: Text content to analyze (comment, post, etc.)
-            context: Additional context (user_id, post_id, etc.)
-            
-        Returns:
-            Detection results with confidence and details
-        """
+        """Detect phishing/HTML injection in content."""
         if not content:
             return {
                 'is_malicious': False,

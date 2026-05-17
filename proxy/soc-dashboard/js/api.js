@@ -160,10 +160,26 @@ const API = (() => {
     return request('/soc/alerts/reset-all', { method: 'POST' });
   }
 
+  /** GET /soc/incidents — correlated incidents */
+  function getIncidents(limit = 50) {
+    return request(`/soc/incidents?limit=${limit}`, {}, 'incidents');
+  }
+
+  /** GET /soc/timeline — alert timeline buckets */
+  function getTimeline(minutes = 60, bucket = 5) {
+    return request(`/soc/timeline?minutes=${minutes}&bucket=${bucket}`, {}, 'timeline');
+  }
+
+  /** GET /ml/performance — ML metrics */
+  function getMLPerformance() {
+    return request('/ml/performance', {}, 'ml-performance');
+  }
+
   return {
     request, getAlerts, getAlertStats, getAlertDetail, resolveAlert,
     getSOCStatus, getHealth, getMLStatus, getMLModelsInfo, getDemoStatus,
     getRecentAnomalies, getAnomalyRuntime, getLogs, measureLatency,
     getLatestTraces, getPipelineTrace, resetAllAlerts,
+    getIncidents, getTimeline, getMLPerformance,
   };
 })();

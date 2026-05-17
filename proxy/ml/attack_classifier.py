@@ -1,5 +1,5 @@
 """
-Attack type classifier for web requests flagged as anomalous.
+Attack classifier — categorizes anomalous requests by attack type.
 """
 
 import os
@@ -22,9 +22,7 @@ from .path_utils import normalize_model_path
 
 
 class AttackClassifier:
-    """
-    Attack type classifier module for stage-2 categorization after anomaly detection.
-    """
+    """Stage-2 attack type classifier."""
 
     def __init__(self, model_path: str = "ml/models/attack_classifier.pkl"):
         self.model_path = normalize_model_path(model_path, "attack_classifier.pkl")
@@ -94,9 +92,7 @@ class AttackClassifier:
             "no",
         }
         self.last_debug_info: Dict[str, Any] = {}
-        # Educational / natural-language phrases that commonly contain SQL/XSS
-        # keywords but carry no exploit intent.  Used by the contextual
-        # postprocessor to suppress false positives on search/navigation text.
+        # Common phrases that contain SQL/XSS keywords but aren't exploits
         self.educational_context_terms = [
             "select course materials",
             "union of sets in math",
@@ -137,9 +133,7 @@ class AttackClassifier:
             "study",
         ]
 
-        # Structural markers that indicate exploit intent rather than natural language.
-        # If NONE of these appear near a keyword hit, the keyword is almost certainly
-        # being used in its everyday English meaning.
+        # Structural markers indicating exploit intent
         self._exploit_structure_markers = re.compile(
             r"""(?x)
             ['";=<>(){}\[\]]       # quote / bracket / operator characters
@@ -251,44 +245,25 @@ class AttackClassifier:
         return 1.0 if re.search(r"%25[0-9a-fA-F]{2}", text) else 0.0
 
     def _keyword_signal_count(self, text: str) -> int:
-        """Count raw keyword hits (used for feature extraction — must stay
-        stable to avoid invalidating the trained model)."""
+        """Count keyword hits for feature extraction."""
         text_lower = text.lower()
         total = 0
         for keyword in self.suspicious_keywords:
             total += len(re.findall(re.escape(keyword), text_lower))
         return total
 
-    # ------------------------------------------------------------------
-    # Natural-language context detection
-    # ------------------------------------------------------------------
+    # --- Natural language context detection ---
 
     def _is_natural_language_context(self, text: str) -> bool:
-        """Return True when *text* looks like a natural English sentence/query
-        rather than an exploit payload.
-
-        Heuristic:
-        1. Decode the text fully.
-        2. Check for structural exploit markers (quotes, operators, HTML tags,
-           path traversal, URL-encoding, etc.).
-        3. If NONE are present the text is almost certainly benign prose.
-
-        This is intentionally conservative — the presence of *any* structural
-        marker returns False, letting the existing exploit-pattern detectors
-        handle it.
-        """
+        """Check if text looks like natural language rather than an exploit."""
         decoded = self._multi_url_decode(text).strip()
         if not decoded:
             return False
 
-        # If the decoded text contains ANY structural exploit marker it is
-        # NOT a simple natural-language sentence.
         if self._exploit_structure_markers.search(decoded):
             return False
 
-        # Extra guard: short strings that are just a keyword by themselves
-        # (e.g., path segment "/select") are ambiguous — treat as NL only if
-        # there are at least two space-separated words.
+        # Need at least two words to be considered a sentence
         words = decoded.split()
         if len(words) < 2:
             return False
@@ -296,24 +271,9 @@ class AttackClassifier:
         return True
 
     def _is_educational_union_select(self, decoded_text: str) -> bool:
-        """Return True when a 'UNION SELECT' match is educational, not exploit.
-
-        An educational usage looks like:
-            'union select meaning in SQL class'
-            'how union select works'
-        A real exploit looks like:
-            'UNION SELECT username,password FROM users'
-            '1 UNION SELECT NULL,NULL --'
-
-        Checks:
-        1. Must contain an educational context term.
-        2. Must NOT contain column-enumeration (digits/commas after SELECT).
-        3. Must NOT contain FROM + table name after SELECT.
-        4. Must NOT contain SQL comment markers or quote chars.
-        """
+        """Check if UNION SELECT usage is educational rather than exploit."""
         text = decoded_text.lower()
 
-        # Must have educational wording
         edu_terms = [
             "meaning", "tutorial", "example", "class", "explain",
             "learning", "course", "lesson", "study", "how",
@@ -322,37 +282,102 @@ class AttackClassifier:
         if not any(term in text for term in edu_terms):
             return False
 
-        # Must NOT have exploit structure after UNION SELECT
         m = re.search(r"\bunion\b\s+(all\s+)?\bselect\b", text)
         if not m:
             return False
         after_select = text[m.end():]
 
-        # Column enumeration: SELECT 1,2,3 or SELECT NULL,NULL
         if re.match(r"\s+(\d+|null)(\s*,\s*(\d+|null))+", after_select):
             return False
-        # Table extraction: SELECT ... FROM
         if re.search(r"\bfrom\b\s+\w+", after_select):
             return False
-        # SQL comments
         if re.search(r"--|/\*|\*/|#", text):
             return False
-        # Quote characters near SQL keywords
         if re.search(r"['\";]", text):
             return False
 
         return True
 
-    def _detect_cmd_injection_per_param(self, request: Dict[str, Any]) -> List[str]:
-        """Inspect each query/body parameter value individually for command
-        injection operators paired with system commands.
+    # --- SSRF per-parameter detection ---
 
-        This catches payloads like ``|whoami``, ``&& id``, ``$(cat /etc/passwd)``
-        that the merged-text regex misses because parameter boundaries are lost.
-        """
+    _SSRF_PRIVATE_IP_RE = re.compile(
+        r"(?:"
+        r"127\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+        r"|0\.0\.0\.0"
+        r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+        r"|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"
+        r"|192\.168\.\d{1,3}\.\d{1,3}"
+        r"|169\.254\.169\.254"
+        r"|localhost"
+        r")"
+    )
+
+    _SSRF_CLOUD_METADATA_RE = re.compile(
+        r"169\.254\.169\.254"
+        r"|metadata\.google\.internal"
+        r"|metadata\.aws"
+        r"|100\.100\.100\.200"  # Alibaba Cloud metadata
+    )
+
+    _SSRF_URL_PARAM_NAMES_RE = re.compile(
+        r"(?:^|[?&])(url|redirect|next|dest|target|return|return_url|callback"
+        r"|continue|rurl|forward|go|goto|out|view|uri|path|link|file|page"
+        r"|feed|host|site|to)\s*=",
+        re.IGNORECASE,
+    )
+
+    _SSRF_DANGEROUS_SCHEMES_RE = re.compile(
+        r"(?:file|gopher|dict|ftp|ldap|tftp)://",
+        re.IGNORECASE,
+    )
+
+    def _detect_ssrf_per_param(self, request: Dict[str, Any]) -> List[str]:
+        """Inspect parameter values for SSRF indicators."""
         signals: List[str] = []
 
-        # Collect individual parameter values
+        params: Dict[str, str] = {}
+
+        query = self._safe_text(request.get("query_params", ""))
+        if query:
+            params.update(self._parse_query_params(query))
+
+        body = self._safe_text(request.get("body", ""))
+        if body:
+            parsed_b = self._parse_query_params(body)
+            if parsed_b:
+                params.update(parsed_b)
+
+        for key, raw_val in params.items():
+            val = self._multi_url_decode(raw_val).strip().lower()
+            if not val:
+                continue
+
+            has_scheme = val.startswith(("http://", "https://", "ftp://", "file://", "gopher://"))
+
+            if has_scheme and self._SSRF_PRIVATE_IP_RE.search(val):
+                signals.append("url-param-internal-ip")
+
+            if self._SSRF_CLOUD_METADATA_RE.search(val):
+                signals.append("cloud-metadata-target")
+
+            if self._SSRF_DANGEROUS_SCHEMES_RE.search(val):
+                signals.append("dangerous-scheme")
+
+            key_lower = key.strip().lower()
+            if has_scheme and re.match(
+                r"(url|redirect|next|dest|target|return|return_url|callback"
+                r"|continue|rurl|forward|go|goto|out|view|uri|link|feed|host|site|to)$",
+                key_lower,
+            ):
+                if self._SSRF_PRIVATE_IP_RE.search(val):
+                    signals.append("redirect-to-internal")
+
+        return signals
+
+    def _detect_cmd_injection_per_param(self, request: Dict[str, Any]) -> List[str]:
+        """Check individual parameter values for command injection."""
+        signals: List[str] = []
+
         param_values: List[str] = []
 
         query = self._safe_text(request.get("query_params", ""))
@@ -378,16 +403,15 @@ class AttackClassifier:
             if not val:
                 continue
 
-            # Pattern 1: operator followed by command
-            #   | whoami, |whoami, && id, ; cat, || uname
+            # Operator followed by command
             if re.search(r"(^|\s*)(;|&&|\|\||\|)\s*" + shell_cmds, val):
                 signals.append("param-cmd-chain")
 
-            # Pattern 2: $(command) or `command`
+            # Subshell execution
             if re.search(r"\$\(" + shell_cmds, val) or re.search(r"`[^`]*" + shell_cmds, val):
                 signals.append("param-cmd-subshell")
 
-            # Pattern 3: value starts with operator (e.g. param=|whoami)
+            # Value starts with operator
             if re.match(r"\s*[|;]\s*" + shell_cmds, val):
                 if "param-cmd-chain" not in signals:
                     signals.append("param-cmd-operator-prefix")
@@ -502,6 +526,28 @@ class AttackClassifier:
         if any(marker in decoded_text for marker in ["win.ini", "config.php", "id_rsa", "shadow"]):
             path_signals.append("sensitive-file-reference")
 
+        # LFI-specific signals
+        lfi_signals: List[str] = []
+        if re.search(r"(?:%2e%2e[%/\\]|\.\.%2f|%2e%2e/|%2e%2e\\)", merged_text, re.IGNORECASE):
+            lfi_signals.append("encoded-traversal")
+        if re.search(r"%25(?:2e|2E)%25(?:2e|2E)%25(?:2f|2F|5c|5C)", merged_text):
+            lfi_signals.append("double-encoded-traversal")
+        if "%00" in merged_text or "\x00" in decoded_text:
+            lfi_signals.append("null-byte-injection")
+        if re.search(r"php://(?:filter|input|data|expect|stdin|memory|temp)", decoded_text):
+            lfi_signals.append("php-wrapper")
+        if re.search(r"expect://", decoded_text):
+            lfi_signals.append("expect-wrapper")
+        if re.search(r"(?:\.\.[\\/]){4,}", decoded_text):
+            lfi_signals.append("deep-traversal")
+        if any(target in decoded_text for target in [
+            "config.php", "config-dist.php", "moodledata",
+            ".env", ".htaccess", "web.config",
+        ]):
+            lfi_signals.append("config-file-target")
+        if lfi_signals and not path_signals:
+            path_signals.append("lfi-indicator")
+
         command_signals: List[str] = []
         if re.search(
             r"(;|&&|\|\||\|)\s*(cat|ls|id|whoami|uname|cmd\.exe|powershell|bash|sh|wget|curl|nc|netcat|ping|ipconfig|ifconfig)\b",
@@ -518,13 +564,63 @@ class AttackClassifier:
         ):
             command_signals.append("cmd-verb")
 
-        # Per-parameter command injection detection: catches payloads like
-        # |whoami, &&id, $(cat /etc/passwd) that the merged-text regex may
-        # miss when parameter boundaries are lost in concatenation.
+        # Per-parameter cmd injection
         per_param_cmd_signals = self._detect_cmd_injection_per_param(request)
         for sig in per_param_cmd_signals:
             if sig not in command_signals:
                 command_signals.append(sig)
+
+        # Encoded command chains
+        if re.search(
+            r"(?:%3[bB]|%0[aAdD])[\s%20%09]*"
+            r"(?:cat|ls|id|whoami|uname|cmd|powershell|bash|sh|wget|curl|nc|netcat|ping|ipconfig|ifconfig|dir|type)\b",
+            merged_text,
+        ):
+            if "encoded-cmd-chain" not in command_signals:
+                command_signals.append("encoded-cmd-chain")
+        if re.search(
+            r"(?:%26%26|%7[cC]%7[cC]|%7[cC])[\s%20%09]*"
+            r"(?:cat|ls|id|whoami|uname|cmd|powershell|bash|sh|wget|curl|nc|netcat|ping|ipconfig|ifconfig|dir|type)\b",
+            merged_text,
+        ):
+            if "encoded-cmd-chain" not in command_signals:
+                command_signals.append("encoded-cmd-chain")
+
+        # Newline injection
+        if re.search(
+            r"(?:%0[aAdD]|\\n|\\r)\s*"
+            r"(?:cat|ls|id|whoami|uname|cmd|powershell|bash|sh|wget|curl|nc|netcat|ping|ipconfig|ifconfig|dir|type)\b",
+            merged_text, re.IGNORECASE,
+        ):
+            if "newline-injection" not in command_signals:
+                command_signals.append("newline-injection")
+
+        # Windows command execution
+        if re.search(
+            r"\bcmd(?:\.exe)?\s+/[cCkK]\s+\S",
+            decoded_text,
+        ):
+            if "windows-cmd-exec" not in command_signals:
+                command_signals.append("windows-cmd-exec")
+        if re.search(
+            r"\bpowershell(?:\.exe)?\s+(?:-\w+\s+)\S",
+            decoded_text,
+        ):
+            if "windows-powershell-exec" not in command_signals:
+                command_signals.append("windows-powershell-exec")
+
+        # SSRF signals
+        ssrf_signals: List[str] = []
+        if self._SSRF_CLOUD_METADATA_RE.search(decoded_text):
+            ssrf_signals.append("cloud-metadata-target")
+        if self._SSRF_DANGEROUS_SCHEMES_RE.search(decoded_text):
+            ssrf_signals.append("dangerous-scheme")
+        if self._SSRF_URL_PARAM_NAMES_RE.search(decoded_text) and self._SSRF_PRIVATE_IP_RE.search(decoded_text):
+            ssrf_signals.append("url-param-internal-ip")
+        per_param_ssrf_signals = self._detect_ssrf_per_param(request)
+        for sig in per_param_ssrf_signals:
+            if sig not in ssrf_signals:
+                ssrf_signals.append(sig)
 
         keyword_hits = {
             "select": bool(re.search(r"\bselect\b", decoded_text)),
@@ -534,7 +630,7 @@ class AttackClassifier:
         }
         educational_hits = [term for term in self.educational_context_terms if term in decoded_text]
 
-        has_strong_evidence = bool(sqli_strong_signals or xss_signals or path_signals or command_signals)
+        has_strong_evidence = bool(sqli_strong_signals or xss_signals or path_signals or command_signals or ssrf_signals or lfi_signals)
         keyword_only = bool(any(keyword_hits.values()) and not has_strong_evidence and not sqli_weak_signals)
 
         return {
@@ -544,7 +640,9 @@ class AttackClassifier:
             "sqli_weak_signals": sqli_weak_signals,
             "xss_signals": xss_signals,
             "path_signals": path_signals,
+            "lfi_signals": lfi_signals,
             "command_signals": command_signals,
+            "ssrf_signals": ssrf_signals,
             "keyword_hits": keyword_hits,
             "educational_hits": educational_hits,
             "keyword_only": keyword_only,
@@ -566,10 +664,7 @@ class AttackClassifier:
         signals = self._extract_contextual_signals(request)
         notes: List[str] = []
 
-        # Safety net: detect educational context BEFORE strong-signal boost.
-        # This prevents phrases like "union select meaning in SQL class" on
-        # search endpoints from being escalated to BLOCK even if some strong
-        # signal regex matched on the merged text.
+        # Check educational context before strong-signal boost
         payload_is_edu = (
             signals["search_path"]
             and signals["educational_hits"]
@@ -577,10 +672,9 @@ class AttackClassifier:
             and not signals["encoded_payload"]
         )
 
-        # Strong exploit structures should preserve recall and raise confidence floor.
         if signals["sqli_strong_signals"] and not signals["xss_signals"]:
             if payload_is_edu:
-                # Educational phrase on search path — suppress, do NOT boost.
+                # Educational phrase on search path
                 adjusted_attack_type = "normal"
                 adjusted_confidence = min(adjusted_confidence, 0.06)
                 notes.append(
@@ -597,14 +691,25 @@ class AttackClassifier:
             notes.append("Strong XSS execution structure detected")
 
         if signals["path_signals"]:
-            adjusted_attack_type = "Path Traversal"
-            adjusted_confidence = max(adjusted_confidence, 0.72)
-            notes.append("Path traversal structure detected")
+            # Distinguish LFI from generic Path Traversal based on LFI-specific signals
+            if signals.get("lfi_signals"):
+                adjusted_attack_type = "LFI"
+                adjusted_confidence = max(adjusted_confidence, 0.74)
+                notes.append(f"LFI structure detected ({', '.join(signals['lfi_signals'])})")
+            else:
+                adjusted_attack_type = "Path Traversal"
+                adjusted_confidence = max(adjusted_confidence, 0.72)
+                notes.append("Path traversal structure detected")
 
         if signals["command_signals"]:
             adjusted_attack_type = "Command Injection"
             adjusted_confidence = max(adjusted_confidence, 0.78)
             notes.append("Command injection structure detected")
+
+        if signals.get("ssrf_signals"):
+            adjusted_attack_type = "SSRF"
+            adjusted_confidence = max(adjusted_confidence, 0.70)
+            notes.append("SSRF structure detected")
 
         if not signals["has_strong_evidence"]:
             # --- Natural-language detection for the merged payload text ---
@@ -670,7 +775,9 @@ class AttackClassifier:
                 "sqli_weak": list(signals.get("sqli_weak_signals", [])),
                 "xss": list(signals["xss_signals"]),
                 "path": list(signals["path_signals"]),
+                "lfi": list(signals.get("lfi_signals", [])),
                 "command": list(signals["command_signals"]),
+                "ssrf": list(signals.get("ssrf_signals", [])),
             },
             "keyword_hits": dict(signals["keyword_hits"]),
             "educational_hits": list(signals["educational_hits"]),

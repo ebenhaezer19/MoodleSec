@@ -93,6 +93,24 @@ const Polling = (() => {
       const data = await API.getLatestTraces(20);
       if (data && data.traces) State.set('pipelineTraces', data.traces);
     }, 8000);
+
+    // ── INCIDENTS (10s) — Correlated incident groups ──
+    register('incidents', async () => {
+      const data = await API.getIncidents(50);
+      if (data && data.incidents) State.set('incidents', data.incidents);
+    }, 10000);
+
+    // ── TIMELINE (10s) — Attack timeline for charts ──
+    register('timeline', async () => {
+      const data = await API.getTimeline(60, 5);
+      if (data) State.set('timeline', data);
+    }, 10000);
+
+    // ── ML PERFORMANCE (60s) — Static ML metrics ──
+    register('mlPerformance', async () => {
+      const data = await API.getMLPerformance();
+      if (data) State.set('mlPerformance', data);
+    }, 60000);
   }
 
   return { register, stop, stopAll, startAll };

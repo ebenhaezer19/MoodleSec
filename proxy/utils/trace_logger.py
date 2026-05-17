@@ -8,13 +8,13 @@ This module contains ZERO ML logic and ZERO business logic.
 """
 from __future__ import annotations
 
-# ── Configuration ─────────────────────────────────────────────────────────
+# Configuration
 # When True  → full pipeline trace (REQUEST_IN … RESPONSE)
 # When False → only DECISION + SOC are printed
 DEBUG_TRACE: bool = True
 
 
-# ── Core emitter ──────────────────────────────────────────────────────────
+# Core emitter
 
 def trace(step: str, message: str) -> None:
     """Always-on trace (DECISION, SOC, RESPONSE).
@@ -31,7 +31,7 @@ def trace_debug(step: str, message: str) -> None:
         print(f"[TRACE][{step}] {message}", flush=True)
 
 
-# ── Convenience helpers ───────────────────────────────────────────────────
+# Convenience helpers
 
 def trace_request_in(method: str, norm_path: str, query: str, client_ip: str) -> None:
     qs = f"?{query}" if query else ""
@@ -84,9 +84,7 @@ def trace_response(status_code: int, final_decision: str) -> None:
     trace("RESPONSE", f"HTTP {status_code} final_decision={final_decision}")
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# Pipeline Trace Store — post-hoc explainable AI trace storage
-# ══════════════════════════════════════════════════════════════════════════
+# Pipeline Trace Store
 
 import json
 import os

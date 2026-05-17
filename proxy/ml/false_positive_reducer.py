@@ -1,8 +1,5 @@
 """
-False Positive Reduction using Random Forest
-
-Reduces false positives by learning from historical scan data
-and user feedback to classify findings as true/false positives.
+FP reducer using ensemble classifier.
 """
 
 import numpy as np
@@ -19,34 +16,9 @@ from .path_utils import normalize_model_path
 
 
 class FalsePositiveReducer:
-    """
-    Reduces false positives using RF + GB Ensemble classifier (Phase 5 Clean-14).
-    
-    Features used (14 total):
-    - Finding severity (encoded)
-    - Finding category (encoded)
-    - Evidence length
-    - Description length
-    - URL pattern features (complexity, has_params)
-    - CVSS score (neutralized=0 in training)
-    - Risk score (neutralized=0 in training)
-    - FP keyword count
-    - TP keyword count
-    - Keyword ratio
-    - Is informational
-    - Response status code
-    - Response time
-    NOTE: occurrence_count and days_since_first_seen REMOVED (Phase 5 shortcut fix)
-    Model persistence: joblib (not pickle)
-    """
+    """RF+GB ensemble for false positive reduction."""
     
     def __init__(self, model_path: str = "ml/models/fp_reducer.pkl"):
-        """
-        Initialize False Positive Reducer.
-        
-        Args:
-            model_path: Path to save/load the trained model
-        """
         self.model_path = normalize_model_path(model_path, "fp_reducer.pkl")
         self.model = None
         self.scaler = StandardScaler()
@@ -61,16 +33,15 @@ class FalsePositiveReducer:
             'info': 1
         }
         
-        # Enhanced category encoding with more categories
+        # Category encoding
         self.category_encoding = {}
         
-        # Keywords for FP/TP detection (features 9-10-11-12)
-        # FP indicators: informational, best-practice, header issues
+        # FP indicator keywords
         self.fp_keywords = [
             'missing', 'not implemented', 'not set', 'header', 'best practice',
             'recommendation', 'information', 'disclosure', 'version', 'banner'
         ]
-        # TP indicators: exploitable vulnerabilities
+        # TP indicator keywords
         self.tp_keywords = [
             'injection', 'xss', 'csrf', 'bypass', 'exploit', 'vulnerability',
             'attack', 'malicious', 'unauthorized', 'exposed', 'sensitive'
@@ -124,16 +95,7 @@ class FalsePositiveReducer:
             return int(default)
     
     def extract_features(self, finding: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> np.ndarray:
-        """
-        Extract features from a finding for classification.
-        
-        Args:
-            finding: Security finding dictionary
-            context: Additional context (response time, status code, etc.)
-            
-        Returns:
-            Feature vector as numpy array
-        """
+        """Extract feature vector from finding."""
         features = []
         
         # Feature 1: Severity (encoded)
@@ -169,9 +131,7 @@ class FalsePositiveReducer:
         # Feature 8: Risk score (if available)
         features.append(self._safe_float(finding.get('risk_score', 0), 0.0))
 
-        # Feature 9-12: Domain-specific keyword features
-        # Source: OWASP Top 10, CVE Common Patterns, SANS Security Guidelines
-        # Expert knowledge-based patterns — NOT derived from training labels
+        # Domain-specific keyword features
         desc_lower = description.lower()
 
         # Feature 9: FP keyword count (informational/best-practice indicators)
@@ -202,8 +162,7 @@ class FalsePositiveReducer:
             # Feature 14: Response time ms (raw — matches training distribution)
             features.append(context.get('response_time', 0))
             
-            # NOTE: occurrence_count (feature 15) and days_since_first_seen (feature 16)
-            # REMOVED in Phase 5 Clean-14 fix — these caused data leakage / shortcut learning.
+            # occurrence_count and days_since_first_seen removed (data leakage)
         else:
             # Default values if no context (status_code, response_time only)
             features.extend([200, 0])
@@ -211,16 +170,7 @@ class FalsePositiveReducer:
         return np.array(features).reshape(1, -1)
     
     def predict(self, finding: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Tuple[bool, float]:
-        """
-        Predict if a finding is a false positive.
-        
-        Args:
-            finding: Security finding dictionary
-            context: Additional context
-            
-        Returns:
-            Tuple of (is_false_positive, confidence)
-        """
+        """Predict if finding is a false positive."""
         if not self.is_trained:
             # If model not trained, use rule-based heuristics
             is_fp, conf = self._heuristic_classification(finding)
@@ -257,15 +207,7 @@ class FalsePositiveReducer:
             return self._heuristic_classification(finding)
     
     def _heuristic_classification(self, finding: Dict[str, Any]) -> Tuple[bool, float]:
-        """
-        Rule-based heuristic classification when model is not trained.
-        
-        Args:
-            finding: Security finding dictionary
-            
-        Returns:
-            Tuple of (is_false_positive, confidence)
-        """
+        """Rule-based fallback when model is not trained."""
         # Low confidence heuristics
         confidence = 0.5
         
@@ -286,9 +228,7 @@ class FalsePositiveReducer:
         if len(evidence) < 10:
             return True, 0.6
 
-        # Pattern 4: Natural-language educational context without exploit structure.
-        # Downgrade benign prose that contains keywords like "select" or "script" but
-        # lacks operators, HTML tags, or traversal markers.
+        # Educational context without exploit structure
         edu_tokens = (
             "course",
             "materials",
@@ -310,16 +250,7 @@ class FalsePositiveReducer:
         return False, 0.5
     
     def train(self, training_data: List[Dict[str, Any]], labels: List[int]) -> Dict[str, Any]:
-        """
-        Train the Random Forest model.
-        
-        Args:
-            training_data: List of findings with context
-            labels: List of labels (0 = True Positive, 1 = False Positive)
-            
-        Returns:
-            Training metrics
-        """
+        """Train the ensemble model."""
         if len(training_data) < 10:
             return {
                 'error': 'Insufficient training data (minimum 10 samples required)',
@@ -329,7 +260,7 @@ class FalsePositiveReducer:
         # Extract features for all training samples
         X = []
         for sample in training_data:
-            # ✅ FIX: Handle both nested and flat formats
+            # Handle both nested and flat formats
             if 'finding' in sample:
                 # Nested format: {'finding': {...}, 'context': {...}}
                 finding = sample['finding']
@@ -345,8 +276,7 @@ class FalsePositiveReducer:
         X = np.array(X)
         y = np.array(labels)
         
-        # Split data (80/20 train/test with stratification)
-        # Using larger test set for better evaluation of generalization
+        # Train/test split
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.25, random_state=42, stratify=y if len(np.unique(y)) > 1 else None
         )
@@ -363,10 +293,7 @@ class FalsePositiveReducer:
         from sklearn.svm import SVC
         from sklearn.metrics import precision_score, recall_score, f1_score, classification_report
 
-        # Model 1: Random Forest (Anti-Overfitting Configuration)
-        # Reduced complexity to prevent overfitting on small datasets
-        # Changes: n_estimators 150→100, max_depth 12→8, added max_features
-        # min_samples_split 4→6, min_samples_leaf 2→3 for better generalization
+        # Random Forest (regularized)
         rf_model = RandomForestClassifier(
             n_estimators=100,        # Reduced from 150
             max_depth=8,             # Reduced from 12 to prevent memorization
@@ -377,10 +304,7 @@ class FalsePositiveReducer:
             class_weight='balanced'
         )
 
-        # Model 2: Gradient Boosting (Regularized)
-        # Reduced complexity for better generalization
-        # Note: GradientBoostingClassifier doesn't have class_weight parameter
-        # Instead, we handle imbalance through subsample and learning_rate tuning
+        # Gradient Boosting (regularized)
         gb_model = GradientBoostingClassifier(
             n_estimators=75,         # Reduced from 100
             max_depth=4,             # Reduced from 5
@@ -457,10 +381,10 @@ class FalsePositiveReducer:
             'url_complexity', 'has_params', 'cvss_score', 'risk_score',
             'evidence_entropy', 'url_encoded_ratio', 'query_param_density', 'structural_irregularity',
             'status_code', 'response_time_log'
-            # occurrence_count_log + days_since_first_seen_log REMOVED (Phase 5 Clean-14 fix)
+            # occurrence_count + days_since_first_seen removed
         ]
         
-        # ✅ FIX: Proper feature importance extraction from ensemble
+        # Extract feature importance from ensemble
         feature_importance = {}
         try:
             # Get the base ensemble model before calibration
@@ -598,24 +522,10 @@ class FalsePositiveReducer:
                 self.scaler = model_data['scaler']
                 self.is_trained = model_data['is_trained']
                 
-                # Log version info (ASCII only — Unicode chars cause charmap failure on Windows)
-                timestamp  = model_data.get('timestamp', 'UNKNOWN')
-                version    = model_data.get('version', 'v2.0')
                 n_features = len(self.scaler.mean_) if hasattr(self.scaler, 'mean_') else 'unknown'
-                
-                # === STARTUP DIAGNOSTICS ===
-                print(f"[FP Reducer] ========================================")
-                print(f"[FP Reducer] MODEL LOADED SUCCESSFULLY")
-                print(f"[FP Reducer]   Path      : {self.model_path}")
-                print(f"[FP Reducer]   Version   : {version}")
-                print(f"[FP Reducer]   Timestamp : {timestamp}")
-                print(f"[FP Reducer]   Features  : {n_features}")
-                print(f"[FP Reducer]   Inference : ENABLED (ML predictions active)")
-                print(f"[FP Reducer]   Fallback  : DISABLED (model loaded)")
-                print(f"[FP Reducer] ========================================")
+                print(f"[FP Reducer] loaded model ({n_features} features)")
             except Exception as e:
-                print(f"[FP Reducer] FAILED to extract model data: {e}")
-                print(f"[FP Reducer] Inference : DISABLED (falling back to heuristics)")
+                print(f"[FP Reducer] failed to load model data: {e}")
                 self.is_trained = False
     
     def get_model_info(self) -> Dict[str, Any]:
@@ -637,7 +547,7 @@ class FalsePositiveReducer:
                 'n_features': len(self.scaler.mean_) if hasattr(self.scaler, 'mean_') else 16,
                 'model_path': self.model_path,
                 'confidence': '97.6%',  # Based on training accuracy
-                'status': '✅ Trained'
+                'status': 'trained'
             }
             
             # Check if it's a voting classifier with Random Forest
@@ -676,5 +586,5 @@ class FalsePositiveReducer:
                 'n_features': 16,
                 'model_path': self.model_path,
                 'confidence': '97.6%',
-                'status': '✅ Trained'
+                'status': 'trained'
             }

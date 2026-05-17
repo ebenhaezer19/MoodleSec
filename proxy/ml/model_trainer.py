@@ -1,7 +1,5 @@
 """
-Model Trainer
-
-Trains all ML models using generated or collected training data.
+Model trainer for all ML modules.
 """
 
 import json
@@ -21,26 +19,12 @@ class ModelTrainer:
     """Train all ML models with training data."""
     
     def __init__(self, data_dir: str = "ml/data"):
-        """
-        Initialize Model Trainer.
-        
-        Args:
-            data_dir: Directory containing training data
-        """
         self.data_dir = data_dir
         self.ml_manager = MLManager(enable_ml=True)
         self.training_results = {}
     
     def train_all_models(self, use_existing_data: bool = True) -> Dict[str, Any]:
-        """
-        Train all ML models.
-        
-        Args:
-            use_existing_data: Use existing JSON data if available
-            
-        Returns:
-            Training results for all models
-        """
+        """Train all ML models."""
         print("="*80)
         print("ML MODEL TRAINING")
         print("="*80)
@@ -101,7 +85,7 @@ class ModelTrainer:
         result = self.ml_manager.train_false_positive_reducer(training_data, labels)
         
         if result.get('success'):
-            print(f"✅ Training successful!")
+            print(f"Training successful!")
             print(f"   Train Accuracy: {result['train_accuracy']:.2%}")
             print(f"   Test Accuracy: {result['test_accuracy']:.2%}")
             print(f"\n   Top Features:")
@@ -112,7 +96,7 @@ class ModelTrainer:
             )[:5]:
                 print(f"     {feature}: {importance:.4f}")
         else:
-            print(f"❌ Training failed: {result.get('error')}")
+            print(f"Training failed: {result.get('error')}")
         
         return result
     
@@ -125,7 +109,7 @@ class ModelTrainer:
         result = self.ml_manager.train_anomaly_detector(training_data, contamination=0.1)
         
         if result.get('success'):
-            print(f"✅ Training successful!")
+            print(f"Training successful!")
             print(f"   Normal Samples: {result['normal_samples']}")
             print(f"   Anomalies Detected: {result['anomalies_detected']}")
             print(f"   Contamination: {result['contamination']:.1%}")
@@ -134,7 +118,7 @@ class ModelTrainer:
             print(f"     Avg Response Time: {baseline.get('avg_response_time', 0):.0f}ms")
             print(f"     Common Status Codes: {baseline.get('common_status_codes', [])}")
         else:
-            print(f"❌ Training failed: {result.get('error')}")
+            print(f"Training failed: {result.get('error')}")
         
         return result
     
@@ -155,7 +139,7 @@ class ModelTrainer:
         result = self.ml_manager.train_severity_predictor(training_data, labels)
         
         if result.get('success'):
-            print(f"✅ Training successful!")
+            print(f"Training successful!")
             print(f"   Model: {result.get('model_type', 'Unknown')}")
             print(f"   Train Accuracy: {result['train_accuracy']:.2%}")
             print(f"   Validation Accuracy: {result.get('val_accuracy', 'N/A')}")
@@ -172,7 +156,7 @@ class ModelTrainer:
             )[:5]:
                 print(f"     {feature}: {importance:.4f}")
         else:
-            print(f"❌ Training failed: {result.get('error')}")
+            print(f"Training failed: {result.get('error')}")
         
         return result
     
@@ -187,7 +171,7 @@ class ModelTrainer:
         result = self.ml_manager.train_rate_limiter(training_data, risk_scores)
         
         if result.get('success'):
-            print(f"✅ Training successful!")
+            print(f"Training successful!")
             print(f"   Model: {result.get('model_type', 'Unknown')}")
             print(f"   Train R²: {result.get('train_r2', 'N/A'):.4f}")
             print(f"   Validation R²: {result.get('val_r2', 'N/A'):.4f}")
@@ -205,7 +189,7 @@ class ModelTrainer:
             )[:5]:
                 print(f"     {feature}: {importance:.4f}")
         else:
-            print(f"❌ Training failed: {result.get('error')}")
+            print(f"Training failed: {result.get('error')}")
         
         return result
     
@@ -269,7 +253,7 @@ class ModelTrainer:
             'expected': True
         }
         print(f"   Result: {'FP' if is_fp else 'TP'} (confidence: {confidence:.2%})")
-        print(f"   Expected: FP - {'✅ PASS' if is_fp else '❌ FAIL'}")
+        print(f"   Expected: FP - {'PASS' if is_fp else 'FAIL'}")
         
         # Test Severity Predictor
         print("\n[Validation] Testing Severity Predictor...")
@@ -289,7 +273,7 @@ class ModelTrainer:
             'expected': 'critical'
         }
         print(f"   Result: {severity.capitalize()} (confidence: {confidence:.2%})")
-        print(f"   Expected: Critical - {'✅ PASS' if severity in ['critical', 'high'] else '❌ FAIL'}")
+        print(f"   Expected: Critical - {'PASS' if severity in ['critical', 'high'] else 'FAIL'}")
         
         # Test Anomaly Detector
         print("\n[Validation] Testing Anomaly Detector...")
@@ -318,7 +302,7 @@ class ModelTrainer:
             'expected': True
         }
         print(f"   Result: {'Anomaly' if is_anomaly else 'Normal'} (score: {score:.2f})")
-        print(f"   Expected: Anomaly - {'✅ PASS' if is_anomaly else '❌ FAIL'}")
+        print(f"   Expected: Anomaly - {'PASS' if is_anomaly else 'FAIL'}")
         
         return validation_results
     
@@ -333,7 +317,7 @@ class ModelTrainer:
             return
         
         for model_name, result in self.training_results.items():
-            status = "✅ SUCCESS" if result.get('success') else "❌ FAILED"
+            status = "SUCCESS" if result.get('success') else "FAILED"
             print(f"\n{model_name.upper().replace('_', ' ')}:")
             print(f"  Status: {status}")
             
@@ -356,9 +340,9 @@ class ModelTrainer:
         print(f"OVERALL: {successful}/{total} models trained successfully")
         
         if successful == total:
-            print("🎉 All models trained successfully!")
+            print("All models trained successfully!")
         else:
-            print("⚠️  Some models failed to train. Check errors above.")
+            print("Some models failed to train. Check errors above.")
 
 
 def main():
@@ -375,10 +359,10 @@ def main():
     trainer.print_summary()
     
     print("\n" + "="*80)
-    print("✅ Training pipeline complete!")
-    print("📁 Models saved to: ml/models/")
-    print("📊 Training data: ml/data/")
-    print("📝 Report: ml/data/training_report.json")
+    print("Training pipeline complete!")
+    print("Models saved to: ml/models/")
+    print("Training data: ml/data/")
+    print("Report: ml/data/training_report.json")
     print("="*80)
 
 

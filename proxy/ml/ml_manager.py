@@ -1,9 +1,5 @@
 """
-ML Manager
-
-Centralized manager for all ML-enhanced detection modules.
-Coordinates false positive reduction, anomaly detection,
-severity prediction, and rate limiting.
+Centralized ML manager for detection modules.
 """
 
 from typing import Dict, List, Any, Optional, Tuple
@@ -31,23 +27,10 @@ except Exception as rate_limiter_import_error:
 
 
 class MLManager:
-    """
-    Centralized ML manager for security scanning enhancements.
-    
-    Provides:
-    - False positive filtering
-    - Anomaly detection
-    - Severity prediction
-    - Intelligent rate limiting
-    """
+    """Centralized ML manager for security scanning."""
     
     def __init__(self, enable_ml: bool = True):
-        """
-        Initialize ML Manager with LAZY model loading.
-        
-        Models are NOT loaded at init time. They are loaded on first access
-        via @property descriptors to avoid blocking app startup.
-        """
+        """Initialize with lazy model loading."""
         import time as _time
         self._init_start = _time.perf_counter()
         self.enable_ml = enable_ml

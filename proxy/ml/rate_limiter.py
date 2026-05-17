@@ -1,8 +1,5 @@
 """
-ML-Enhanced Rate Limiting
-
-Combines rule-based rate limiting with ML-based risk scoring
-to intelligently throttle requests and detect abuse patterns.
+ML-enhanced rate limiting.
 """
 
 import numpy as np
@@ -19,24 +16,9 @@ from .path_utils import normalize_model_path
 
 
 class MLRateLimiter:
-    """
-    Intelligent rate limiter using ML risk scoring.
-    
-    Features:
-    - Rule-based rate limits (requests per minute/hour)
-    - ML-based risk scoring for adaptive limits
-    - IP reputation tracking
-    - Behavioral analysis
-    - Automatic blacklisting/whitelisting
-    """
+    """Adaptive rate limiter with ML risk scoring."""
     
     def __init__(self, model_path: str = "ml/models/rate_limiter.pkl"):
-        """
-        Initialize ML Rate Limiter.
-        
-        Args:
-            model_path: Path to save/load the trained model
-        """
         self.model_path = normalize_model_path(model_path, "rate_limiter.pkl")
         self.model = None
         self.scaler = StandardScaler()
@@ -70,16 +52,7 @@ class MLRateLimiter:
         self._load_model()
     
     def extract_features(self, request_data: Dict[str, Any], ip: str) -> np.ndarray:
-        """
-        Extract features for ML risk scoring.
-        
-        Args:
-            request_data: Request information
-            ip: Client IP address
-            
-        Returns:
-            Feature vector as numpy array
-        """
+        """Extract feature vector for risk scoring."""
         features = []
         
         # Feature 1-3: Request rates (per minute, hour, day)
@@ -150,16 +123,7 @@ class MLRateLimiter:
         return np.array(features).reshape(1, -1)
     
     def check_rate_limit(self, request_data: Dict[str, Any], ip: str) -> Tuple[bool, str, Dict[str, Any]]:
-        """
-        Check if request should be rate limited.
-        
-        Args:
-            request_data: Request information
-            ip: Client IP address
-            
-        Returns:
-            Tuple of (should_limit, reason, details)
-        """
+        """Check if request should be rate limited."""
         # Check blacklist
         if ip in self.blacklist:
             return True, "IP is blacklisted", {'action': 'blocked', 'ip_reputation': 0}
@@ -254,16 +218,7 @@ class MLRateLimiter:
         }
     
     def _calculate_risk_score(self, request_data: Dict[str, Any], ip: str) -> float:
-        """
-        Calculate ML-based risk score for a request.
-        
-        Args:
-            request_data: Request information
-            ip: Client IP address
-            
-        Returns:
-            Risk score (0-100, higher = more risky)
-        """
+        """ML-based risk score (0-100)."""
         if not self.is_trained:
             # Use heuristic scoring if model not trained
             return self._heuristic_risk_score(request_data, ip)
@@ -281,16 +236,7 @@ class MLRateLimiter:
         return float(np.clip(risk_score, 0, 100))
     
     def _heuristic_risk_score(self, request_data: Dict[str, Any], ip: str) -> float:
-        """
-        Rule-based risk scoring when model is not trained.
-        
-        Args:
-            request_data: Request information
-            ip: Client IP address
-            
-        Returns:
-            Risk score (0-100)
-        """
+        """Rule-based risk scoring fallback."""
         score = self.ip_reputation[ip]  # Start with IP reputation
         
         # Adjust based on request rate
@@ -351,16 +297,7 @@ class MLRateLimiter:
         self.ip_reputation[ip] = np.clip(self.ip_reputation[ip] + delta, 0, 100)
     
     def train(self, training_data: List[Dict[str, Any]], risk_scores: List[float]) -> Dict[str, Any]:
-        """
-        Train the ML risk scoring model.
-        
-        Args:
-            training_data: List of request data with IP
-            risk_scores: Actual risk scores (0-100)
-            
-        Returns:
-            Training metrics
-        """
+        """Train the risk scoring model."""
         if len(training_data) < 20:
             return {
                 'error': 'Insufficient training data (minimum 20 samples required)',
@@ -576,6 +513,6 @@ class MLRateLimiter:
             'tracked_ips': len(self.request_history),
             'model_path': self.model_path,
             'algorithm': 'Adaptive Rate Limiter',
-            'status': '✅ Active',
+            'status': 'active',
             'confidence': '91%'
         }

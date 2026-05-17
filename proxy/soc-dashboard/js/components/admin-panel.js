@@ -70,6 +70,26 @@ const AdminPanel = (() => {
         </div>
       </div>
 
+      <!-- Detection Signals (Explainability / XAI) -->
+      <div class="card" style="margin-bottom:var(--space-4);border-color:rgba(139,92,246,0.2)">
+        <h4 style="margin-bottom:var(--space-3);color:var(--accent-purple)">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:6px"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          Detection Signals
+        </h4>
+        <div class="explain-signals">
+          ${_buildSignals(alert)}
+        </div>
+      </div>
+
+      <!-- Request Inspector -->
+      <div class="card" style="margin-bottom:var(--space-4)">
+        <h4 style="margin-bottom:var(--space-3);color:var(--text-secondary)">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:6px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          Request Inspector
+        </h4>
+        <div class="request-inspector">${_buildRequestInspector(alert)}</div>
+      </div>
+
       <!-- SOC Workflow Timeline -->
       <div class="card" style="margin-bottom:var(--space-4)">
         <h4 style="margin-bottom:var(--space-4);color:var(--accent-cyan)">SOC Workflow Timeline</h4>
@@ -198,6 +218,117 @@ const AdminPanel = (() => {
     if (d === 'BLOCK') return 'var(--color-critical)';
     if (d === 'ALERT') return 'var(--color-medium)';
     return 'var(--text-secondary)';
+  }
+
+  /** Build detection signal breakdown for explainability panel */
+  function _buildSignals(alert) {
+    const signals = [];
+    const anomaly = Number(alert.anomaly_score || 0);
+    const confidence = Number(alert.confidence || 0);
+    const attack = String(alert.attack_type || '').toLowerCase();
+    const reason = String(alert.reason || '');
+    const path = String(alert.path || '');
+    const decision = String(alert.ml_decision_original || '').toUpperCase();
+
+    // Anomaly threshold signal
+    if (anomaly >= 0.7) {
+      signals.push({ icon: '🔴', label: `Anomaly score ${Formatters.decimal(anomaly)} exceeded HIGH threshold (0.70)`, value: 'TRIGGERED' });
+    } else if (anomaly >= 0.4) {
+      signals.push({ icon: '🟡', label: `Anomaly score ${Formatters.decimal(anomaly)} exceeded MEDIUM threshold (0.40)`, value: 'TRIGGERED' });
+    } else {
+      signals.push({ icon: '🟢', label: `Anomaly score ${Formatters.decimal(anomaly)} below alert threshold`, value: 'NORMAL' });
+    }
+
+    // Confidence threshold signal
+    if (confidence >= 0.7) {
+      signals.push({ icon: '🔴', label: `Classifier confidence ${Formatters.decimal(confidence)} exceeded BLOCK threshold (0.70)`, value: 'HIGH' });
+    } else if (confidence >= 0.4) {
+      signals.push({ icon: '🟡', label: `Classifier confidence ${Formatters.decimal(confidence)} in ALERT range (0.40-0.70)`, value: 'MEDIUM' });
+    }
+
+    // Attack-specific signals
+    const attackSignals = {
+      'xss': [
+        { icon: '⚡', label: 'Matched signal: script-tag or event-handler pattern' },
+        { icon: '⚡', label: 'Payload contains HTML/JS injection markers' },
+      ],
+      'sqli': [
+        { icon: '⚡', label: 'Matched signal: SQL comment marker or boolean condition' },
+        { icon: '⚡', label: 'Query string contains SQL syntax keywords' },
+      ],
+      'sql injection': [
+        { icon: '⚡', label: 'Matched signal: SQL comment marker or boolean condition' },
+        { icon: '⚡', label: 'Query string contains SQL syntax keywords' },
+      ],
+      'path traversal': [
+        { icon: '⚡', label: 'Matched signal: directory traversal sequence (../)' },
+        { icon: '⚡', label: 'Path contains encoded traversal or sensitive file reference' },
+      ],
+      'lfi': [
+        { icon: '⚡', label: 'Matched signal: local file inclusion pattern' },
+        { icon: '⚡', label: 'Path references system file (e.g., /etc/passwd, web.config)' },
+      ],
+      'ssrf': [
+        { icon: '⚡', label: 'Matched signal: internal IP or localhost reference' },
+        { icon: '⚡', label: 'Request targets non-public network address' },
+      ],
+      'command injection': [
+        { icon: '⚡', label: 'Matched signal: shell metacharacter or command separator' },
+        { icon: '⚡', label: 'Payload contains OS command syntax' },
+      ],
+    };
+
+    const typeSignals = attackSignals[attack] || [];
+    typeSignals.forEach(s => signals.push({ ...s, value: 'DETECTED' }));
+
+    // Pipeline stage signal
+    if (decision === 'BLOCK') {
+      signals.push({ icon: '🛡️', label: 'Decision Engine escalated to BLOCK based on combined scores', value: decision });
+    } else if (decision === 'ALERT') {
+      signals.push({ icon: '👁️', label: 'Decision Engine flagged for human review (insufficient confidence for auto-block)', value: decision });
+    }
+
+    // Reason string parsing
+    if (reason && reason !== 'N/A') {
+      signals.push({ icon: '📝', label: `Pipeline reason: ${reason}`, value: '' });
+    }
+
+    return signals.map(s => `
+      <div class="explain-signal">
+        <span class="explain-signal-icon">${s.icon}</span>
+        <span class="explain-signal-label">${_escapeHtml(s.label)}</span>
+        <span class="explain-signal-value">${s.value || ''}</span>
+      </div>
+    `).join('');
+  }
+
+  /** Build request inspector view with safe HTML rendering */
+  function _buildRequestInspector(alert) {
+    const method = _escapeHtml(alert.method || 'GET');
+    const path = _escapeHtml(alert.path || '/');
+    const ip = _escapeHtml(alert.client_ip || '--');
+    const queryIdx = (alert.path || '').indexOf('?');
+    let pathPart = _escapeHtml(queryIdx > 0 ? alert.path.substring(0, queryIdx) : (alert.path || '/'));
+    let queryPart = queryIdx > 0 ? _escapeHtml(alert.path.substring(queryIdx)) : '';
+
+    let lines = [];
+    lines.push(`<span class="req-method">${method}</span> <span class="req-path">${pathPart}</span>${queryPart ? `<span class="req-highlight">${queryPart}</span>` : ''}`);
+    lines.push(`Host: ${_escapeHtml(alert.target_host || 'moodle-server')}`);
+    lines.push(`Source-IP: ${ip}`);
+    lines.push(`Alert-ID: ${_escapeHtml(alert.alert_id || '--')}`);
+    if (alert.attack_type) lines.push(`X-Detected-Attack: ${_escapeHtml(alert.attack_type)}`);
+    if (alert.confidence) lines.push(`X-Confidence: ${Formatters.decimal(alert.confidence)}`);
+    if (alert.anomaly_score) lines.push(`X-Anomaly-Score: ${Formatters.decimal(alert.anomaly_score)}`);
+
+    return lines.join('\n');
+  }
+
+  /** HTML-escape a string for safe rendering */
+  function _escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = String(str);
+    return div.innerHTML;
   }
 
   /** Quick action from table row buttons */

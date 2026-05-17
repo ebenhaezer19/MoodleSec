@@ -1,8 +1,5 @@
 """
-Anomaly Detection using Isolation Forest
-
-Detects unusual patterns in security findings and application behavior
-that may indicate novel attacks or zero-day vulnerabilities.
+Anomaly detection using Isolation Forest.
 """
 
 import numpy as np
@@ -31,34 +28,19 @@ def _safe_issubclass(cls, target):
         return False
 
 class AnomalyDetector:
-    """
-    Detects anomalous security findings using Isolation Forest.
-    
-    Features monitored:
-    - Request patterns (frequency, timing)
-    - Response patterns (status codes, sizes)
-    - Finding patterns (types, severity distribution)
-    - User behavior patterns
-    """
+    """Isolation Forest anomaly detector."""
     
     def __init__(self, model_path: str = "ml/models/anomaly_detector.pkl"):
-        """
-        Initialize Anomaly Detector with optimized scaling and calibration.
-        
-        Args:
-            model_path: Path to save/load the trained model
-        """
         self.model_path = normalize_model_path(model_path, "anomaly_detector.pkl")
         self.model = None
         
-        # Multi-tier scaling for better feature normalization
-        self.scaler = StandardScaler()  # Primary: Z-score normalization
-        self.robust_scaler = RobustScaler()  # Secondary: Outlier-resistant
-        self.minmax_scaler = MinMaxScaler(feature_range=(0, 1))  # Tertiary: Bounded
+        self.scaler = StandardScaler()
+        self.robust_scaler = RobustScaler()
+        self.minmax_scaler = MinMaxScaler(feature_range=(0, 1))
         
         self.is_trained = False
         
-        # Feature scaling per-feature (0-1 normalized ranges)
+        # Feature scaling bounds
         self.feature_bounds = {
             'url_length': (0, 500),
             'response_time': (0, 10000),
@@ -67,38 +49,38 @@ class AnomalyDetector:
             'entropy': (0, 8),
         }
 
-        # Optional second-stage calibration model (optimized for FP reduction)
+        # Second-stage calibration model
         self.meta_classifier = None
         self.meta_threshold = 0.5
         self.decision_threshold = None  # Tuned on validation set
         self.meta_classifier_calibrated = None  # Calibrated version
-        self.heuristic_weight = 0.10  # Keep heuristic contribution low in final score
+        self.heuristic_weight = 0.10
 
-        # Supervised baseline for comparison (not used for primary detection path).
+        # Supervised baseline for comparison
         self.baseline_supervised_model = None
         self.baseline_threshold = None
         self.recall_target = 0.80
         
-        # Score normalization parameters
-        self.score_offset = 0.0  # For calibration
-        self.score_scale = 1.0   # For calibration
+        # Score calibration
+        self.score_offset = 0.0
+        self.score_scale = 1.0
         
-        # Baseline statistics with extended tracking
+        # Baseline stats
         self.baseline_stats = {
             'request_rate': 0,
             'avg_response_time': 0,
             'std_response_time': 0,
             'common_status_codes': [],
             'finding_distribution': {},
-            'score_mean': 0.0,  # Track score distribution
+            'score_mean': 0.0,
             'score_std': 0.0,
         }
         
-        # Recall preservation parameters
-        self.min_recall = 0.90  # Don't drop below 90% recall
-        self.fp_penalty_weight = 2.0  # Weight FP reduction 2x more than standard
+        # Recall preservation
+        self.min_recall = 0.90
+        self.fp_penalty_weight = 2.0
 
-        # Canonical feature schema (must stay in strict order for scaler/model compatibility).
+        # Feature schema
         self.default_feature_names = [
             'request_url_length',
             'request_path_depth',
@@ -138,67 +120,39 @@ class AnomalyDetector:
         ]
         self.feature_names = list(self.default_feature_names)
         self.debug_feature_logging = True
-        
-        # Load existing model if available
         self._load_model()
 
     @staticmethod
     def _sigmoid(score: float) -> float:
-        """Numerically stable sigmoid used for score normalization."""
-        # Clip to avoid overflow
+        """Numerically stable sigmoid."""
         score = np.clip(score, -500, 500)
         return float(1.0 / (1.0 + np.exp(-score)))
     
     def _calibrate_anomaly_score(self, raw_score: float) -> float:
-        """
-        Calibrate raw anomaly score to better reflect probability.
-        
-        Applies learned offset and scale from validation data to match
-        true anomaly probability distribution.
-        
-        Args:
-            raw_score: Raw anomaly score from Isolation Forest
-            
-        Returns:
-            Calibrated score (0-1, higher = more anomalous)
-        """
-        # Apply learned calibration
+        """Calibrate raw score to probability."""
         calibrated = raw_score * self.score_scale + self.score_offset
         
-        # Sigmoid for final probability
         prob = self._sigmoid(calibrated)
         
-        # Ensure bounds
         return float(np.clip(prob, 0.0, 1.0))
     
     def _normalize_score_range(self, score: float, mean: float = 0.0, std: float = 1.0) -> float:
-        """
-        Normalize anomaly score using learned distribution parameters.
-        
-        Args:
-            score: Raw anomaly score
-            mean: Mean of score distribution
-            std: Standard deviation
-            
-        Returns:
-            Z-normalized score
-        """
+        """Z-normalize anomaly score."""
         if std == 0:
             return 0.5
         
         z_score = (score - mean) / std
-        # Transform Z-score to probability
         return float(self._sigmoid(z_score))
 
     @staticmethod
     def _safe_feature_value(features: np.ndarray, index: int, default: float = 0.0) -> float:
-        """Safely read a feature index with fallback default."""
+        """Safely read feature at index."""
         if features is None or index < 0 or index >= len(features):
             return float(default)
         return float(features[index])
 
     def _build_feature_names_for_count(self, feature_count: int) -> List[str]:
-        """Build a deterministic ordered feature schema for a given count."""
+        """Build feature name list for given count."""
         count = max(0, int(feature_count))
         if count <= len(self.default_feature_names):
             return list(self.default_feature_names[:count])
@@ -206,7 +160,7 @@ class AnomalyDetector:
         return list(self.default_feature_names) + extras
 
     def _get_model_expected_feature_count(self) -> Optional[int]:
-        """Infer expected feature count from fitted scaler/model metadata when available."""
+        """Infer expected feature count from fitted model."""
         if self.scaler is not None and hasattr(self.scaler, 'n_features_in_'):
             return int(self.scaler.n_features_in_)
         if self.model is not None and hasattr(self.model, 'n_features_in_'):
@@ -214,7 +168,7 @@ class AnomalyDetector:
         return None
 
     def _get_expected_feature_count(self) -> int:
-        """Expected feature count for inference (prefer scaler/model contract)."""
+        """Expected feature count for inference."""
         model_expected = self._get_model_expected_feature_count()
         if model_expected is not None:
             return int(model_expected)
@@ -223,7 +177,7 @@ class AnomalyDetector:
         return int(len(self.default_feature_names))
 
     def _validate_full_feature_schema(self, feature_count: int, context: str) -> Optional[str]:
-        """Validate that training uses the full engineered feature schema."""
+        """Validate feature count matches expected schema."""
         expected_count = int(len(self.default_feature_names))
         actual_count = int(feature_count)
         if actual_count != expected_count:
@@ -234,13 +188,7 @@ class AnomalyDetector:
         return None
 
     def _align_feature_vector(self, feature_vector: np.ndarray) -> np.ndarray:
-        """
-        Align feature vector to expected schema size.
-
-        Rules:
-        - Extra features are dropped from tail.
-        - Missing features are padded with 0.
-        """
+        """Align feature vector to expected schema size."""
         vector = np.asarray(feature_vector, dtype=float).flatten()
         actual_count = int(len(vector))
         expected_count = self._get_expected_feature_count()
@@ -288,13 +236,8 @@ class AnomalyDetector:
         assert len(vector) == len(self.feature_names)
         return vector
 
-    def _build_meta_features(
-        self,
-        normalized_score: float,
-        heuristic_score: float,
-        features: np.ndarray,
-    ) -> np.ndarray:
-        """Build second-stage feature vector for calibrated anomaly decision."""
+    def _build_meta_features(self, normalized_score: float, heuristic_score: float, features: np.ndarray) -> np.ndarray:
+        """Build second-stage feature vector."""
         payload_suspicion = self._safe_feature_value(features, 18)
         is_bot = self._safe_feature_value(features, 19)
         status_abnormality = self._safe_feature_value(features, 21)
@@ -320,7 +263,7 @@ class AnomalyDetector:
 
     @staticmethod
     def _evaluate_binary_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, Any]:
-        """Compute confusion-matrix counts and common binary metrics."""
+        """Compute binary classification metrics."""
         y_true = np.asarray(y_true).astype(int)
         y_pred = np.asarray(y_pred).astype(int)
 
@@ -352,7 +295,7 @@ class AnomalyDetector:
 
     @staticmethod
     def _normalize_binary_label(raw_label: Any) -> Optional[int]:
-        """Map various label formats to binary: 0=normal, 1=anomaly."""
+        """Map label to binary: 0=normal, 1=anomaly."""
         if raw_label is None:
             return None
 
@@ -370,7 +313,7 @@ class AnomalyDetector:
 
     @staticmethod
     def _parse_headers_string(raw_headers: str) -> Dict[str, str]:
-        """Parse a semi-colon separated header string into a dictionary."""
+        """Parse semicolon-separated header string."""
         headers: Dict[str, str] = {}
         text = str(raw_headers or '').strip()
         if not text:
@@ -390,11 +333,7 @@ class AnomalyDetector:
 
     @staticmethod
     def _estimate_response_from_request(url: str, body: str, method: str, header_count: int) -> Dict[str, Any]:
-        """
-        Build deterministic synthetic response fields from request-only inputs.
-
-        This avoids leaking label information into generated response features.
-        """
+        """Generate deterministic synthetic response fields from request inputs."""
         digest_seed = f"{method}|{url}|{len(body)}|{header_count}"
         digest = hashlib.md5(digest_seed.encode('utf-8')).hexdigest()
         selector = int(digest[:2], 16)
@@ -418,7 +357,7 @@ class AnomalyDetector:
 
     @staticmethod
     def _infer_dataset_kind(fieldnames: List[str]) -> str:
-        """Infer known dataset schema from CSV field names."""
+        """Infer dataset schema from CSV field names."""
         fields = set(fieldnames or [])
         if {'request_raw', 'method', 'path', 'label'}.issubset(fields):
             return 'moodle'
@@ -427,7 +366,7 @@ class AnomalyDetector:
         return 'generic'
 
     def _load_moodle_row(self, row: Dict[str, str]) -> Optional[Tuple[Dict[str, Any], int]]:
-        """Convert one Moodle CSV row into detector sample + binary label."""
+        """Convert Moodle CSV row to sample + label."""
         label = self._normalize_binary_label(row.get('label'))
         if label is None:
             return None
@@ -470,7 +409,7 @@ class AnomalyDetector:
         return sample, label
 
     def _load_csic_row(self, row: Dict[str, str]) -> Optional[Tuple[Dict[str, Any], int]]:
-        """Convert one CSIC CSV row into detector sample + binary label."""
+        """Convert CSIC CSV row to sample + label."""
         raw_label = row.get('H1') or row.get('label') or row.get('Label')
         if raw_label is None:
             cls = str(row.get('classification') or '').strip()
@@ -536,7 +475,7 @@ class AnomalyDetector:
         return sample, label
 
     def _load_generic_row(self, row: Dict[str, str]) -> Optional[Tuple[Dict[str, Any], int]]:
-        """Best-effort generic CSV row loader for anomaly pipeline."""
+        """Generic CSV row loader."""
         label = self._normalize_binary_label(row.get('label') or row.get('Label') or row.get('target'))
         if label is None:
             return None
@@ -568,11 +507,7 @@ class AnomalyDetector:
         return sample, label
 
     def load_data(self, dataset_path: str, max_rows: int = 0) -> Dict[str, Any]:
-        """
-        Load anomaly dataset and map rows to request/response samples.
-
-        Returns labels where 0=normal, 1=anomaly.
-        """
+        """Load anomaly dataset from CSV."""
         if not os.path.exists(dataset_path):
             return {'error': f'Dataset not found: {dataset_path}'}
 
@@ -630,20 +565,10 @@ class AnomalyDetector:
             'skipped_rows': skipped_rows,
         }
 
-    def preprocess(
-        self,
-        samples: List[Dict[str, Any]],
-        labels: List[int],
-        train_ratio: float = 0.60,
-        val_ratio: float = 0.20,
-        test_ratio: float = 0.20,
-        random_state: int = 42,
-    ) -> Dict[str, Any]:
-        """
-        Split data into train/validation/test and fit scaler on train normals only.
-
-        This prevents leakage: validation/test data is never used for fitting scaler/model.
-        """
+    def preprocess(self, samples: List[Dict[str, Any]], labels: List[int],
+        train_ratio: float = 0.60, val_ratio: float = 0.20,
+        test_ratio: float = 0.20, random_state: int = 42) -> Dict[str, Any]:
+        """Split data and fit scaler on train normals only."""
         ratio_sum = train_ratio + val_ratio + test_ratio
         if abs(ratio_sum - 1.0) > 1e-9:
             return {'error': f'Split ratios must sum to 1.0, got {ratio_sum}'}
@@ -664,7 +589,7 @@ class AnomalyDetector:
         if schema_error:
             return {'error': schema_error}
 
-        # Lock schema from training data dimensionality.
+        # Lock schema
         self.feature_names = self._build_feature_names_for_count(X.shape[1])
 
         all_indices = np.arange(len(y))
@@ -696,7 +621,7 @@ class AnomalyDetector:
                 'train_normal_samples': int(np.sum(train_normal_mask)),
             }
 
-        # Critical leakage guard: fit scaler only on train normals.
+        # Fit scaler on train normals only
         self.scaler = StandardScaler()
         X_train_normal_scaled = self.scaler.fit_transform(X_train[train_normal_mask])
         X_val_scaled = self.scaler.transform(X_val)
@@ -808,12 +733,7 @@ class AnomalyDetector:
         target_recall: float = 0.80,
         random_state: int = 42,
     ) -> Dict[str, Any]:
-        """
-        Train Isolation Forest on train-normal split and tune on validation set.
-
-        Also train a supervised RandomForest baseline on the same feature space
-        using train labels only for performance comparison.
-        """
+        """Train Isolation Forest and tune threshold on validation set."""
         if not prepared.get('success'):
             return {'error': 'Invalid preprocessed data', 'details': prepared}
 
@@ -828,7 +748,7 @@ class AnomalyDetector:
         if schema_error:
             return {'error': schema_error}
 
-        # Keep feature schema synchronized with prepared data.
+        # Sync feature schema with data
         self.feature_names = self._build_feature_names_for_count(X_train_raw.shape[1])
 
         if self.scaler is None or not hasattr(self.scaler, 'n_features_in_'):
@@ -843,7 +763,7 @@ class AnomalyDetector:
                 )
             }
 
-        # Tune contamination only on training+validation (never test).
+        # Tune contamination on train+val only
         if contamination is not None:
             search_candidates = [float(np.clip(contamination, 0.10, 0.25))]
         elif contamination_candidates is not None and len(contamination_candidates) > 0:
@@ -862,7 +782,7 @@ class AnomalyDetector:
                 random_state=random_state + idx,
                 n_jobs=-1,
             )
-            # Explicitly train only with normal traffic.
+            # Train on normal traffic only
             candidate_model.fit(X_train_normal_scaled)
 
             val_scores = -candidate_model.score_samples(X_val_scaled)
@@ -905,7 +825,6 @@ class AnomalyDetector:
         self.model = best_if['model']
         self.is_trained = True
 
-        # Keep primary pipeline anomaly-only before FP reducer integration.
         self.meta_classifier = None
         self.meta_threshold = 0.5
 
@@ -914,7 +833,7 @@ class AnomalyDetector:
         selected_validation_metrics = best_if['threshold_result']['metrics']
         selected_validation_roc_auc = float(best_if['validation_roc_auc'])
 
-        # Score distribution is learned from train normals only.
+        # Score distribution from train normals
         train_normal_scores = -self.model.score_samples(X_train_normal_scaled)
         score_mean = float(np.mean(train_normal_scores)) if len(train_normal_scores) else 0.0
         score_std = float(np.std(train_normal_scores)) if len(train_normal_scores) else 1.0
@@ -928,7 +847,7 @@ class AnomalyDetector:
         self.baseline_stats['score_mean'] = score_mean
         self.baseline_stats['score_std'] = score_std
 
-        # Supervised baseline model for comparison (trained on train split only).
+        # Supervised baseline for comparison
         baseline_model = RandomForestClassifier(
             n_estimators=400,
             max_depth=16,
@@ -981,11 +900,7 @@ class AnomalyDetector:
         }
 
     def evaluate(self, prepared: Dict[str, Any], threshold: Optional[float] = None) -> Dict[str, Any]:
-        """
-        Evaluate anomaly detector on TEST split only.
-
-        Reports precision, recall, F1, ROC-AUC, and confusion matrix.
-        """
+        """Evaluate on test split."""
         if not self.is_trained or self.model is None:
             return {'error': 'Model is not trained'}
 
@@ -1082,121 +997,110 @@ class AnomalyDetector:
         }
     
     def _normalize_feature(self, value: float, min_val: float, max_val: float) -> float:
-        """Normalize feature to 0-1 range with bounds checking."""
+        """Normalize to 0-1 range."""
         if max_val == min_val:
             return 0.5
         normalized = (value - min_val) / (max_val - min_val)
         return float(np.clip(normalized, 0.0, 1.0))
     
     def extract_features(self, data: Dict[str, Any]) -> np.ndarray:
-        """
-        Extract enhanced features with optimized scaling.
-        
-        18 original features + 8 enhanced features = 26 total
-        Each feature normalized to appropriate range before vectorization.
-        
-        Args:
-            data: Dictionary containing request/response/finding data
-            
-        Returns:
-            Feature vector as numpy array (raw, scaling applied later)
-        """
+        """Extract 26-feature vector from request/response data."""
         features = []
         
-        # ===== ORIGINAL 18 FEATURES (with per-feature normalization hints) =====
-        
-        # Request features (5)
+        # Original features (18)
+
+        # Request (5)
         request = data.get('request', {})
         url_len = len(request.get('url', ''))
-        features.append(url_len)  # Will normalize: 0-500
+        features.append(url_len)
         
         path_depth = request.get('url', '').count('/')
-        features.append(path_depth)  # Will normalize: 0-20
+        features.append(path_depth)
         
         has_params = 1 if '?' in request.get('url', '') else 0
-        features.append(has_params)  # Binary: 0-1
+        features.append(has_params)
         
         header_count = len(request.get('headers', {}))
-        features.append(header_count)  # Will normalize: 0-50
+        features.append(header_count)
         
         body_size = len(request.get('body', ''))
-        features.append(body_size)  # Will normalize: 0-100000
+        features.append(body_size)
         
-        # Response features (4)
+        # Response (4)
         response = data.get('response', {})
         status_code = response.get('status_code', 200)
-        features.append(status_code)  # Will normalize: 200-599
+        features.append(status_code)
         
         response_size = response.get('size', 0)
-        features.append(response_size)  # Will normalize: 0-1000000
+        features.append(response_size)
         
         response_time = response.get('time', 0)
-        features.append(response_time)  # Will normalize: 0-10000ms
+        features.append(response_time)
         
         response_header_count = len(response.get('headers', {}))
-        features.append(response_header_count)  # Will normalize: 0-100
+        features.append(response_header_count)
         
-        # Finding features (3)
+        # Finding (3)
         finding = data.get('finding', {})
         if finding:
             severity_map = {'critical': 5, 'high': 4, 'medium': 3, 'low': 2, 'info': 1}
             severity_score = severity_map.get(finding.get('severity', 'info').lower(), 1)
-            features.append(severity_score)  # 1-5 scale
+            features.append(severity_score)
             
             risk_score = finding.get('risk_score', 0)
-            features.append(risk_score)  # Will normalize: 0-10
+            features.append(risk_score)
             
             cvss_score = finding.get('cvss_score', 0)
-            features.append(cvss_score)  # Will normalize: 0-10
+            features.append(cvss_score)
         else:
             features.extend([0, 0, 0])
         
-        # Temporal features (2)
+        # Temporal (2)
         hour = datetime.utcnow().hour
-        features.append(hour)  # 0-23 (will normalize)
+        features.append(hour)
         
         weekday = datetime.utcnow().weekday()
-        features.append(weekday)  # 0-6 (will normalize)
+        features.append(weekday)
         
-        # Behavioral features (3)
+        # Behavioral (3)
         request_count = data.get('request_count_last_minute', 0)
-        features.append(request_count)  # Will normalize: 0-1000
+        features.append(request_count)
         
         unique_ips = data.get('unique_ips_last_minute', 0)
-        features.append(unique_ips)  # Will normalize: 0-100
+        features.append(unique_ips)
         
         error_rate = data.get('error_rate_last_minute', 0)
-        features.append(error_rate)  # Already 0-1 range
+        features.append(error_rate)
         
-        # ===== ENHANCED FEATURES (8) =====
-        
-        # Payload analysis (2)
+        # Enhanced features (8)
+
+        # Payload analysis
         body = request.get('body', '')
         if body:
             entropy = self._calculate_entropy(body)
-            features.append(entropy)  # Will normalize: 0-8
+            features.append(entropy)
         else:
             features.append(0)
         
-        # Suspicious payload patterns count
+        # Suspicious patterns
         suspicious_patterns = ['<script', 'union select', '../', 'exec(', 'eval(', 'cmd.exe',
                               'drop table', 'insert into', 'delete from', 'or 1=1', 'and 1=1']
         payload_suspicion = sum(1 for pattern in suspicious_patterns if pattern.lower() in body.lower())
-        features.append(min(payload_suspicion, 10))  # Cap at 10 patterns
+        features.append(min(payload_suspicion, 10))
         
-        # User agent analysis (1)
+        # Bot detection
         user_agent = request.get('headers', {}).get('User-Agent', '')
         bot_keywords = ['bot', 'spider', 'crawler', 'scanner', 'nikto', 'sqlmap', 'nmap', 'burp', 'zaproxy']
         is_bot = 1.0 if any(kw.lower() in user_agent.lower() for kw in bot_keywords) else 0.0
         features.append(is_bot)
         
-        # Response header anomalies (1)
+        # Missing security headers
         response_headers = response.get('headers', {})
         security_headers = ['x-frame-options', 'content-security-policy', 'strict-transport-security']
         missing_headers = sum(1 for header in security_headers if header not in str(response_headers).lower())
-        features.append(missing_headers)  # Will normalize: 0-3
+        features.append(missing_headers)
         
-        # Status code abnormality (1)
+        # Status code abnormality
         status = response.get('status_code', 200)
         if status >= 500:
             status_abnormality = 1.0  # Server error

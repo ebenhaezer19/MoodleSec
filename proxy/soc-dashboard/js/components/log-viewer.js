@@ -7,6 +7,28 @@ const LogViewer = (() => {
   let _paused = false;
   let _entries = [];
   let _seenIds = new Set();
+  let _showBenignLogs = false;
+
+  // Benign log patterns to filter
+  const _BENIGN_LOG_PATHS = ['/favicon.ico', '/dashboard/css/', '/dashboard/js/', '/dashboard/img/'];
+  const _SOC_API_PATHS = ['/soc/', '/health', '/ml/', '/logs'];
+  function _isBenignLog(log) {
+    const path = String(log.path || '');
+    const type = String(log.type || '').toUpperCase();
+    const decision = String(log.ml_decision || '').toUpperCase();
+    const attack = String(log.ml_attack_type || '').toLowerCase();
+
+    // Always filter SOC dashboard's own API polling requests
+    if (_SOC_API_PATHS.some(p => path.startsWith(p))) return true;
+    // Filter static assets
+    if (_BENIGN_LOG_PATHS.some(p => path.includes(p))) return true;
+    // Filter benign ML decisions
+    if (decision === 'IGNORE' && (attack === 'normal' || attack === 'benign' || attack === '')) return true;
+    // Filter forwarded-benign types
+    if (type === 'REQUEST_IN' && !log.anomaly_detected && !log.ml_decision) return true;
+
+    return false;
+  }
 
   function init() {
     DOM.$('logs-pause-btn').addEventListener('click', _togglePause);
@@ -29,6 +51,8 @@ const LogViewer = (() => {
     for (const log of logs) {
       const id = log.timestamp + log.type;
       if (_seenIds.has(id)) continue;
+      // Filter benign logs before adding to buffer
+      if (!_showBenignLogs && _isBenignLog(log)) continue;
       _seenIds.add(id);
       _entries.push(log);
       newCount++;

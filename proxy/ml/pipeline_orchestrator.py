@@ -169,6 +169,9 @@ class PipelineOrchestrator:
             "directory traversal": "Directory Listing",
             "lfi": "Directory Listing",
             "rfi": "Directory Listing",
+            "ssrf": "Server-Side Request Forgery",
+            "server-side request forgery": "Server-Side Request Forgery",
+            "command injection": "Command Injection",
         }
         if key in mapping:
             return mapping[key]

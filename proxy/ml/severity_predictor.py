@@ -1,9 +1,5 @@
 """
-Severity Prediction using Gradient Boosting
-
-Predicts the actual severity of security findings based on
-contextual information and historical data, improving upon
-static severity assignments.
+Severity prediction using XGBoost.
 """
 
 import numpy as np
@@ -19,27 +15,9 @@ from .path_utils import normalize_model_path
 
 
 class SeverityPredictor:
-    """
-    Predicts finding severity using Gradient Boosting classifier.
-    
-    Severity levels: Critical, High, Medium, Low, Info
-    
-    Features used:
-    - Finding category
-    - CVSS score
-    - Risk score
-    - Exploitability metrics
-    - Impact metrics
-    - Context (production vs dev, public vs internal)
-    """
+    """XGBoost severity classifier."""
     
     def __init__(self, model_path: str = "ml/models/severity_predictor.pkl"):
-        """
-        Initialize Severity Predictor.
-        
-        Args:
-            model_path: Path to save/load the trained model
-        """
         self.model_path = normalize_model_path(model_path, "severity_predictor.pkl")
         self.model = None
         self.scaler = StandardScaler()
@@ -73,16 +51,7 @@ class SeverityPredictor:
         self._load_model()
     
     def extract_features(self, finding: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> np.ndarray:
-        """
-        Extract features from a finding for severity prediction.
-        
-        Args:
-            finding: Security finding dictionary
-            context: Additional context (environment, exposure, etc.)
-            
-        Returns:
-            Feature vector as numpy array
-        """
+        """Extract feature vector for severity prediction."""
         features = []
         
         # Feature 1: Category risk weight
@@ -158,16 +127,7 @@ class SeverityPredictor:
         return np.array(features).reshape(1, -1)
     
     def predict(self, finding: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Tuple[str, float, Dict[str, float]]:
-        """
-        Predict the severity of a finding.
-        
-        Args:
-            finding: Security finding dictionary
-            context: Additional context
-            
-        Returns:
-            Tuple of (predicted_severity, confidence, probability_distribution)
-        """
+        """Predict severity level."""
         if not self.is_trained:
             # Use rule-based prediction if model not trained
             return self._heuristic_prediction(finding, context)
@@ -195,16 +155,7 @@ class SeverityPredictor:
         return predicted_severity, confidence, prob_dist
     
     def _heuristic_prediction(self, finding: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Tuple[str, float, Dict[str, float]]:
-        """
-        Rule-based severity prediction when model is not trained.
-        
-        Args:
-            finding: Security finding dictionary
-            context: Additional context
-            
-        Returns:
-            Tuple of (severity, confidence, probability_distribution)
-        """
+        """Rule-based fallback."""
         # Start with original severity if available
         original_severity = finding.get('severity', 'medium').lower()
         
@@ -257,16 +208,7 @@ class SeverityPredictor:
         return predicted, confidence, prob_dist
     
     def train(self, training_data: List[Dict[str, Any]], labels: List[str]) -> Dict[str, Any]:
-        """
-        Train the Gradient Boosting model.
-        
-        Args:
-            training_data: List of findings (either direct dicts or with 'finding'/'context' keys)
-            labels: List of actual severity labels (strings: 'critical', 'high', 'medium', 'low', 'info')
-            
-        Returns:
-            Training metrics
-        """
+        """Train the XGBoost model."""
         if len(training_data) < 20:
             return {
                 'error': 'Insufficient training data (minimum 20 samples required)',
@@ -296,7 +238,7 @@ class SeverityPredictor:
         invalid_labels = set(labels) - valid_labels
         
         if invalid_labels:
-            print(f"⚠️  Warning: Found invalid severity labels: {invalid_labels}")
+            print(f"Warning: Found invalid severity labels: {invalid_labels}")
             # Try to convert to valid labels
             labels = [str(l).lower() if str(l).lower() in valid_labels else 'medium' for l in labels]
         
@@ -311,7 +253,7 @@ class SeverityPredictor:
         use_stratify = min_samples >= 2 and len(unique) > 1
         
         if not use_stratify:
-            print(f"⚠️  Warning: Class imbalance detected (min samples: {min_samples})")
+            print(f"Warning: Class imbalance detected (min samples: {min_samples})")
             print("   Disabling stratified split")
         
         # Split data - 70% train, 15% validation, 15% test
@@ -327,8 +269,7 @@ class SeverityPredictor:
         X_val_scaled = self.scaler.transform(X_val)
         X_test_scaled = self.scaler.transform(X_test)
         
-        # Train XGBoost with GPU, regularization, and early stopping
-        # Parameters optimized for small dataset (200 samples) to prevent overfitting
+        # Train XGBoost
         self.model = xgb.XGBClassifier(
             n_estimators=500,
             learning_rate=0.05,  # Lower learning rate for better generalization
@@ -479,6 +420,6 @@ class SeverityPredictor:
             'n_features': self.model.n_features_in_,
             'severity_levels': self.severity_levels,
             'model_path': self.model_path,
-            'status': '✅ Trained',
+            'status': 'trained',
             'confidence': '89%'
         }
