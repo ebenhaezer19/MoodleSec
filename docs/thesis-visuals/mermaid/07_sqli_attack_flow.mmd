@@ -1,0 +1,32 @@
+%% Figure 4.X — SQL Injection Attack Detection Flow (Scenario B)
+sequenceDiagram
+    participant ATK as Attacker<br/>192.168.0.50
+    participant RP as Reverse Proxy
+    participant IF as Isolation Forest
+    participant XGB as XGBoost
+    participant FPR as FP Reducer
+    participant DE as Decision Engine
+    participant AQ as Alert Queue
+    participant DASH as SOC Dashboard
+    participant ADM as SOC Admin
+
+    ATK->>RP: GET /login/index.php?username=admin'--
+    RP->>RP: Enforcement: fingerprint not blocked
+    RP->>IF: Feature extraction (35 features)
+    Note over IF: special_char_density: HIGH<br/>query_params: 2
+    IF-->>RP: anomaly_score: 0.87 (HIGH)
+    RP->>XGB: Classify attack
+    XGB-->>RP: type: sqli, confidence: 0.92
+    RP->>FPR: Check false positive
+    FPR-->>RP: is_fp: false (conf: 0.15)
+    RP->>DE: Evaluate decision
+    DE-->>RP: BLOCK, severity: HIGH
+    RP->>AQ: Queue alert (PENDING)
+    AQ-->>DASH: Push ALT-20260517-143022
+    Note over RP: DEMO_MODE=True → Forward anyway
+    RP->>RP: Forward to Moodle (demo)
+    RP-->>ATK: Moodle response
+    DASH-->>ADM: Alert notification
+    ADM->>AQ: POST /resolve → BLOCK
+    AQ->>RP: Fingerprint blocked
+    Note over RP: Future identical requests<br/>→ HTTP 403 at middleware

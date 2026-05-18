@@ -195,6 +195,25 @@ class PipelineTraceStore:
                 results.append(t)
         return results
 
+    def clear(self) -> int:
+        """Clear all in-memory traces and truncate the JSONL log file.
+
+        Returns the number of traces that were cleared.
+        """
+        with self._lock:
+            count = len(self._traces)
+            self._traces.clear()
+
+        # Truncate the JSONL persistence file
+        try:
+            with open(self._log_path, "w", encoding="utf-8") as f:
+                f.truncate(0)
+        except Exception:
+            pass
+
+        print(f"[PipelineTraceStore] CLEAR: removed {count} traces", flush=True)
+        return count
+
 
 # ── Singleton instance ────────────────────────────────────────────────────
 pipeline_traces = PipelineTraceStore()

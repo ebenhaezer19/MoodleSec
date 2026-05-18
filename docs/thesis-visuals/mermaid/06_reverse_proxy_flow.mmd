@@ -1,0 +1,29 @@
+%% Figure 3.X — Reverse Proxy Request Processing Flow
+flowchart TD
+    REQ["Incoming HTTP Request<br/>(port 8999)"] --> ENF{"Enforcement<br/>Middleware<br/><0.1ms"}
+    ENF -->|"Fingerprint Blocked"| R403["HTTP 403<br/>Blocked Request<br/>(0.1ms total)"]
+    ENF -->|"Not Blocked"| GATE{"SOC Dashboard<br/>Gate"}
+    GATE -->|"/dashboard/*"| DASH["Serve Dashboard SPA<br/>(Static Files)"]
+    GATE -->|"Other Routes"| FE["Feature Extraction<br/>35 statistical features<br/>(~2ms)"]
+    FE --> S1["Stage 1: Isolation Forest<br/>anomaly_score [0.0-1.0]<br/>(~10ms)"]
+    S1 --> CHK1{"is_anomaly?<br/>score ≥ 0.40"}
+    CHK1 -->|"No (benign)"| IGN["Decision: IGNORE<br/>Severity: LOW"]
+    CHK1 -->|"Yes"| S2["Stage 2: XGBoost<br/>attack_type + confidence<br/>(~20ms)"]
+    S2 --> S3["Stage 3: FP Reducer<br/>is_false_positive?<br/>(~5ms)"]
+    S3 --> DE["Decision Engine<br/>BLOCK / ALERT / IGNORE<br/>(<1ms)"]
+    DE --> DEC{"Decision?"}
+    DEC -->|"BLOCK/ALERT<br/>+ SOC_MODE"| SOC["SOC Alert Queue<br/>PENDING_ADMIN_ACTION"]
+    DEC -->|"IGNORE"| FWD
+    SOC --> TRACE["Trace Logger<br/>(XAI)"]
+    SOC --> CORR["Incident Correlator<br/>(IP + type + 5min)"]
+    SOC --> CVSS["CVSS v3.1<br/>Risk Scorer"]
+    IGN --> FWD["httpx Forward<br/>to Moodle :80<br/>(~30ms)"]
+    TRACE --> FWD
+    FWD --> ANOM["Post-Forward<br/>Anomaly Detection<br/>(observability)"]
+    ANOM --> RESP["Return Response<br/>to Client"]
+
+    style R403 fill:#ef4444,color:#fff
+    style SOC fill:#f59e0b,color:#fff
+    style FWD fill:#10b981,color:#fff
+    style DE fill:#1e3a5f,color:#fff
+    style DASH fill:#ede9fe,stroke:#8b5cf6

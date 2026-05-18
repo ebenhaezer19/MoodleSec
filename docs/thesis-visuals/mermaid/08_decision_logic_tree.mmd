@@ -1,0 +1,33 @@
+%% Figure 4.X — Decision Engine Logic Tree (Explainable AI)
+flowchart TD
+    START["ML Pipeline Output"] --> A{"anomaly_score<br/>≥ HIGH (0.70)?"}
+
+    A -->|Yes| B{"confidence<br/>≥ HIGH (0.70)?"}
+    A -->|No| C{"anomaly_score<br/>≥ LOW (0.40)?"}
+
+    B -->|Yes| D{"is_false_positive<br/>= true?"}
+    B -->|No| E{"confidence<br/>≥ LOW (0.40)?"}
+
+    D -->|No| BLOCK["BLOCK<br/>Severity: HIGH<br/>→ SOC Queue"]
+    D -->|Yes| ALERT2["ALERT<br/>Severity: MEDIUM<br/>→ SOC Queue"]
+
+    E -->|Yes| ALERT1["ALERT<br/>Severity: MEDIUM<br/>→ SOC Queue"]
+    E -->|No| ALERT3["ALERT<br/>Severity: LOW"]
+
+    C -->|Yes| F{"confidence<br/>≥ HIGH (0.70)?"}
+    C -->|No| IGNORE["IGNORE<br/>Severity: LOW<br/>→ Forward only"]
+
+    F -->|Yes| ALERT4["ALERT<br/>Severity: MEDIUM"]
+    F -->|No| G{"confidence<br/>≥ LOW (0.40)?"}
+    G -->|Yes| ALERT5["ALERT<br/>Severity: LOW"]
+    G -->|No| IGNORE2["IGNORE<br/>→ Forward only"]
+
+    style BLOCK fill:#ef4444,color:#fff,stroke:#ef4444
+    style ALERT1 fill:#f59e0b,color:#fff,stroke:#f59e0b
+    style ALERT2 fill:#f59e0b,color:#fff,stroke:#f59e0b
+    style ALERT3 fill:#f59e0b,color:#fff,stroke:#f59e0b
+    style ALERT4 fill:#f59e0b,color:#fff,stroke:#f59e0b
+    style ALERT5 fill:#f59e0b,color:#fff,stroke:#f59e0b
+    style IGNORE fill:#10b981,color:#fff,stroke:#10b981
+    style IGNORE2 fill:#10b981,color:#fff,stroke:#10b981
+    style START fill:#1e3a5f,color:#fff

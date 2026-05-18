@@ -575,7 +575,11 @@
         });
         var data = await resp.json();
         if (data && data.success) {
-          if (typeof State !== 'undefined') State.set('alerts', []);
+          if (typeof State !== 'undefined') {
+            State.set('alerts', []);
+            State.set('pipelineTraces', []);
+            State.set('selectedTrace', null);
+          }
           btn.textContent = 'Cleared!';
         } else {
           btn.textContent = 'Failed';

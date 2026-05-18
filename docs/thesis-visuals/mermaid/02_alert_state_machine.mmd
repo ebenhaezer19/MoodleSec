@@ -1,0 +1,27 @@
+%% Figure 3.X — SOC Alert Queue State Machine
+stateDiagram-v2
+    direction LR
+    [*] --> ML_DETECTED : ML Pipeline Output
+
+    ML_DETECTED --> PENDING_ADMIN_ACTION : Alert Queued\nID: ALT-YYYYMMDD-HHMMSS-NNNN
+
+    PENDING_ADMIN_ACTION --> ADMIN_BLOCK : Admin POST\n/soc/alerts/{id}/resolve\naction=BLOCK
+    PENDING_ADMIN_ACTION --> ADMIN_ALLOW : action=ALLOW
+    PENDING_ADMIN_ACTION --> ADMIN_IGNORE : action=IGNORE
+    PENDING_ADMIN_ACTION --> ENFORCED_BLOCK : Fingerprint Auto-Match\n(O(1) lookup)
+
+    ADMIN_BLOCK --> ENFORCED_BLOCK : Fingerprint → _blocked_set\nOverride index updated
+
+    ENFORCED_BLOCK --> RESET : POST /soc/alerts/reset/{id}\n(Demo/Testing)
+
+    ADMIN_ALLOW --> [*] : Request Forwarded
+    ADMIN_IGNORE --> [*] : Request Forwarded
+    RESET --> [*] : Fingerprint + Override Cleared
+
+    note right of PENDING_ADMIN_ACTION
+        Human-in-the-Loop\nDecision Point\n\nStorage: deque(1000)\nPersistence: JSON file\nDedup: fingerprint index
+    end note
+
+    note right of ENFORCED_BLOCK
+        Future matching requests\nblocked at middleware\nBEFORE ML pipeline\n\nLatency: <0.1ms
+    end note

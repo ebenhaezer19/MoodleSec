@@ -1,0 +1,24 @@
+%% Figure 3.X — Incident Correlation Algorithm Flow
+flowchart TD
+    A["New Alert Received<br/>from ML Pipeline"] --> B{"attack_type ∈<br/>benign set?"}
+    B -->|"Yes: normal/benign/<br/>unknown/none"| Z["Skip — No Incident Created"]
+    B -->|"No: attack detected"| C["Generate Correlation Key<br/>key = client_ip | attack_type"]
+    C --> D{"Existing incident<br/>with same key<br/>within 5 min?"}
+    D -->|Yes| E["Update Existing Incident<br/>alert_count++"]
+    D -->|No| F["Create New Incident<br/>INC-YYYYMMDD-NNNN"]
+    E --> G{"Severity Escalation<br/>Rules"}
+    F --> G
+    G --> H{"alert_count ≥ 5?"}
+    H -->|Yes| I["CRITICAL"]
+    H -->|No| J{"alert_count ≥ 3?"}
+    J -->|Yes| K["HIGH"]
+    J -->|No| L{"alert_count ≥ 2?"}
+    L -->|Yes| M["MEDIUM"]
+    L -->|No| N["By Attack Type"]
+
+    style I fill:#7f1d1d,color:#fff,stroke:#7f1d1d
+    style K fill:#ef4444,color:#fff,stroke:#ef4444
+    style M fill:#f59e0b,color:#fff,stroke:#f59e0b
+    style N fill:#10b981,color:#fff,stroke:#10b981
+    style Z fill:#6b7280,color:#fff,stroke:#6b7280
+    style C fill:#2563eb,color:#fff,stroke:#2563eb

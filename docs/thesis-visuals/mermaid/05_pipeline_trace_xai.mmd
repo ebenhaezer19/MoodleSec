@@ -1,0 +1,24 @@
+%% Figure 3.X — Pipeline Trace Explainability (XAI) Architecture
+flowchart LR
+    subgraph trace["Pipeline Trace — request_id: a1b2c3d4e5f6"]
+        direction TB
+        S1["① request_received<br/>IP: 192.168.0.50<br/>GET /login/index.php"]
+        S2["② feature_extraction<br/>35 features computed<br/>special_char: HIGH"]
+        S3["③ anomaly_detection<br/>score: 0.87 ✓<br/>is_anomaly: true"]
+        S4["④ attack_classifier<br/>type: sqli<br/>confidence: 0.92"]
+        S5["⑤ fp_reducer<br/>is_fp: false<br/>fp_conf: 0.15"]
+        S6["⑥ decision_engine<br/>decision: BLOCK<br/>severity: HIGH"]
+        S7["⑦ soc_queue<br/>ALT-20260517-143022<br/>PENDING_ADMIN"]
+        S8["⑧ enforcement<br/>action: forwarded<br/>reason: demo_mode"]
+        S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8
+    end
+
+    S8 --> MEM["In-Memory Store<br/>OrderedDict(200)<br/>FIFO eviction"]
+    S8 --> DISK["Persistent Log<br/>pipeline_traces.jsonl<br/>append-only"]
+    MEM --> API["REST API<br/>GET /soc/pipeline/<br/>trace/{request_id}"]
+    API --> DASH["SOC Dashboard<br/>Trace Logs Page<br/>Real-time console"]
+
+    style S3 fill:#ef4444,color:#fff
+    style S4 fill:#f59e0b,color:#fff
+    style S6 fill:#1e3a5f,color:#fff
+    style DASH fill:#ede9fe,stroke:#8b5cf6

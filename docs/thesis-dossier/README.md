@@ -8,7 +8,7 @@
 |---|---|---|---|
 | 1 | `PART1_ARCHITECTURE.md` | §1–5 | Project identity, system topology, dependency stack, operational modes, middleware, reverse proxy |
 | 2 | `PART2_ML_PIPELINE.md` | §6–11 | Two-stage ML pipeline, Isolation Forest, XGBoost, FP Reducer, Decision Engine, evaluation metrics |
-| 3 | `PART3_SOC_INTEGRATION.md` | §12–20 | Alert Queue state machine, Incident Correlator, Pipeline Traces (XAI), CVSS Risk Scorer, SOC Dashboard, Moodle Plugin, API inventory, thesis chapter mapping |
+| 3 | `PART3_SOC_INTEGRATION.md` | §12–23 | Alert Queue state machine, Incident Correlator, Pipeline Traces (XAI), CVSS Risk Scorer, SOC Dashboard, Moodle Plugin, API inventory, thesis chapter mapping, **operational resource profile, scenario calculations, SOC comparison analysis** |
 
 ## Quick Reference — Key Metrics
 
@@ -23,8 +23,11 @@
 | ML Models | 3 (Isolation Forest + XGBoost + Random Forest) |
 | Attack Classes | 6 (XSS, SQLi, Path Traversal, Cmd Injection, SSRF, Normal) |
 | SOC Dashboard Pages | 9 |
-| Total API Endpoints | 20+ |
-| Codebase | ~3,255 lines (proxy) + 46 files (plugin) |
+| Total API Endpoints | 25+ |
+| Codebase | ~1,353 lines (proxy app.py) + 46 files (plugin) |
+| ML Pipeline Latency | 5–60ms added per request |
+| Total Model Footprint | ~48 MB |
+| Runtime Memory | ~250–350 MB |
 
 ## Perplexity Prompt Template
 

@@ -68,11 +68,11 @@
 
 | Component | Location | Purpose |
 |---|---|---|
-| **FastAPI Proxy** | `proxy/app.py` (3255 lines) | Central gateway, enforcement, SOC API |
+| **FastAPI Proxy** | `proxy/app.py` (1353 lines) | Central gateway, enforcement, SOC API |
 | **ML Manager** | `proxy/ml/ml_manager.py` | Lazy-loading singleton for all ML models |
 | **Anomaly Detector** | `proxy/ml/anomaly_detector.py` | Stage-1 Isolation Forest |
 | **Attack Classifier** | `proxy/ml/attack_classifier.py` | Multi-class attack categorization |
-| **FP Reducer** | `proxy/ml/anomaly_false_positive_reducer.py` | Stage-2 Random Forest ensemble |
+| **FP Reducer** | `proxy/ml/anomaly_false_positive_reducer.py` | Stage-3 Random Forest ensemble |
 | **Decision Engine** | `proxy/ml/decision_engine.py` | Threshold-based policy gate |
 | **Pipeline Orchestrator** | `proxy/ml/pipeline_orchestrator.py` | Coordinates ML stages |
 | **Two-Stage Pipeline** | `proxy/ml/two_stage_pipeline.py` | Training & evaluation workflow |
@@ -128,7 +128,7 @@ LISTEN_PORT = 8999
 SOC_ADMIN_TOKEN = "moodlesec2024"
 ```
 
-### 3.3 Enforcement Decision Tree (from app.py lines 2767–2963)
+### 3.3 Enforcement Decision Tree (from app.py lines 860–1000)
 
 ```
 ML Decision = BLOCK or ALERT?
@@ -148,7 +148,7 @@ ML Decision = BLOCK or ALERT?
 
 ## 4. MIDDLEWARE ARCHITECTURE
 
-### 4.1 Enforcement Middleware (app.py line 92–109)
+### 4.1 Enforcement Middleware (app.py line 74–91)
 
 **Purpose**: Blocks replayed attacks using fingerprint memory.
 
@@ -162,7 +162,7 @@ if alert_queue.is_fingerprint_blocked(fingerprint):
 - O(1) lookup via `_blocked_fingerprints` set in AlertQueue
 - Fires on **every** request before any route handler
 
-### 4.2 SOC Dashboard Gate (app.py line 114–149)
+### 4.2 SOC Dashboard Gate (app.py line 96–131)
 
 **Purpose**: Protects `/dashboard` and `/soc/` routes.
 
@@ -171,7 +171,7 @@ if alert_queue.is_fingerprint_blocked(fingerprint):
 - Sets `soc_session` httponly cookie (24h TTL)
 - Returns HTTP 403 for unauthorized remote access
 
-### 4.3 CORS Policy (app.py line 154–166)
+### 4.3 CORS Policy (app.py line 136–148)
 
 Allows: `localhost`, `127.0.0.1`, `192.168.0.235` (all on port 8999).
 
@@ -179,7 +179,7 @@ Allows: `localhost`, `127.0.0.1`, `192.168.0.235` (all on port 8999).
 
 ## 5. REVERSE PROXY MECHANISM
 
-### 5.1 Catch-All Route (app.py line 2693)
+### 5.1 Catch-All Route (app.py line 791)
 
 ```python
 @app.api_route("/{path:path}", methods=["GET","POST","PUT","DELETE","PATCH","HEAD","OPTIONS"])

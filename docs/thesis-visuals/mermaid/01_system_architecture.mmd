@@ -1,0 +1,50 @@
+%% Figure 3.X — MoodleSec End-to-End System Architecture
+graph TD
+    CLIENT["🖥️ Client Browser<br/>(Student / Instructor)"]
+    
+    subgraph PROXY["FastAPI Reverse Proxy (port 8999)"]
+        ENF["Enforcement Middleware<br/>O(1) fingerprint check"]
+        GATE["SOC Dashboard Gate<br/>Token auth + cookie"]
+        CORS["CORS Middleware<br/>LAN-safe policy"]
+        
+        subgraph ML["ML Pipeline Integration"]
+            FE["Feature Extraction<br/>(35 features, ~2ms)"]
+            S1["Stage 1: Isolation Forest<br/>anomaly_score [0-1]<br/>(~10ms)"]
+            S2["Stage 2: XGBoost<br/>attack_type + confidence<br/>(~20ms)"]
+            S3["Stage 3: FP Reducer<br/>Random Forest<br/>(~5ms)"]
+            DE["Decision Engine<br/>BLOCK / ALERT / IGNORE<br/>(<1ms)"]
+        end
+        
+        subgraph SOC["SOC Subsystems"]
+            AQ["Alert Queue<br/>deque(1000) + JSON<br/>State Machine"]
+            IC["Incident Correlator<br/>IP+Type+5min window<br/>max 500 incidents"]
+            TS["Pipeline Trace Store<br/>OrderedDict(200)<br/>+ JSONL log"]
+            RS["CVSS Risk Scorer<br/>v3.1 + Business Impact"]
+        end
+        
+        DASH["SOC Dashboard SPA<br/>/dashboard/<br/>Chart.js + HTML5"]
+    end
+    
+    MOODLE["Moodle LMS Backend<br/>(Apache :80)"]
+    
+    CLIENT -->|"HTTP :8999"| ENF
+    ENF -->|"Not blocked"| FE
+    ENF -->|"Blocked → 403"| CLIENT
+    GATE --> DASH
+    FE --> S1
+    S1 -->|"anomaly?"| S2
+    S2 --> S3
+    S3 --> DE
+    DE -->|"BLOCK/ALERT"| AQ
+    AQ --> IC
+    AQ --> TS
+    DE --> RS
+    DE -->|"httpx async"| MOODLE
+    MOODLE -->|"Response"| CLIENT
+
+    style CLIENT fill:#e0f2fe,stroke:#2563eb
+    style MOODLE fill:#d1fae5,stroke:#10b981
+    style ENF fill:#fecaca,stroke:#ef4444
+    style DE fill:#1e3a5f,stroke:#1e3a5f,color:#fff
+    style AQ fill:#fef3c7,stroke:#f59e0b
+    style DASH fill:#ede9fe,stroke:#8b5cf6

@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MoodleSec — Thesis Data Visualizations</title>
+    <meta name="description" content="Interactive data visualizations for MoodleSec Capstone Thesis — SOC Dashboard & Anomaly Detector">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="url(#g1)" stroke-width="2.5"/><path d="M10 16l4 4 8-8" stroke="url(#g1)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="g1" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#06b6d4"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs></svg>
+                </div>
+                <div>
+                    <h1>MoodleSec</h1>
+                    <p class="subtitle">Thesis Data Visualizations — SOC Dashboard & Anomaly Detector</p>
+                </div>
+            </div>
+            <div class="header-meta">
+                <span class="badge">Capstone Project</span>
+                <span class="badge badge-accent">Calvin Institute of Technology</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation -->
+    <nav class="nav" id="nav">
+        <button class="nav-btn active" data-target="sec-1">FP Rate</button>
+        <button class="nav-btn" data-target="sec-2">Arsitektur</button>
+        <button class="nav-btn" data-target="sec-3">ML Pipeline</button>
+        <button class="nav-btn" data-target="sec-4">Dataset Evolution</button>
+        <button class="nav-btn" data-target="sec-5">PR Curve</button>
+        <button class="nav-btn" data-target="sec-6">Confusion Matrix</button>
+        <button class="nav-btn" data-target="sec-7">Model Comparison</button>
+        <button class="nav-btn" data-target="sec-8">Feature Importance</button>
+        <button class="nav-btn" data-target="sec-9">FP Reduction</button>
+    </nav>
+
+    <main class="main">
+        <!-- 1. FP Rate Comparison -->
+        <section class="card" id="sec-1">
+            <div class="card-header">
+                <div>
+                    <span class="card-badge">BAB 1 — Pendahuluan</span>
+                    <h2>FP Rate Comparison — Scanner vs MoodleSec</h2>
+                    <p class="card-desc">Membuktikan urgensi masalah FP yang tinggi pada scanner konvensional vs sistem MoodleSec. Data dari production scan dan raw ZAP/Acunetix reports.</p>
+                </div>
+                <div class="card-stat">
+                    <span class="stat-value accent-green">96.6%</span>
+                    <span class="stat-label">FP Reduction</span>
+                </div>
+            </div>
+            <div class="chart-container"><canvas id="chart-fp-rate"></canvas></div>
+            <div class="insight-bar">
+                <div class="insight"><strong>OWASP ZAP:</strong> 764/765 instances non-actionable (richardsedu.com)</div>
+                <div class="insight"><strong>MoodleSec:</strong> 28/29 findings filtered → 1 Critical SQLi confirmed</div>
+            </div>
+        </section>
+
+        <!-- 2. System Architecture -->
+        <section class="card" id="sec-2">
+            <div class="card-header">
+                <div>
+                    <span class="card-badge">BAB 2 — Tinjauan Pustaka / BAB 3</span>
+                    <h2>Arsitektur Sistem End-to-End (4-Layer)</h2>
+                    <p class="card-desc">Diagram arsitektur: Moodle Plugin (PHP) → FastAPI Proxy (port 8999) → ML Pipeline (3-Stage) → SOC Dashboard + Alert Queue.</p>
+                </div>
+            </div>
+            <div class="arch-diagram">
+                <div class="arch-layer layer-1">
+                    <div class="layer-label">LAYER 1</div>
+                    <div class="layer-title">Moodle Plugin (PHP)</div>
+                    <div class="layer-items">
+                        <span>index.php</span><span>scan.php</span><span>ml_dashboard.php</span><span>lib.php</span>
+                    </div>
+                </div>
+                <div class="arch-arrow"><svg viewBox="0 0 24 40"><path d="M12 0v30m-6-6l6 6 6-6" stroke="url(#ag)" stroke-width="2" fill="none"/><defs><linearGradient id="ag" x1="12" y1="0" x2="12" y2="40"><stop stop-color="#06b6d4"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs></svg><span class="arrow-label">POST /api/scan-native-auth</span></div>
+                <div class="arch-layer layer-2">
+                    <div class="layer-label">LAYER 2</div>
+                    <div class="layer-title">FastAPI Proxy Service (Port 8999)</div>
+                    <div class="layer-items">
+                        <span>Enforcement MW</span><span>SOC Gate</span><span>CORS</span><span>Catch-All Route</span>
+                    </div>
+                    <div class="layer-sub-grid">
+                        <div class="sub-box soc-box">
+                            <div class="sub-title">SOC Components</div>
+                            <div class="layer-items"><span>Alert Queue</span><span>Incident Correlator</span><span>Pipeline Traces (XAI)</span></div>
+                        </div>
+                        <div class="sub-box ml-box">
+                            <div class="sub-title">ML Pipeline (3-Stage)</div>
+                            <div class="layer-items"><span>Isolation Forest</span><span>XGBoost</span><span>FP Reducer (RF+GB)</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="arch-arrow"><svg viewBox="0 0 24 40"><path d="M12 0v30m-6-6l6 6 6-6" stroke="url(#ag)" stroke-width="2" fill="none"/></svg><span class="arrow-label">httpx async forward</span></div>
+                <div class="arch-layer layer-3">
+                    <div class="layer-label">LAYER 3</div>
+                    <div class="layer-title">Moodle LMS Backend (Apache :80)</div>
+                    <div class="layer-items"><span>MySQL/MariaDB</span><span>PHP 7.4+</span><span>Moodle 4.x</span></div>
+                </div>
+                <div class="arch-side-panel">
+                    <div class="side-card">
+                        <div class="side-title">SOC Dashboard (SPA)</div>
+                        <div class="side-items">9 Pages • Chart.js • WebSocket Polling</div>
+                    </div>
+                    <div class="side-card">
+                        <div class="side-title">CVSS v3.1 Engine</div>
+                        <div class="side-items">Risk Score 0–10 • P1–P5 Priority</div>
+                    </div>
+                    <div class="side-card">
+                        <div class="side-title">Decision Engine</div>
+                        <div class="side-items">BLOCK / ALERT / IGNORE</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. ML Pipeline Flowchart -->
+        <section class="card" id="sec-3">
+            <div class="card-header">
+                <div>
+                    <span class="card-badge">BAB 3 — Desain</span>
+                    <h2>ML Pipeline Flowchart — 3-Stage Security Architecture</h2>
+                    <p class="card-desc">Alur dari HTTP request → Feature Extraction (35 fitur) → Anomaly Detection → Attack Classification → FP Reduction → Decision Engine.</p>
+                </div>
+            </div>
+            <div class="pipeline-flow">
+                <div class="pipe-node pipe-input"><div class="pipe-icon">📥</div><div class="pipe-title">HTTP Request</div><div class="pipe-detail">Raw traffic via proxy</div></div>
+                <div class="pipe-connector"></div>
+                <div class="pipe-node pipe-extract"><div class="pipe-icon">⚙️</div><div class="pipe-title">Feature Extraction</div><div class="pipe-detail">35 statistical features<br><small>Header entropy, response time, payload analysis</small></div></div>
+                <div class="pipe-connector"></div>
+                <div class="pipe-node pipe-stage1"><div class="pipe-stage-label">STAGE 1</div><div class="pipe-icon">🔍</div><div class="pipe-title">Anomaly Detector</div><div class="pipe-detail">Isolation Forest (unsupervised)<br>Acc: 93.4% | Recall: 96.7% | FPR: 8.9%</div></div>
+                <div class="pipe-connector"><span class="connector-label">anomaly?</span></div>
+                <div class="pipe-node pipe-stage2"><div class="pipe-stage-label">STAGE 2</div><div class="pipe-icon">🎯</div><div class="pipe-title">Attack Classifier</div><div class="pipe-detail">XGBoost (6 classes)<br>Acc: 94.7% | F1: 0.936 | FPR: 5.3%</div></div>
+                <div class="pipe-connector"><span class="connector-label">attack detected?</span></div>
+                <div class="pipe-node pipe-stage3"><div class="pipe-stage-label">STAGE 3</div><div class="pipe-icon">🛡️</div><div class="pipe-title">FP Reducer</div><div class="pipe-detail">RF+GB Ensemble (14 features)<br>Precision: 97.1% | FP Reduction: 73%</div></div>
+                <div class="pipe-connector"></div>
+                <div class="pipe-node pipe-decision"><div class="pipe-icon">⚖️</div><div class="pipe-title">Decision Engine</div><div class="pipe-detail">BLOCK (≥0.70) | ALERT (0.40–0.70) | IGNORE (&lt;0.40)</div></div>
+                <div class="pipe-connector"></div>
+                <div class="pipe-node pipe-soc"><div class="pipe-icon">🖥️</div><div class="pipe-title">SOC Queue + Dashboard</div><div class="pipe-detail">Human-in-the-Loop<br>Admin: BLOCK / ALLOW / IGNORE</div></div>
+            </div>
+            <div class="pipeline-metrics">
+                <div class="pm"><span class="pm-val">5–15ms</span><span class="pm-label">Stage 1 Latency</span></div>
+                <div class="pm"><span class="pm-val">10–30ms</span><span class="pm-label">Stage 2 Latency</span></div>
+                <div class="pm"><span class="pm-val">3–8ms</span><span class="pm-label">Stage 3 Latency</span></div>
+                <div class="pm"><span class="pm-val">&lt;60ms</span><span class="pm-label">Total ML Overhead</span></div>
+                <div class="pm"><span class="pm-val">~48 MB</span><span class="pm-label">Total Model Size</span></div>
+                <div class="pm"><span class="pm-val">15,847</span><span class="pm-label">Training Samples</span></div>
+            </div>
+        </section>
+
+        <!-- 4. Dataset Evolution -->
+        <section class="card" id="sec-4">
+            <div class="card-header">
+                <div>
+                    <span class="card-badge">BAB 3.4 — Data</span>
+                    <h2>Evolusi Dataset — Phase 0 sampai Phase 5 (Clean-14)</h2>
+                    <p class="card-desc">Perjalanan iteratif dari synthetic data hingga Clean-14 yang valid. Setiap phase menunjukkan masalah yang ditemukan dan diperbaiki.</p>
+                </div>
+            </div>
+            <div class="chart-container"><canvas id="chart-dataset-evo"></canvas></div>
+            <div class="phase-cards">
+                <div class="phase-card phase-fail"><span class="phase-tag">P0</span><strong>186s</strong> 99.3% <span class="phase-issue">❌ CVSS leakage d=5.23</span></div>
+                <div class="phase-card phase-fail"><span class="phase-tag">P2</span><strong>46s</strong> 47.3% <span class="phase-issue">❌ Imbalance 82:18</span></div>
+                <div class="phase-card phase-fail"><span class="phase-tag">P3b</span><strong>76s</strong> 100% <span class="phase-issue">❌ 5 extraction bugs</span></div>
+                <div class="phase-card phase-warn"><span class="phase-tag">P3f</span><strong>76s</strong> 89.3% <span class="phase-issue">⚠️ has_post_data artifact</span></div>
+                <div class="phase-card phase-pass"><span class="phase-tag">P5</span><strong>86s</strong> 92.9% <span class="phase-issue">✅ Valid (Clean-14)</span></div>
+            </div>
+        </section>
+
+        <!-- 5. Precision-Recall Curve -->
+        <section class="card" id="sec-5">
+            <div class="card-header">
+                <div>
+                    <span class="card-badge">BAB 4.2.1 — Evaluasi ML</span>
+                    <h2>Precision-Recall Curve (AUC-PR = 0.91)</h2>
+                    <p class="card-desc">Trade-off precision-recall dengan operating point pada threshold 0.5. Precision ≈1.0 dipertahankan hingga recall 0.85.</p>
+                </div>
+                <div class="card-stat">
+                    <span class="stat-value">0.91</span>
+                    <span class="stat-label">AUC-PR</span>
+                </div>
+            </div>
+            <div class="chart-container"><canvas id="chart-pr-curve"></canvas></div>
+        </section>
+
+        <!-- 6. Confusion Matrix -->
+        <section class="card" id="sec-6">
+            <div class="card-header">
+                <div>
+                    <span class="card-badge">BAB 4.2.1 — Evaluasi ML</span>
+                    <h2>Confusion Matrix — End-to-End Pipeline</h2>
+                    <p class="card-desc">Performa klasifikasi end-to-end pada test set (20% dari 15,847 samples). FPR after FP Reducer: 2.4%.</p>
+                </div>
+            </div>
+            <div class="confusion-grid">
+                <div class="cm-corner"></div>
+                <div class="cm-header">Predicted: Attack</div>
+                <div class="cm-header">Predicted: Normal</div>
+                <div class="cm-row-label">Actual: Attack</div>
+                <div class="cm-cell cm-tp"><span class="cm-val">1,435</span><span class="cm-pct">TP — 90.6%</span></div>
+                <div class="cm-cell cm-fn"><span class="cm-val">149</span><span class="cm-pct">FN — 9.4%</span></div>
+                <div class="cm-row-label">Actual: Normal</div>
+                <div class="cm-cell cm-fp"><span class="cm-val">38</span><span class="cm-pct">FP — 2.4%</span></div>
+                <div class="cm-cell cm-tn"><span class="cm-val">1,547</span><span class="cm-pct">TN — 97.6%</span></div>
+            </div>
+            <div class="cm-metrics">
+                <div class="pm"><span class="pm-val accent-green">94.1%</span><span class="pm-label">Accuracy</span></div>
+                <div class="pm"><span class="pm-val accent-blue">97.4%</span><span class="pm-label">Precision</span></div>
+                <div class="pm"><span class="pm-val accent-cyan">90.6%</span><span class="pm-label">Recall (TPR)</span></div>
+                <div class="pm"><span class="pm-val accent-purple">93.3%</span><span class="pm-label">F1-Score</span></div>
+                <div class="pm"><span class="pm-val accent-green">2.4%</span><span class="pm-label">FPR (after FP Reducer)</span></div>
+                <div class="pm"><span class="pm-val">3,169</span><span class="pm-label">Test Samples</span></div>
+            </div>
+        </section>
+
+        <!-- 7. Model Comparison -->
+        <section class="card" id="sec-7">
+            <div class="card-header">
+                <div>
+                    <span class="card-badge">BAB 4.2.3 — Perbandingan</span>
+                    <h2>Model Comparison — FP Reducer vs Baseline</h2>
+                    <p class="card-desc">Gain +45.3% di atas dummy classifier. Membuktikan model genuine dan tidak hanya baseline tebakan.</p>
+                </div>
+                <div class="card-stat">
+                    <span class="stat-value accent-green">+45.3%</span>
+                    <span class="stat-label">vs Dummy</span>
+                </div>
+            </div>
+            <div class="chart-container"><canvas id="chart-model-comp"></canvas></div>
+        </section>
+
+        <!-- 8. Feature Importance -->
+        <section class="card" id="sec-8">
+            <div class="card-header">
+                <div>
+                    <span class="card-badge">BAB 4.2.1 — Feature Analysis</span>
+                    <h2>Feature Importance — Clean-14 (Permutation)</h2>
+                    <p class="card-desc">Tidak ada fitur dominan tunggal (max 3.8%) — bukti genuine multi-feature learning. occurrence_count (29.2%) telah DIHAPUS sebagai shortcut.</p>
+                </div>
+            </div>
+            <div class="chart-container chart-tall"><canvas id="chart-feature-imp"></canvas></div>
+        </section>
+
+        <!-- 9. FP Reduction Pipeline -->
+        <section class="card" id="sec-9">
+            <div class="card-header">
+                <div>
+                    <span class="card-badge">BAB 4.2.2 — End-to-End</span>
+                    <h2>FP Reduction Pipeline — 29 → 1 Finding</h2>
+                    <p class="card-desc">Visualisasi end-to-end: 29 raw findings → ML filter 25 → rule filter 3 → 1 Critical SQL Injection. FP Reduction Rate: 96.6%.</p>
+                </div>
+                <div class="card-stat">
+                    <span class="stat-value accent-red">96.6%</span>
+                    <span class="stat-label">FP Filtered</span>
+                </div>
+            </div>
+            <div class="funnel-viz">
+                <div class="funnel-step funnel-raw"><div class="funnel-bar" style="width:100%"><span class="funnel-count">29</span></div><div class="funnel-label">Raw Scanner Findings<span class="funnel-pct">100%</span></div></div>
+                <div class="funnel-arrow">▼ ML Filtered: 25 findings removed (86.2%)</div>
+                <div class="funnel-step funnel-ml"><div class="funnel-bar" style="width:13.8%"><span class="funnel-count">4</span></div><div class="funnel-label">After ML Filter<span class="funnel-pct">13.8%</span></div></div>
+                <div class="funnel-arrow">▼ Rule-Based Filter: 3 findings removed (10.3%)</div>
+                <div class="funnel-step funnel-rule"><div class="funnel-bar" style="width:3.4%"><span class="funnel-count">1</span></div><div class="funnel-label">Confirmed Finding<span class="funnel-pct">3.4%</span></div></div>
+            </div>
+            <div class="final-finding">
+                <div class="finding-icon">🚨</div>
+                <div class="finding-detail">
+                    <h3>SQL Injection — Critical (CVSS 9.0+)</h3>
+                    <p>Parameter <code>username</code> pada <code>/login/index.php</code> — Error-based SQL Injection confirmed</p>
+                </div>
+                <div class="finding-badge">P1 — Immediate Action</div>
+            </div>
+            <div class="chart-container"><canvas id="chart-funnel"></canvas></div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <p>MoodleSec — Adaptive Security Monitoring System for Moodle LMS</p>
+        <p>Calvin Institute of Technology (CIT) • Nathanael & Krisopras • 2025–2026</p>
+    </footer>
+
+    <script src="charts.js"></script>
+</body>
+</html>

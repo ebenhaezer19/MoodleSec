@@ -1,0 +1,45 @@
+%% Figure 3.X — Human-in-the-Loop SOC Workflow
+sequenceDiagram
+    participant C as Client Browser
+    participant P as Reverse Proxy<br/>(port 8999)
+    participant ML as ML Pipeline
+    participant AQ as Alert Queue
+    participant IC as Incident Correlator
+    participant D as SOC Dashboard
+    participant A as SOC Admin
+
+    C->>P: HTTP Request
+    P->>P: Enforcement Check (O(1))
+
+    alt Fingerprint Blocked
+        P-->>C: HTTP 403 Blocked
+    else Not Blocked
+        P->>ML: process_http_request()
+        ML->>ML: Feature Extraction (35 feat, ~2ms)
+        ML->>ML: Stage 1: Isolation Forest (~10ms)
+
+        alt Anomaly Detected (score ≥ 0.40)
+            ML->>ML: Stage 2: XGBoost (~20ms)
+            ML->>ML: Stage 3: FP Reducer (~5ms)
+            ML->>ML: Decision Engine (<1ms)
+            ML-->>AQ: Add Alert (PENDING_ADMIN_ACTION)
+            AQ->>IC: Correlate (IP|attack_type, 5min)
+            AQ-->>D: Push Alert to Dashboard
+            D-->>A: Display Alert + XAI Trace
+
+            A->>AQ: POST /resolve → BLOCK
+            AQ->>P: Add fingerprint to block set
+            Note over P: Future matching requests<br/>blocked at O(1) middleware
+
+            A->>AQ: POST /resolve → ALLOW
+            Note over AQ: Override index updated<br/>Future same-pattern → skip
+
+            A->>AQ: POST /resolve → IGNORE
+            Note over AQ: Alert archived
+        else Normal Traffic (score < 0.40)
+            ML-->>P: Decision: IGNORE
+        end
+
+        P->>P: httpx forward to Moodle (:80)
+        P-->>C: Moodle Response
+    end
